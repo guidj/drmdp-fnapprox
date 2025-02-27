@@ -1,0 +1,212 @@
+[build-system]
+requires = ["setuptools>=61.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "drmdp-fnapprox"
+version = "0.0.0"
+authors = [{name = "guilherme", email = "guilherme@dsv.su.se"}]
+maintainers = [{name = "guilherme", email = "guilherme@dsv.su.se"}]
+description = "Reinforcement learning with delayed, aggregate, and anonymous feedback"
+classifiers = [
+    "Development Status :: 1 - Planning",
+    "Natural Language :: English",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS :: MacOS X",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: Implementation :: CPython",
+]
+urls = {Homepage = "https://github.com/guidj/drmdp-fnapprox"}
+requires-python = ">=3.11"
+dependencies = [
+    "pillow>=10.4.0",
+    "scipy>=1.14.1",
+    "numpy>=1.23.5",
+    "rlplg==0.21.5",
+    "ray[data,default]==2.23.0",
+    "tensorflow>=2.11.1",
+    "cvxpy>=1.5.3,<1.6",
+    "stable-baselines3>=2.4.1",
+    "pygame>=2.6.1",
+    "opencv-python>=4.11.0.86",
+    "torch>=2.1.2",
+    "scikit-learn>=1.6.1",
+    "swig>=4.3.0",
+    "type-extensions>=0.1.2",
+    "flappy-bird-gymnasium>=0.4.0",
+    "gymnasium[classic-control,box2d]",
+    "box2d-py>=2.3.5",
+    "box2d>=2.3.10",
+]
+
+[tool.distutils.bdist_wheel]
+universal = 1
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+zip-safe = false
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+namespaces = false
+
+[tool.bumpver]
+current_version = "0.16.2"
+version_pattern = "MAJOR.MINOR.PATCH[PYTAGNUM]"
+commit_message = "bump version {old_version} -> {new_version}"
+tag_message = "{new_version}"
+tag_scope = "default"
+pre_commit_hook = "sbin/commit_hooks/sync-versions.sh"
+post_commit_hook = ""
+commit = "True"
+tag = "True"
+push = "True"
+
+[tool.bumpver.file_patterns]
+"pyproject.toml" = [
+    '^version = "{version}"$',
+    '^current_version = "{version}"$',
+
+]
+"src/daaf/__init__.py" = [
+    '^__version__ = "{version}"$',
+]
+
+
+[tool.tox]
+requires = ["tox>=4.19"]
+env_list = ["test","manifest","check-formatting","lint","lint-types"]
+no_package = true
+use_develop = true
+
+[tool.tox.env_run_base]
+base_python = ["3.12", "3.11"]
+deps = ["-r{toxinidir}/pyproject.toml"]
+install_command = ["uv", "pip", "install", "{opts}", "{packages}"]
+allowlist_externals = ["uv"]
+
+[tool.tox.env.test]
+deps = []
+commands = [["uv", "run", "pytest", "{posargs}", "-v", "--cov=daaf", "--cov-report=xml:cobertura/coverage.xml", "--cov-report=term-missing", "--junitxml=junit.xml"]]
+
+[tool.tox.env.docs]
+deps = []
+commands = [["uv", "run", "mkdocs", "build"]]
+
+[tool.tox.env.manifest]
+deps = ["check-manifest"]
+commands = [["check-manifest"]]
+
+[tool.tox.env.check-formatting]
+deps = []
+commands = [["uv", "run", "ruff", "format", "{toxinidir}/src", "{toxinidir}/tests", "--line-length", "88", "--diff", "--check"]]
+
+[tool.tox.env.format]
+deps = []
+commands = [["uv", "run", "ruff", "format", "{toxinidir}/src", "{toxinidir}/tests", "--line-length", "88"]]
+
+[tool.tox.env.lint]
+deps = []
+commands = [["uv", "run", "ruff", "check"]]
+
+[tool.tox.env.lint-types]
+# due to version conflicts, we specify these deps
+deps = ["mypy==1.10.1","typing-extensions", "numpy"]
+commands = [["uv", "run", "mypy", "{toxinidir}/src", "--install-types"], ["mypy", "{toxinidir}/tests", "--install-types"]]
+
+[tool.tox.env.lint-types.set_env]
+MYPYPATH = "$PYTHONPATH:{toxinidir}/src:{toxinidir}/tests"
+
+[tool.mypy]
+warn_return_any = true
+warn_unused_configs = true
+plugins = [ "numpy.typing.mypy_plugin",]
+
+[[tool.mypy.overrides]]
+module = [ "tensorflow.*",]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [ "pandas.*",]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [ "numpy.*",]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [ "scipy.*",]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [ "ray.*",]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [ "gymnasium.*",]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [ "hypothesis.*",]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [ "rlplg.*",]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [ "pytest.*",]
+ignore_missing_imports = true
+
+[tool.uv.sources]
+rlplg = { git = "https://github.com/guidj/rlplg" }
+
+[dependency-groups]
+rendering = [
+    "pyglet>=1.5.31",
+]
+
+dev = [
+    "attrs==22.2.0",
+    "bumpver>=2024.1130",
+    "click==8.1.3",
+    "cloudpickle==2.2.1",
+    "coverage>=7.6.1",
+    "exceptiongroup==1.2.0",
+    "farama-notifications==0.0.4",
+    "ghp-import==2.1.0",
+    "gradio>=3.50.2",
+    "hypothesis>=6.65.1",
+    "iniconfig==2.0.0",
+    "ipywidgets>=8.0.7",
+    "jinja2==3.1.2",
+    "jiwer>=3.0.5",
+    "jupyter-nbextensions-configurator==0.6.3",
+    "jupyter-resource-usage==0.7.2",
+    "jupyter-server>=2.4.0,<3",
+    "jupyterlab==4.0.13",
+    "markdown==3.4.1",
+    "markupsafe==2.1.2",
+    "matplotlib>=3.8.1",
+    "mergedeep==1.3.4",
+    "mkdocs==1.6.1",
+    "mkdocs-get-deps==0.2.0",
+    "packaging==23.0",
+    "pathspec==0.11.2",
+    "platformdirs==4.0.0",
+    "pluggy==1.5.0",
+    "pytest>=8.3.1",
+    "pytest-cov>=6.0.0",
+    "python-dateutil==2.8.2",
+    "pyyaml==6.0.2",
+    "pyyaml-env-tag==0.1",
+    "ruff>=0.8.6",
+    "seaborn==0.13.1",
+    "six==1.16.0",
+    "sortedcontainers==2.4.0",
+    "statsmodels==0.14.1",
+    "tqdm>=4.66.2",
+    "typing-extensions>4.12",
+    "watchdog==2.3.1",
+]
