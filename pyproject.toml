@@ -37,6 +37,7 @@ dependencies = [
     "gymnasium[classic-control,box2d]",
     "box2d-py>=2.3.5",
     "box2d>=2.3.10",
+    "cma>=4.0.0",
 ]
 
 [tool.distutils.bdist_wheel]

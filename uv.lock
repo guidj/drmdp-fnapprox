@@ -529,6 +529,18 @@ wheels = [
 ]
 
 [[package]]
+name = "cma"
+version = "4.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e0/1c/30d758218cf4cff61f3ab71eb25230193e689454c4807ddb2702cb40ce53/cma-4.0.0.tar.gz", hash = "sha256:fd28ce56983bf2fca0e614189d60134ebb80bf604f070d1ea095ea4e856f13a5", size = 276938 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/49/10/328172e7c8bf498c826a6d53646781afac0f7e647c82835ba5c8dbb3957d/cma-4.0.0-py3-none-any.whl", hash = "sha256:97b86ba1ac9f1cbb189a06c4d4a78f591f0878e5dd3e55c95e88e622e78c1a10", size = 283504 },
+]
+
+[[package]]
 name = "colorama"
 version = "0.4.6"
 source = { registry = "https://pypi.org/simple" }
@@ -755,6 +767,7 @@ source = { editable = "." }
 dependencies = [
     { name = "box2d" },
     { name = "box2d-py" },
+    { name = "cma" },
     { name = "cvxpy" },
     { name = "flappy-bird-gymnasium" },
     { name = "gymnasium", extra = ["box2d", "classic-control"] },
@@ -825,6 +838,7 @@ rendering = [
 requires-dist = [
     { name = "box2d", specifier = ">=2.3.10" },
     { name = "box2d-py", specifier = ">=2.3.5" },
+    { name = "cma", specifier = ">=4.0.0" },
     { name = "cvxpy", specifier = ">=1.5.3,<1.6" },
     { name = "flappy-bird-gymnasium", specifier = ">=0.4.0" },
     { name = "gymnasium", extras = ["classic-control", "box2d"] },
