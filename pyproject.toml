@@ -164,10 +164,6 @@ ignore_missing_imports = true
 [tool.uv.sources]
 rlplg = { git = "https://github.com/guidj/rlplg" }
 
-[[tool.uv.index]]
-url = "https://artifactory.spotify.net/artifactory/api/pypi/pypi/simple/"
-default = true
-
 [dependency-groups]
 rendering = [
     "pyglet>=1.5.31",
