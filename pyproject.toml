@@ -22,8 +22,8 @@ dependencies = [
     "pillow>=10.4.0",
     "scipy>=1.14.1",
     "numpy>=1.23.5",
-    "rlplg==0.21.5",
-    "ray[data,default]==2.23.0",
+    "rlplg==0.21.8",
+    "ray[data,default,tune]==2.23.0",
     "tensorflow>=2.11.1",
     "cvxpy>=1.5.3,<1.6",
     "stable-baselines3>=2.4.1",
@@ -38,6 +38,7 @@ dependencies = [
     "box2d-py>=2.3.5",
     "box2d>=2.3.10",
     "cma>=4.0.0",
+    "gym-electric-motor>=2.0.0",
 ]
 
 [tool.distutils.bdist_wheel]
@@ -162,6 +163,10 @@ ignore_missing_imports = true
 
 [tool.uv.sources]
 rlplg = { git = "https://github.com/guidj/rlplg" }
+
+[[tool.uv.index]]
+url = "https://artifactory.spotify.net/artifactory/api/pypi/pypi/simple/"
+default = true
 
 [dependency-groups]
 rendering = [
