@@ -1,0 +1,25 @@
+# Include anything required to run the library that is *not* a Python file in `src/`
+include .coveragerc *.rst *.md
+recursive-include tests *.py
+exclude mkdocs.yml
+
+# Documentation
+recursive-include assets *.pxi
+recursive-include assets *.txt
+recursive-include assets *.png
+recursive-include docs *.png
+recursive-include docs *.ico
+recursive-include docs *.md
+recursive-include sbin *.sh
+recursive-include assets *.h5
+
+# config
+include pyproject.toml
+include Makefile
+recursive-include src *.typed
+
+# deps
+include uv.lock
+
+# notebooks
+recursive-include notebooks *.ipynb
