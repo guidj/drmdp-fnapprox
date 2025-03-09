@@ -140,7 +140,7 @@ class TileTransform(FeatTransform):
             * self.num_actions
         )
         self.iht = tiles.IHT(self.max_size)
-        self.hash_dim = hash_dim if self.max_size > hash_dim else None
+        self.hash_dim = hash_dim if hash_dim and self.max_size > hash_dim else None
 
     def transform(self, observation: ObsType, action: ActType):
         obs_scaled_01 = (observation - self.obs_space.low) / (
@@ -170,3 +170,15 @@ def hashtrick(xs, dim: int):
     for i in idx:
         ys[i % dim] += 1
     return ys
+
+
+def create_feat_transformer(env: gym.Env, name: str, **kwargs):
+    if name == constants.RANDOM:
+        return RndBinaryTransform(env, **kwargs)
+    if name == constants.SCALE:
+        return ScaleObsOheActTransform(env)
+    if name == constants.GAUSSIAN_MIX:
+        return GaussianMixObsOheActTransform(env, **kwargs)
+    if name == constants.TILES:
+        return TileTransform(env, **kwargs)
+    raise ValueError(f"FeatTransformer `{name}` unknown")

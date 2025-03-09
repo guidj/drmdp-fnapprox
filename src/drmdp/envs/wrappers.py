@@ -99,7 +99,7 @@ class TilesObsWrapper(gym.ObservationWrapper):
         )
 
         # Hashing applies only to reduce the obs space.
-        self.hash_dim = hash_dim if self.tiles.max_size > hash_dim else None
+        self.hash_dim = hash_dim if hash_dim and self.tiles.max_size > hash_dim else None
         if self.hash_dim:
             print("Hashed dim:", self.hash_dim)
         self.observation_space = gym.spaces.Box(
