@@ -118,6 +118,9 @@ class TilesObsWrapper(gym.ObservationWrapper):
 def wrap(env: gym.Env, wrapper: Optional[str] = None, **kwargs):
     if wrapper is None:
         return env
+    if wrapper == constants.RANDOM:
+        enc_size = kwargs.get("enc_size", constants.DEFAULT_PARAMS_GRID)
+        return RndBinaryObsWrapper(env, enc_size=enc_size)
     if wrapper == constants.SCALE:
         return ScaleObsWrapper(env)
     if wrapper == constants.GAUSSIAN_MIX:

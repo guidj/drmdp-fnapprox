@@ -1,6 +1,7 @@
 SCALE = "scale"
 GAUSSIAN_MIX = "gaussian-mix"
 TILES = "tiles"
+RANDOM = "random"
 DEFAULT_PARAMS_GRID = {
     "n_components": range(4, 12),
     "covariance_type": ["spherical", "tied", "diag", "full"],
