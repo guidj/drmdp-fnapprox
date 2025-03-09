@@ -101,7 +101,7 @@ class GaussianMixObsOheActTransform(FeatTransform):
         self.num_actions = env.action_space.n
         self._gm = mixture.GaussianMixture(**params)
         self._gm.fit(
-            [obs for obs, _, _ in data.collection_traj_data(env, steps=sample_steps)]
+            [tup[0] for tup in data.collection_traj_data(env, steps=sample_steps)]
         )
         self.obs_dim = self._gm.n_components
 

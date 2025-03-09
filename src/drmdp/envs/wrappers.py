@@ -68,12 +68,10 @@ class GaussianMixObsWrapper(gym.ObservationWrapper):
         )
 
     def gm_proj(self, buffer, param_grid):
-        # exclude last state component
-        obs = np.stack([example[2] for example in buffer])
         grid_search = model_selection.GridSearchCV(
             mixture.GaussianMixture(), param_grid=param_grid, scoring=self.gmm_bic_score
         )
-        return grid_search.fit(obs)
+        return grid_search.fit(np.stack([tup[0] for tup in buffer]))
 
     def gmm_bic_score(self, estimator, X):
         """Callable to pass to GridSearchCV that will use the BIC score."""
