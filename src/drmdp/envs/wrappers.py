@@ -89,13 +89,15 @@ class TilesObsWrapper(gym.ObservationWrapper):
 
 
 def wrap(env: gym.Env, wrapper: Optional[str] = None, **kwargs):
+    if wrapper is None:
+        return env
     if wrapper == constants.SCALE:
         return ScaleObsWrapper(env)
-    elif wrapper == constants.GAUSSIAN_MIX:
+    if wrapper == constants.GAUSSIAN_MIX:
         param_grid = kwargs.get("param_grid", constants.DEFAULT_PARAMS_GRID)
         steps = kwargs.get("steps", constants.DEFAULT_GM_STEPS)
         return GaussianMixObsWrapper(env, param_grid=param_grid, sample_steps=steps)
-    elif wrapper == constants.TILES:
+    if wrapper == constants.TILES:
         tiling_dim = kwargs.get("tiling_dim", constants.DEFAULT_TILING_DIM)
         hash_dim = kwargs.get("hash_dim", constants.DEFAULT_HASH_DIM)
         return TilesObsWrapper(env, tiling_dim=tiling_dim, hash_dim=hash_dim)
