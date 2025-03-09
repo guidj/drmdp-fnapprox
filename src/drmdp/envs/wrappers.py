@@ -1,3 +1,4 @@
+import math
 from typing import Optional
 
 import gymnasium as gym
@@ -6,6 +7,32 @@ from gymnasium.core import ObsType
 from sklearn import mixture, model_selection
 
 from drmdp import constants, data, hashtutils, tiles
+
+
+class RndBinaryObsWrapper(gym.ObservationWrapper):
+    def __init__(self, env: gym.Env, enc_size: int):
+        super().__init__(env)
+        self.obs_space = env.observation_space
+        self.enc_size = enc_size
+        self._representations = {}
+
+        if not isinstance(env.observation_space, (gym.spaces.Box, gym.spaces.Discrete)):
+            raise ValueError(
+                f"Environment space must be either Box or Discrete, not {type(env.observation_space)}"
+            )
+
+    def observation(self, observation: ObsType):
+        key = tuple(np.array(observation, dtype=np.int64).tolist())
+        if key not in self._representations:
+            indices = np.random.randint(
+                0,
+                high=self.enc_size,
+                size=math.floor(self.enc_size / 2),
+            )
+            vec = np.zeros(shape=self.enc_size)
+            vec[indices] = 1
+            self._representations[key] = vec
+        return self._representations[key]
 
 
 class ScaleObsWrapper(gym.ObservationWrapper):

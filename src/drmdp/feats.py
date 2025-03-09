@@ -1,20 +1,21 @@
 import abc
 import math
-from typing import Any
+from typing import Generic
 
 import gymnasium as gym
 import numpy as np
+from gymnasium.core import ActType, ObsType
 from sklearn import mixture
 
 from drmdp import constants, data, tiles
 
 
-class FeatTransform(abc.ABC):
+class FeatTransform(abc.ABC, Generic[ObsType, ActType]):
     def __init__(self):
         pass
 
     @abc.abstractmethod
-    def transform(self, obs: Any, action: Any):
+    def transform(self, observation: ObsType, action: ActType):
         pass
 
     @property
@@ -23,57 +24,38 @@ class FeatTransform(abc.ABC):
         pass
 
 
-class TileTransform(FeatTransform):
-    def __init__(
-        self,
-        env: gym.Env,
-        tiling_dim: int,
-        num_tilings: int = None,
-        hash_dim: int = None,
-    ):
-        if not isinstance(env.observation_space, gym.spaces.Box):
-            raise ValueError("env.observation_space must be `spaces.Box`")
+class RndBinaryTransform(FeatTransform):
+    def __init__(self, env: gym.Env, enc_size: int):
         if not isinstance(env.action_space, gym.spaces.Discrete):
             raise ValueError("env.action_space must be `spaces.Discrete`")
-
+        if not isinstance(env.observation_space, (gym.spaces.Box, gym.spaces.Discrete)):
+            raise ValueError(
+                f"Environment space must be either Box or Discrete, not {type(env.observation_space)}"
+            )
         self.obs_space = env.observation_space
-        self.tiling_dim = tiling_dim
-        self.wrapwidths = [tiling_dim] * np.size(self.obs_space.low)
         self.num_actions = env.action_space.n
+        self.enc_size = enc_size
+        self._representations = {}
 
-        # num tilings should a power of 2
-        # and at least 4 times greater than
-        # the number of dimensions
-        self.num_tilings = num_tilings or tiles.pow2geq(np.size(self.obs_space.low) * 4)
-        self.max_size = (
-            (tiling_dim ** np.size(self.obs_space.low))
-            * self.num_tilings
-            * self.num_actions
-        )
-        print("Num tilings", self.num_tilings, "\n", "Flat dim:", self.max_size)
-        self.iht = tiles.IHT(self.max_size)
-        self.hash_dim = hash_dim if self.max_size > hash_dim else None
-
-    def transform(self, obs: Any, action: Any):
-        obs_scaled_01 = (obs - self.obs_space.low) / (
-            self.obs_space.high - self.obs_space.low
-        )
-        output = np.zeros(shape=self.max_size)
-        idx = tiles.tileswrap(
-            self.iht,
-            numtilings=self.num_tilings,
-            floats=obs_scaled_01 * self.tiling_dim,
-            wrapwidths=self.wrapwidths,
-            ints=[action] if action else [],
-        )
-        output[idx] = 1
-        if self.hash_dim:
-            return hashtrick(output, self.hash_dim)
+    def transform(self, observation: ObsType, action: ActType):
+        key = tuple(np.array(observation, dtype=np.int64).tolist())
+        if key not in self._representations:
+            indices = np.random.randint(
+                0,
+                high=self.enc_size,
+                size=math.floor(self.enc_size / 2),
+            )
+            vec = np.zeros(shape=self.enc_size)
+            vec[indices] = 1
+            self._representations[key] = vec
+        output = np.zeros(shape=self.enc_size * self.num_actions)
+        pos = self.enc_size * action
+        output[pos : pos + self.enc_size] = self._representations[key]
         return output
 
     @property
     def output_shape(self) -> int:
-        return self.hash_dim or self.max_size
+        return self.enc_size * self.num_actions
 
 
 class ScaleObsOheActTransform(FeatTransform):
@@ -87,8 +69,8 @@ class ScaleObsOheActTransform(FeatTransform):
         self.num_actions = env.action_space.n
         self.obs_dim = np.size(self.obs_space.high)
 
-    def transform(self, obs: Any, action: Any):
-        obs_scaled_01 = (obs - self.obs_space.low) / (
+    def transform(self, observation: ObsType, action: ActType):
+        obs_scaled_01 = (observation - self.obs_space.low) / (
             self.obs_space.high - self.obs_space.low
         )
         output = np.zeros(shape=self.obs_dim * self.num_actions)
@@ -119,10 +101,10 @@ class GaussianMixObsOheActTransform(FeatTransform):
         )
         self.obs_dim = self._gm.n_components
 
-    def transform(self, obs: Any, action: Any):
+    def transform(self, observation: ObsType, action: ActType):
         output = np.zeros(shape=self.obs_dim * self.num_actions)
         idx = self.obs_dim * action
-        output[idx : idx + self.obs_dim] = self._gm.predict_proba([obs])[0]
+        output[idx : idx + self.obs_dim] = self._gm.predict_proba([observation])[0]
         return output
 
     @property
@@ -130,37 +112,56 @@ class GaussianMixObsOheActTransform(FeatTransform):
         return self.obs_dim * self.num_actions
 
 
-class RndBinaryTransform(FeatTransform):
-    def __init__(self, env: gym.Env, enc_size: int):
+class TileTransform(FeatTransform):
+    def __init__(
+        self,
+        env: gym.Env,
+        tiling_dim: int,
+        num_tilings: int = None,
+        hash_dim: int = None,
+    ):
+        if not isinstance(env.observation_space, gym.spaces.Box):
+            raise ValueError("env.observation_space must be `spaces.Box`")
         if not isinstance(env.action_space, gym.spaces.Discrete):
             raise ValueError("env.action_space must be `spaces.Discrete`")
-        self.obs_space = env.observation_space
-        if isinstance(self.obs_space, gym.spaces.Discrete):
-            self.num_states = self.obs_space.n
-        elif isinstance(self.obs_space, gym.spaces.Box):
-            (self.obs_space.high - self.obs_space.low).item()
-        else:
-            raise ValueError("Unsupport observation_space. Must be Box[1d] or Discrete")
-        self.num_actions = env.action_space.n
-        self.enc_size = enc_size
-        self._idx = [
-            np.array(xs)
-            for xs in np.random.randint(
-                0,
-                high=self.enc_size,
-                size=(self.num_states, math.floor(self.enc_size / 2)),
-            )
-        ]
 
-    def transform(self, obs: Any, action: Any):
-        output = np.zeros(shape=self.enc_size * self.num_actions)
-        idx = self.enc_size * action
-        output[self._idx[obs] + idx] = 1
+        self.obs_space = env.observation_space
+        self.tiling_dim = tiling_dim
+        self.wrapwidths = [tiling_dim] * np.size(self.obs_space.low)
+        self.num_actions = env.action_space.n
+
+        # num tilings should a power of 2
+        # and at least 4 times greater than
+        # the number of dimensions
+        self.num_tilings = num_tilings or tiles.pow2geq(np.size(self.obs_space.low) * 4)
+        self.max_size = (
+            (tiling_dim ** np.size(self.obs_space.low))
+            * self.num_tilings
+            * self.num_actions
+        )
+        self.iht = tiles.IHT(self.max_size)
+        self.hash_dim = hash_dim if self.max_size > hash_dim else None
+
+    def transform(self, observation: ObsType, action: ActType):
+        obs_scaled_01 = (observation - self.obs_space.low) / (
+            self.obs_space.high - self.obs_space.low
+        )
+        output = np.zeros(shape=self.max_size)
+        idx = tiles.tileswrap(
+            self.iht,
+            numtilings=self.num_tilings,
+            floats=obs_scaled_01 * self.tiling_dim,
+            wrapwidths=self.wrapwidths,
+            ints=[action] if action else [],
+        )
+        output[idx] = 1
+        if self.hash_dim:
+            return hashtrick(output, self.hash_dim)
         return output
 
     @property
     def output_shape(self) -> int:
-        return self.enc_size * self.num_actions
+        return self.hash_dim or self.max_size
 
 
 def hashtrick(xs, dim: int):
