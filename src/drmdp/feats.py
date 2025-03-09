@@ -6,7 +6,7 @@ import gymnasium as gym
 import numpy as np
 from sklearn import mixture
 
-from drmdp import data, tiles
+from drmdp import constants, data, tiles
 
 
 class FeatTransform(abc.ABC):
@@ -52,13 +52,13 @@ class TileTransform(FeatTransform):
         )
         print("Num tilings", self.num_tilings, "\n", "Flat dim:", self.max_size)
         self.iht = tiles.IHT(self.max_size)
-        self.hash_dim = hash_dim
+        self.hash_dim = hash_dim if self.max_size > hash_dim else None
 
     def transform(self, obs: Any, action: Any):
         obs_scaled_01 = (obs - self.obs_space.low) / (
             self.obs_space.high - self.obs_space.low
         )
-        repr = np.zeros(shape=self.max_size)
+        output = np.zeros(shape=self.max_size)
         idx = tiles.tileswrap(
             self.iht,
             numtilings=self.num_tilings,
@@ -66,10 +66,10 @@ class TileTransform(FeatTransform):
             wrapwidths=self.wrapwidths,
             ints=[action] if action else [],
         )
-        repr[idx] = 1
+        output[idx] = 1
         if self.hash_dim:
-            return hashtrick(repr, self.hash_dim)
-        return repr
+            return hashtrick(output, self.hash_dim)
+        return output
 
     @property
     def output_shape(self) -> int:
@@ -77,7 +77,7 @@ class TileTransform(FeatTransform):
 
 
 class ScaleObsOheActTransform(FeatTransform):
-    def __init__(self, env: gym.Env, hash_dim: int = None):
+    def __init__(self, env: gym.Env):
         if not isinstance(env.observation_space, gym.spaces.Box):
             raise ValueError("env.observation_space must be `spaces.Box`")
         if not isinstance(env.action_space, gym.spaces.Discrete):
@@ -85,7 +85,6 @@ class ScaleObsOheActTransform(FeatTransform):
 
         self.obs_space = env.observation_space
         self.num_actions = env.action_space.n
-        self.hash_dim = hash_dim
         self.obs_dim = np.size(self.obs_space.high)
 
     def transform(self, obs: Any, action: Any):
@@ -99,11 +98,13 @@ class ScaleObsOheActTransform(FeatTransform):
 
     @property
     def output_shape(self) -> int:
-        return self.hash_dim or self.obs_dim * self.num_actions
+        return self.obs_dim * self.num_actions
 
 
 class GaussianMixObsOheActTransform(FeatTransform):
-    def __init__(self, env: gym.Env, params, sample_steps: int = 100_000):
+    def __init__(
+        self, env: gym.Env, params, sample_steps: int = constants.DEFAULT_GM_STEPS
+    ):
         # params or hps_params can be provided
         if not isinstance(env.observation_space, gym.spaces.Box):
             raise ValueError("env.observation_space must be `spaces.Box`")
