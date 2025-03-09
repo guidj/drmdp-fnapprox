@@ -22,7 +22,11 @@ class RndBinaryObsWrapper(gym.ObservationWrapper):
             )
 
     def observation(self, observation: ObsType):
-        key = tuple(np.array(observation, dtype=np.int64).tolist())
+        array = np.array(observation, dtype=np.int64)
+        if np.shape(array) == ():
+            key = array.item()
+        else:
+            key = tuple(array.tolist())
         if key not in self._representations:
             indices = np.random.randint(
                 0,
@@ -99,7 +103,9 @@ class TilesObsWrapper(gym.ObservationWrapper):
         )
 
         # Hashing applies only to reduce the obs space.
-        self.hash_dim = hash_dim if hash_dim and self.tiles.max_size > hash_dim else None
+        self.hash_dim = (
+            hash_dim if hash_dim and self.tiles.max_size > hash_dim else None
+        )
         if self.hash_dim:
             print("Hashed dim:", self.hash_dim)
         self.observation_space = gym.spaces.Box(

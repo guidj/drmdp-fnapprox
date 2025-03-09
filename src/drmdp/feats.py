@@ -38,7 +38,11 @@ class RndBinaryTransform(FeatTransform):
         self._representations = {}
 
     def transform(self, observation: ObsType, action: ActType):
-        key = tuple(np.array(observation, dtype=np.int64).tolist())
+        array = np.array(observation, dtype=np.int64)
+        if np.shape(array) == ():
+            key = array.item()
+        else:
+            key = tuple(array.tolist())
         if key not in self._representations:
             indices = np.random.randint(
                 0,

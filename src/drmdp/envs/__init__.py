@@ -9,4 +9,3 @@ def make(env_name: str, wrapper: Optional[str] = None, **kwargs) -> gym.Env:
         return gympg.make(env_name, wrapper=wrapper, **kwargs)
     except ValueError:
         return gem.make(env_name, wrapper=wrapper, **kwargs)
-        
