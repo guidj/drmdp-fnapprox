@@ -9,6 +9,7 @@ from drmdp.envs import wrappers
 
 DEFAULT_GW_GRID = ["oooooooooooo", "oooooooooooo", "oooooooooooo", "sxxxxxxxxxxg"]
 DEFAULT_RG_CURE = ["red", "green", "red", "green", "wait", "green"]
+DEFAULT_ICE_MAP = "4x4"
 DEFAULT_MC_MAX_EPISODE_STEPS = 10000
 
 
@@ -68,7 +69,7 @@ def make(env_name: str, wrapper: Optional[str] = None, **kwargs) -> gym.Env:
         cure = kwargs.get("cure", DEFAULT_RG_CURE)
         env = RedgreenObsAsVectorWrapper(redgreen.RedGreenSeq(cure))
     elif env_name == "IceWorld-v0":
-        map_name = kwargs.get("map_name", "4x4")
+        map_name = kwargs.get("map_name", DEFAULT_ICE_MAP)
         map_ = iceworld.MAPS[map_name]
         size, lakes, goals, start = iceworld.parse_map_from_text(map_)
         env = IceworldObsAsVectorWrapper(
