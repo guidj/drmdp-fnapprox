@@ -54,7 +54,7 @@ class RedgreenObsAsVectorWrapper(gym.ObservationWrapper):
         )
 
     def observation(self, observation: ObsType):
-        return observation["pos"]
+        return np.array([observation["pos"]])
 
 
 def make(env_name: str, wrapper: Optional[str] = None, **kwargs) -> gym.Env:

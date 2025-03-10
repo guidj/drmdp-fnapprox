@@ -1,6 +1,5 @@
 SCALE = "scale"
 GAUSSIAN_MIX = "gaussian-mix"
-BOTORCH_GAUSSIAN_MIX = "botorch-gaussian-mix"
 TILES = "tiles"
 RANDOM = "random"
 DEFAULT_PARAMS_GRID = {

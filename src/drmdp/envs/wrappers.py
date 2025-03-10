@@ -9,7 +9,7 @@ from sklearn import mixture, model_selection
 from drmdp import constants, data, hashtutils, tiles
 
 
-class RndBinaryObsWrapper(gym.ObservationWrapper):
+class RandomBinaryObsWrapper(gym.ObservationWrapper):
     def __init__(self, env: gym.Env, enc_size: int):
         super().__init__(env)
         self.obs_space = env.observation_space
@@ -124,7 +124,7 @@ def wrap(env: gym.Env, wrapper: Optional[str] = None, **kwargs):
         return env
     if wrapper == constants.RANDOM:
         enc_size = kwargs.get("enc_size", constants.DEFAULT_PARAMS_GRID)
-        return RndBinaryObsWrapper(env, enc_size=enc_size)
+        return RandomBinaryObsWrapper(env, enc_size=enc_size)
     if wrapper == constants.SCALE:
         return ScaleObsWrapper(env)
     if wrapper == constants.GAUSSIAN_MIX:
