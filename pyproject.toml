@@ -186,6 +186,7 @@ dev = [
     "jupyter-resource-usage==0.7.2",
     "jupyter-server>=2.4.0,<3",
     "jupyterlab==4.0.13",
+    "line-profiler>=4.2.0",
     "markdown==3.4.1",
     "markupsafe==2.1.2",
     "matplotlib>=3.8.1",
