@@ -12,13 +12,17 @@ from drmdp.envs import wrappers
 
 class StrictWeightedSumOfErrors(reward_functions.WeightedSumOfErrors):
     def __init__(
-        self, reward_weights=None, normed_reward_weights=False, violation_reward=None
+        self,
+        penalty_gamma: Optional[float] = None,
+        reward_weights=None,
+        normed_reward_weights=False,
+        violation_reward=None,
     ):
         super().__init__(
             reward_weights,
             normed_reward_weights,
             violation_reward,
-            gamma=1.0,
+            gamma=penalty_gamma,
             reward_power=1,
             bias=0,
         )
@@ -92,10 +96,13 @@ class GemObsAsVectorWrapper(gym.ObservationWrapper):
 
 def make(
     env_name: str,
-    constraint_violation_reward: Optional[float] = -10.0,
+    constraint_violation_reward: Optional[float] = None,
+    penalty_gamma: Optional[float] = 0.9,
     wrapper: Optional[str] = None,
     **kwargs,
 ) -> gym.Env:
-    rf = StrictWeightedSumOfErrors(violation_reward=constraint_violation_reward)
+    rf = StrictWeightedSumOfErrors(
+        violation_reward=constraint_violation_reward, penalty_gamma=penalty_gamma
+    )
     env = GemObsAsVectorWrapper(gym_electric_motor.make(env_name, reward_function=rf))
     return wrappers.wrap(env, wrapper=wrapper, **kwargs)
