@@ -18,27 +18,35 @@ def delay_reward_data(buffer, delay: int, sample_size: int):
     )
 
     # repr: (m1,a1)(m2,a1)..
-    obs_dim = math.floor(states.shape[1] / 2)
+    obs_dim =states.shape[1] // 2
     mdim = obs_dim * len(np.unique(action)) + obs_dim
 
     # build samples
     mask = np.random.choice(states.shape[0], (sample_size, delay))
     delayed_obs = states[mask]  # batch x delay x dim
-    delayed_act = action[mask]
+    delayed_act = action[mask] # batch x delay
     delayed_rew = np.sum(reward[mask], axis=1)  # batch x delay -> batch
 
     rhat_matrix = np.zeros(shape=(sample_size, mdim))
 
-    # TODO: use pandas to speed this up
-    for i, (states, action) in enumerate(zip(delayed_obs, delayed_act)):
-        for j in range(delay):
-            obs, next_obs = states[j][:obs_dim], states[j][obs_dim:]
-            c = obs_dim * action[j]
-            rhat_matrix[i, c : c + obs_dim] += obs
-            rhat_matrix[i, -obs_dim:] += next_obs
-
+    # Vectorized operations for building rhat_matrix
+    # Create indices for the action-based offsets
+    action_offsets = delayed_act * obs_dim
+    batch_indices = np.arange(sample_size)[:, None]
+    
+    # For each timestep in delay sequence
+    for j in range(delay):
+        # Split current states into obs and next_obs
+        obs = delayed_obs[:, j, :obs_dim]
+        next_obs = delayed_obs[:, j, obs_dim:]
+        
+        # Add obs to action-specific columns
+        col_indices = action_offsets[:, j, None] + np.arange(obs_dim)
+        rhat_matrix[batch_indices, col_indices] += obs
+        
+        # Add next_obs to final columns
+        rhat_matrix[:, -obs_dim:] += next_obs
     return rhat_matrix, delayed_rew
-
 
 def proj_obs_to_rwest_vec(buffer, sample_size: int):
     action = np.stack([example[1] for example in buffer])
@@ -52,7 +60,7 @@ def proj_obs_to_rwest_vec(buffer, sample_size: int):
     )
 
     # repr: (m1,a1)(m2,a1)..
-    obs_dim = math.floor(states.shape[1] / 2)
+    obs_dim = states.shape[1] // 2
     mdim = obs_dim * len(np.unique(action)) + obs_dim
 
     # build samples
@@ -63,13 +71,17 @@ def proj_obs_to_rwest_vec(buffer, sample_size: int):
 
     rhat_matrix = np.zeros(shape=(len(delayed_obs), mdim))
 
-    # TODO: use pandas to speed this up
-    for i, (states, action) in enumerate(zip(delayed_obs, delayed_act)):
-        obs, next_obs = states[:obs_dim], states[obs_dim:]
-        c = obs_dim * action
-        rhat_matrix[i, c : c + obs_dim] += obs
-        rhat_matrix[i, -obs_dim:] += next_obs
-
+    # Vectorized operations for building rhat_matrix
+    # Create indices for the action-based offsets
+    action_offsets = delayed_act * obs_dim
+    batch_indices = np.arange(len(delayed_obs))[:, None]
+    
+    # Add obs to action-specific columns
+    col_indices = action_offsets[:, None] + np.arange(obs_dim)
+    rhat_matrix[batch_indices, col_indices] += delayed_obs[:, :obs_dim]
+    
+    # Add next_obs to final columns 
+    rhat_matrix[:, -obs_dim:] += delayed_obs[:, obs_dim:]
     return rhat_matrix, delayed_rew
 
 
