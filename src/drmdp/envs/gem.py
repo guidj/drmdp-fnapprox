@@ -37,7 +37,7 @@ class StrictWeightedSumOfErrors(reward_functions.WeightedSumOfErrors):
 
 
 class GemObsAsVectorWrapper(gym.ObservationWrapper):
-    def __init__(self, env):
+    def __init__(self, env: gym.Env):
         super().__init__(env)
         self._mask = getattr(env.reference_generator, "referenced_states")
         state_obs_space, ref_state_obs_space = env.observation_space
@@ -105,4 +105,7 @@ def make(
         violation_reward=constraint_violation_reward, penalty_gamma=penalty_gamma
     )
     env = GemObsAsVectorWrapper(gym_electric_motor.make(env_name, reward_function=rf))
+    max_episode_steps = kwargs.get("max_episode_steps", None)
+    if max_episode_steps:
+        env = gym.wrappers.TimeLimit(env, max_episode_steps)
     return wrappers.wrap(env, wrapper=wrapper, **kwargs)
