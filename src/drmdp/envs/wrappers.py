@@ -1,4 +1,3 @@
-import math
 from typing import Optional
 
 import gymnasium as gym
@@ -31,7 +30,7 @@ class RandomBinaryObsWrapper(gym.ObservationWrapper):
             indices = np.random.randint(
                 0,
                 high=self.enc_size,
-                size=math.floor(self.enc_size / 2),
+                size=self.enc_size // 2,
             )
             vec = np.zeros(shape=self.enc_size)
             vec[indices] = 1
