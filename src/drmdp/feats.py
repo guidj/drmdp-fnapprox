@@ -30,7 +30,7 @@ class FeatTransform(abc.ABC, Generic[ObsType, ActType]):
         pass
 
 
-class RndBinaryTransform(FeatTransform):
+class RandomBinaryFeatTransform(FeatTransform):
     def __init__(self, env: gym.Env, enc_size: int):
         if not isinstance(env.action_space, gym.spaces.Discrete):
             raise ValueError("env.action_space must be `spaces.Discrete`")
@@ -98,7 +98,7 @@ class RndBinaryTransform(FeatTransform):
         return self.obs_dim * self.num_actions
 
 
-class ScaleObsOheActTransform(FeatTransform):
+class ScaleFeatTransform(FeatTransform):
     def __init__(self, env: gym.Env):
         if not isinstance(env.observation_space, gym.spaces.Box):
             raise ValueError("env.observation_space must be `spaces.Box`")
@@ -138,7 +138,7 @@ class ScaleObsOheActTransform(FeatTransform):
         return self.obs_dim * self.num_actions
 
 
-class GaussianMixObsOheActTransform(FeatTransform):
+class GaussianMixFeatTransform(FeatTransform):
     def __init__(
         self, env: gym.Env, params, sample_steps: int = constants.DEFAULT_GM_STEPS
     ):
@@ -195,7 +195,7 @@ class GaussianMixObsOheActTransform(FeatTransform):
         return self.obs_dim * self.num_actions
 
 
-class TileTransform(FeatTransform):
+class TileFeatTransform(FeatTransform):
     def __init__(
         self,
         env: gym.Env,
@@ -281,11 +281,11 @@ def hashtrick(xs, dim: int):
 
 def create_feat_transformer(env: gym.Env, name: str, **kwargs):
     if name == constants.RANDOM:
-        return RndBinaryTransform(env, **kwargs)
+        return RandomBinaryFeatTransform(env, **kwargs)
     if name == constants.SCALE:
-        return ScaleObsOheActTransform(env)
+        return ScaleFeatTransform(env)
     if name == constants.GAUSSIAN_MIX:
-        return GaussianMixObsOheActTransform(env, **kwargs)
+        return GaussianMixFeatTransform(env, **kwargs)
     if name == constants.TILES:
-        return TileTransform(env, **kwargs)
+        return TileFeatTransform(env, **kwargs)
     raise ValueError(f"FeatTransformer `{name}` unknown")
