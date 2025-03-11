@@ -37,6 +37,7 @@ dependencies = [
     "gymnasium[classic-control]",
     "cma>=4.0.0",
     "gym-electric-motor>=2.0.0",
+    "seaborn>=0.13.1",
 ]
 
 [tool.distutils.bdist_wheel]
