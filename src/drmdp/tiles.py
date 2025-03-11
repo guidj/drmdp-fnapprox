@@ -131,18 +131,18 @@ def tileswrap(
 ) -> List[int]:
     """returns num-tilings tile indices corresponding to the floats and ints, wrapping some floats"""
     qfloats = [math.floor(f * numtilings) for f in floats]
-    Tiles = []
+    tiles_ = []
     for tiling in range(numtilings):
-        tilingX2 = tiling * 2
+        tiling_x2 = tiling * 2
         coords = [tiling]
         b = tiling
         for q, width in itertools.zip_longest(qfloats, wrapwidths):
             c = (q + b % numtilings) // numtilings
             coords.append(c % width if width else c)
-            b += tilingX2
+            b += tiling_x2
         coords.extend(ints)
-        Tiles.append(hashcoords(coords, ihtORsize, readonly))
-    return Tiles
+        tiles_.append(hashcoords(coords, ihtORsize, readonly))
+    return tiles_
 
 
 def pow2geq(lb: int) -> int:

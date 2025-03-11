@@ -7,7 +7,7 @@ import numpy as np
 from gymnasium.core import ActType, ObsType
 from sklearn import mixture
 
-from drmdp import constants, data, tiles, hashtutils
+from drmdp import constants, data, hashtutils, tiles
 
 
 class FeatTransform(abc.ABC, Generic[ObsType, ActType]):
@@ -269,6 +269,7 @@ class TileFeatTransform(FeatTransform):
             wrapwidths=self.wrapwidths,
             ints=[action] if action is not None else [],
         )
+
 
 def create_feat_transformer(env: gym.Env, name: str, **kwargs):
     if name == constants.RANDOM:
