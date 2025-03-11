@@ -2,8 +2,14 @@ import numpy as np
 
 
 def hashtrick(xs, dim: int):
-    ys = np.zeros(dim, dtype=np.int32)
-    (idx,) = np.where(xs == 1)
-    for i in idx:
-        ys[i % dim] += 1
-    return ys
+    if dim <= 0:
+        raise ValueError("`dim` must be positive")
+    # Get indices of non-zero elements directly
+    idx = np.nonzero(xs)[0]
+    
+    # Use modulo operation on all indices at once
+    hashed_idx = idx % dim
+    
+    # Use bincount to count occurrences of each index
+    # Specify minlength to ensure output has correct size
+    return np.bincount(hashed_idx, minlength=dim)

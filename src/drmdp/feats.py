@@ -7,7 +7,7 @@ import numpy as np
 from gymnasium.core import ActType, ObsType
 from sklearn import mixture
 
-from drmdp import constants, data, tiles
+from drmdp import constants, data, tiles, hashtutils
 
 
 class FeatTransform(abc.ABC, Generic[ObsType, ActType]):
@@ -234,7 +234,7 @@ class TileFeatTransform(FeatTransform):
         idx = self._tiles(obs_scaled_01, action)
         output[idx] = 1
         if self.hash_dim:
-            return hashtrick(output, self.hash_dim)
+            return hashtutils.hashtrick(output, self.hash_dim)
         return output
 
     def batch_transform(
@@ -254,7 +254,7 @@ class TileFeatTransform(FeatTransform):
             idx = self._tiles(obs_scaled_01[i], actions[i])
             output[i, idx] = 1
             if self.hash_dim:
-                hashed_output[i] = hashtrick(output[i], self.hash_dim)
+                hashed_output[i] = hashtutils.hashtrick(output[i], self.hash_dim)
         return hashed_output if self.hash_dim else output
 
     @property
@@ -269,15 +269,6 @@ class TileFeatTransform(FeatTransform):
             wrapwidths=self.wrapwidths,
             ints=[action] if action is not None else [],
         )
-
-
-def hashtrick(xs, dim: int):
-    ys = np.zeros(dim, dtype=np.int32)
-    (idx,) = np.where(xs == 1)
-    for i in idx:
-        ys[i % dim] += 1
-    return ys
-
 
 def create_feat_transformer(env: gym.Env, name: str, **kwargs):
     if name == constants.RANDOM:
