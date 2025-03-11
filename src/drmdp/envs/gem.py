@@ -125,12 +125,18 @@ def make(
     env_name: str,
     constraint_violation_reward: Optional[float] = 0.0,
     penalty_gamma: Optional[float] = 1.0,
+    pos_enforcement: bool = True,
     wrapper: Optional[str] = None,
     **kwargs,
 ) -> gym.Env:
-    rf = PositiveEnforcementWeightedSumOfErrors(
-        violation_reward=constraint_violation_reward, penalty_gamma=penalty_gamma
-    )
+    if pos_enforcement:
+        rf = PositiveEnforcementWeightedSumOfErrors(
+            violation_reward=constraint_violation_reward, penalty_gamma=penalty_gamma
+        )
+    else:
+        rf = StrictWeightedSumOfErrors(
+            violation_reward=constraint_violation_reward, penalty_gamma=penalty_gamma
+        )
     env = GemObsAsVectorWrapper(gym_electric_motor.make(env_name, reward_function=rf))
     max_episode_steps = kwargs.get("max_episode_steps", None)
     if max_episode_steps:
