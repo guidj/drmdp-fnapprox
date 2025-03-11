@@ -36,6 +36,33 @@ class StrictWeightedSumOfErrors(reward_functions.WeightedSumOfErrors):
         )
 
 
+class PositiveEnforcementWeightedSumOfErrors(reward_functions.WeightedSumOfErrors):
+    def __init__(
+        self,
+        penalty_gamma: Optional[float] = None,
+        reward_weights=None,
+        normed_reward_weights=False,
+        violation_reward=None,
+    ):
+        super().__init__(
+            reward_weights,
+            normed_reward_weights,
+            violation_reward,
+            gamma=penalty_gamma,
+            reward_power=1,
+            bias=0,
+        )
+
+    def reward(self, state, reference, k=None, action=None, violation_degree=0.0):
+        del k
+        del action
+        pos_enforcement = 2 * abs(self.reward_range[0])
+        return (
+            self._wse_reward(state, reference)
+            + violation_degree * self._violation_reward
+        ) + pos_enforcement
+
+
 class GemObsAsVectorWrapper(gym.ObservationWrapper):
     def __init__(self, env: gym.Env):
         super().__init__(env)
@@ -96,12 +123,12 @@ class GemObsAsVectorWrapper(gym.ObservationWrapper):
 
 def make(
     env_name: str,
-    constraint_violation_reward: Optional[float] = None,
-    penalty_gamma: Optional[float] = 0.9,
+    constraint_violation_reward: Optional[float] = 0.0,
+    penalty_gamma: Optional[float] = 1.0,
     wrapper: Optional[str] = None,
     **kwargs,
 ) -> gym.Env:
-    rf = StrictWeightedSumOfErrors(
+    rf = PositiveEnforcementWeightedSumOfErrors(
         violation_reward=constraint_violation_reward, penalty_gamma=penalty_gamma
     )
     env = GemObsAsVectorWrapper(gym_electric_motor.make(env_name, reward_function=rf))
