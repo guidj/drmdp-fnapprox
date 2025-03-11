@@ -32,12 +32,12 @@ class Tiles:
 
     def __call__(self, xs):
         xs_scaled_01 = (xs - self.dims_min) / (self.dims_max - self.dims_min)
-        repr = np.zeros(shape=self.max_size)
+        repr_ = np.zeros(shape=self.max_size)
         idx = tileswrap(
             self.iht, self.num_tilings, xs_scaled_01 * self.tiling_dim, self.wrapwidths
         )
-        repr[idx] = 1
-        return repr
+        repr_[idx] = 1
+        return repr_
 
 
 class IHT:
@@ -108,17 +108,17 @@ def tiles(
 ) -> List[int]:
     """returns num-tilings tile indices corresponding to the floats and ints"""
     qfloats = [math.floor(f * numtilings) for f in floats]
-    tiles = []
+    tiles_ = []
     for tiling in range(numtilings):
-        tilingX2 = tiling * 2
+        tiling_x2 = tiling * 2
         coords = [tiling]
         b = tiling
         for q in qfloats:
             coords.append((q + b) // numtilings)
-            b += tilingX2
+            b += tiling_x2
         coords.extend(ints)
-        tiles.append(hashcoords(coords, ihtORsize, readonly))
-    return tiles
+        tiles_.append(hashcoords(coords, ihtORsize, readonly))
+    return tiles_
 
 
 def tileswrap(
