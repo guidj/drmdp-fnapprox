@@ -5,6 +5,11 @@ from drmdp import data
 
 
 def delay_reward_data(buffer, delay: int, sample_size: int):
+    if delay < 2:
+        raise ValueError(f"`delay` must be greater than one. Got {delay}")
+    if sample_size < 1:
+        raise ValueError(f"`sample_size` must be greater than zero. Got {sample_size}")    
+    
     action = np.stack([example[1] for example in buffer])
     reward = np.stack([example[3] for example in buffer])
     states = np.concatenate(
@@ -48,6 +53,9 @@ def delay_reward_data(buffer, delay: int, sample_size: int):
 
 
 def proj_obs_to_rwest_vec(buffer, sample_size: int):
+    if sample_size < 1:
+        raise ValueError(f"`sample_size` must be greater than zero. Got {sample_size}")    
+
     action = np.stack([example[1] for example in buffer])
     reward = np.stack([example[3] for example in buffer])
     states = np.concatenate(
