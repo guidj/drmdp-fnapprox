@@ -1,11 +1,11 @@
-from typing import Optional
+from typing import Any, Dict, Hashable, Optional
 
 import gymnasium as gym
 import numpy as np
 from gymnasium.core import ObsType
 from sklearn import mixture, model_selection
 
-from drmdp import constants, data, hashtutils, tiles
+from drmdp import constants, dataproc, mathutils, tiles
 
 
 class RandomBinaryObsWrapper(gym.ObservationWrapper):
@@ -13,7 +13,7 @@ class RandomBinaryObsWrapper(gym.ObservationWrapper):
         super().__init__(env)
         self.obs_space = env.observation_space
         self.enc_size = enc_size
-        self._representations = {}
+        self._representations: Dict[Hashable, Any] = {}
 
         if not isinstance(env.observation_space, (gym.spaces.Box, gym.spaces.Discrete)):
             raise ValueError(
@@ -22,6 +22,7 @@ class RandomBinaryObsWrapper(gym.ObservationWrapper):
 
     def observation(self, observation: ObsType):
         array = np.array(observation, dtype=np.int64)
+        key: Hashable = -1
         if np.shape(array) == ():
             key = array.item()
         else:
@@ -55,7 +56,7 @@ class ScaleObsWrapper(gym.ObservationWrapper):
 class GaussianMixObsWrapper(gym.ObservationWrapper):
     def __init__(self, env, param_grid, sample_steps: int):
         super().__init__(env)
-        buffer = data.collection_traj_data(env, steps=sample_steps)
+        buffer = dataproc.collection_traj_data(env, steps=sample_steps)
         self.grid_search = self.gm_proj(buffer, param_grid)
         self.estimator = self.grid_search.best_estimator_
         print("Best estimator:", self.grid_search.best_estimator_)
@@ -88,7 +89,7 @@ class TilesObsWrapper(gym.ObservationWrapper):
         self,
         env,
         tiling_dim: int,
-        num_tilings: int = None,
+        num_tilings: Optional[int] = None,
         hash_dim: Optional[int] = None,
     ):
         super().__init__(env)
@@ -114,7 +115,7 @@ class TilesObsWrapper(gym.ObservationWrapper):
         # Apply to first N dimensions
         xs = self.tiles(observation)
         if self.hash_dim:
-            xs = hashtutils.hashtrick(xs, dim=self.hash_dim)
+            xs = mathutils.hashtrick(xs, dim=self.hash_dim)
         return xs
 
 

@@ -1,6 +1,6 @@
 import itertools
 import math
-from typing import List, Optional, Union
+from typing import List, Optional, Sequence, Union
 
 import numpy as np
 
@@ -124,11 +124,11 @@ def tiles(
 def tileswrap(
     ihtORsize: Union[IHT, int, None],
     numtilings: int,
-    floats: List[float],
-    wrapwidths: List[int],
-    ints: List[int] = [],
+    floats: Sequence[float],
+    wrapwidths: Sequence[int],
+    ints: Sequence[int] = [],
     readonly: bool = False,
-) -> List[int]:
+) -> Sequence[int]:
     """returns num-tilings tile indices corresponding to the floats and ints, wrapping some floats"""
     qfloats = [math.floor(f * numtilings) for f in floats]
     tiles_ = []
@@ -147,8 +147,9 @@ def tileswrap(
 
 def pow2geq(lb: int) -> int:
     exp = 1
+    rs = 1
     while True:
-        rs = np.power(2, exp)
+        rs = 2**exp
         if rs >= lb:
             break
         exp += 1

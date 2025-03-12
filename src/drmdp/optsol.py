@@ -1,7 +1,38 @@
+import abc
+from typing import Optional
+
 import gymnasium as gym
 import numpy as np
 
-from drmdp import data
+from drmdp import dataproc
+
+
+class LearningRateSchedule(abc.ABC):
+    """
+    This class updates the learning rate based on the episode,
+    step or both - using a given `schedule` function.
+    """
+
+    def __init__(self, initial_lr: float):
+        super().__init__()
+        self.initial_lr = initial_lr
+
+    @abc.abstractmethod
+    def schedule(self, episode: Optional[int] = None, step: Optional[int] = None):
+        pass
+
+    def __call__(self, episode: int, step: int):
+        return self.schedule(episode, step)
+
+
+class FixedLRSchedule(LearningRateSchedule):
+    def __init__(self, initial_lr: float):
+        super().__init__(initial_lr)
+
+    def schedule(self, episode=None, step=None):
+        del episode
+        del step
+        return self.initial_lr
 
 
 def delay_reward_data(buffer, delay: int, sample_size: int):
@@ -101,19 +132,7 @@ def solve_least_squares(matrix: np.ndarray, rhs: np.ndarray) -> np.ndarray:
         raise ValueError("Failed to solve linear system") from err
 
 
-def rmse(v_pred: np.ndarray, v_true: np.ndarray, axis: int):
-    if np.shape(v_pred) != np.shape(v_true):
-        raise ValueError(
-            f"Tensors have different shapes: {np.shape(v_pred)} != {np.shape(v_true)}"
-        )
-    delta = v_pred - v_true
-    sq = delta * delta  # np.power(delta, 2)
-    sqsum = np.sum(sq, axis=axis) / np.shape(v_pred)[axis]
-    sqsqrt = np.sqrt(sqsum)
-    return sqsqrt
-
-
 def solve_rwe(env: gym.Env, num_steps: int, sample_size: int, delay: int):
-    buffer = data.collection_traj_data(env, steps=num_steps)
+    buffer = dataproc.collection_traj_data(env, steps=num_steps)
     Xd, yd = delay_reward_data(buffer, delay=delay, sample_size=sample_size)
     return buffer, solve_least_squares(Xd, yd)

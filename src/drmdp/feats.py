@@ -1,16 +1,16 @@
 import abc
 import math
-from typing import Generic, Sequence
+from typing import Any, Dict, Hashable, Optional, Sequence
 
 import gymnasium as gym
 import numpy as np
 from gymnasium.core import ActType, ObsType
 from sklearn import mixture
 
-from drmdp import constants, data, hashtutils, tiles
+from drmdp import constants, dataproc, mathutils, tiles
 
 
-class FeatTransform(abc.ABC, Generic[ObsType, ActType]):
+class FeatTransform(abc.ABC):
     def __init__(self):
         pass
 
@@ -41,10 +41,11 @@ class RandomBinaryFeatTransform(FeatTransform):
         self.obs_space = env.observation_space
         self.num_actions = env.action_space.n
         self.obs_dim = enc_size
-        self._representations = {}
+        self._representations: Dict[Hashable, Any] = {}
 
     def transform(self, observation: ObsType, action: ActType):
         array = np.array(observation, dtype=np.int64)
+        key: Hashable = -1
         if np.shape(array) == ():
             key = array.item()
         else:
@@ -95,7 +96,7 @@ class RandomBinaryFeatTransform(FeatTransform):
 
     @property
     def output_shape(self) -> int:
-        return self.obs_dim * self.num_actions
+        return self.obs_dim * self.num_actions  # type: ignore
 
 
 class ScaleFeatTransform(FeatTransform):
@@ -135,7 +136,7 @@ class ScaleFeatTransform(FeatTransform):
 
     @property
     def output_shape(self) -> int:
-        return self.obs_dim * self.num_actions
+        return self.obs_dim * self.num_actions  # type: ignore
 
 
 class GaussianMixFeatTransform(FeatTransform):
@@ -152,7 +153,7 @@ class GaussianMixFeatTransform(FeatTransform):
         self.num_actions = env.action_space.n
         self._gm = mixture.GaussianMixture(**params)
         self._gm.fit(
-            [tup[0] for tup in data.collection_traj_data(env, steps=sample_steps)]
+            [tup[0] for tup in dataproc.collection_traj_data(env, steps=sample_steps)]
         )
         self.obs_dim = self._gm.n_components
 
@@ -192,7 +193,7 @@ class GaussianMixFeatTransform(FeatTransform):
 
     @property
     def output_shape(self) -> int:
-        return self.obs_dim * self.num_actions
+        return self.obs_dim * self.num_actions  # type: ignore
 
 
 class TileFeatTransform(FeatTransform):
@@ -200,8 +201,8 @@ class TileFeatTransform(FeatTransform):
         self,
         env: gym.Env,
         tiling_dim: int,
-        num_tilings: int = None,
-        hash_dim: int = None,
+        num_tilings: Optional[int] = None,
+        hash_dim: Optional[int] = None,
     ):
         if not isinstance(env.observation_space, gym.spaces.Box):
             raise ValueError("env.observation_space must be `spaces.Box`")
@@ -234,14 +235,14 @@ class TileFeatTransform(FeatTransform):
         idx = self._tiles(obs_scaled_01, action)
         output[idx] = 1
         if self.hash_dim:
-            return hashtutils.hashtrick(output, self.hash_dim)
+            return mathutils.hashtrick(output, self.hash_dim)
         return output
 
     def batch_transform(
         self, observations: Sequence[ObsType], actions: Sequence[ActType]
     ):
         # Convert observations to numpy array if not already
-        observations = np.asarray(observations)
+        observations = np.asarray(observations)  # type: ignore
 
         # Scale observations to [0,1] range
         obs_scaled_01 = (observations - self.obs_space.low) / self.obs_range
@@ -254,7 +255,7 @@ class TileFeatTransform(FeatTransform):
             idx = self._tiles(obs_scaled_01[i], actions[i])
             output[i, idx] = 1
             if self.hash_dim:
-                hashed_output[i] = hashtutils.hashtrick(output[i], self.hash_dim)
+                hashed_output[i] = mathutils.hashtrick(output[i], self.hash_dim)  # type:ignore
         return hashed_output if self.hash_dim else output
 
     @property
@@ -265,7 +266,7 @@ class TileFeatTransform(FeatTransform):
         return tiles.tileswrap(
             self.iht,
             numtilings=self.num_tilings,
-            floats=scaled_obs * self.tiling_dim,
+            floats=scaled_obs * self.tiling_dim,  # type: ignore
             wrapwidths=self.wrapwidths,
             ints=[action] if action is not None else [],
         )

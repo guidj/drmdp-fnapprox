@@ -160,6 +160,14 @@ ignore_missing_imports = true
 module = [ "pytest.*",]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = [ "sklearn.*",]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [ "gym_electric_motor.*",]
+ignore_missing_imports = true
+
 [tool.uv.sources]
 rlplg = { git = "https://github.com/guidj/rlplg" }
 
