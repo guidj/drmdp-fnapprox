@@ -174,7 +174,7 @@ class ProblemSpec:
     traj_mapping_method: str
     algorithm: str
     algorithm_args: Mapping[str, Any]
-    delay_config: Mapping[str, Any]
+    delay_config: Optional[Mapping[str, Any]]
     epsilon: float
     gamma: float
     learning_rate_config: Mapping[str, Any]

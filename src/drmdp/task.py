@@ -3,12 +3,21 @@ import logging
 import os
 import os.path
 import uuid
-from typing import Any, Iterator, List, Mapping, Sequence
+from typing import Any, Iterator, List, Mapping, Optional, Sequence
 
 import gymnasium as gym
 import numpy as np
 
-from drmdp import algorithms, core, envs, feats, logger, optsol
+from drmdp import algorithms, core, envs, feats, logger, optsol, rewdelay
+
+DELAYS: Sequence[type[rewdelay.RewardDelay]] = (
+    rewdelay.FixedDelay,
+    rewdelay.UniformDelay,
+    rewdelay.ClippedPoissonDelay,
+)
+DELAY_BUILDERS: Mapping[str, type[rewdelay.RewardDelay]] = {
+    clz.id(): clz for clz in DELAYS
+}
 
 
 def policy_control_run_fn(exp_instance: core.ExperimentInstance):
@@ -25,6 +34,12 @@ def policy_control_run_fn(exp_instance: core.ExperimentInstance):
         if exp_instance.experiment.env_spec.args
         else {},
     )
+
+    env = delay_wrapper(env, exp_instance.experiment.problem_spec.delay_config)
+    env = traj_mapper(
+        env, mapping_method=exp_instance.experiment.problem_spec.traj_mapping_method
+    )
+
     feats_tfx = feats.create_feat_transformer(
         env=env, **exp_instance.experiment.env_spec.feats_spec
     )
@@ -87,16 +102,18 @@ def policy_control(
 
     # Create spec using provided name and args for feature spec
     lr = learning_rate(**problem_spec.learning_rate_config)
-    sarsa = algorithms.SemigradietSARSAFnApprox(
-        env=env,
-        lr=lr,
-        gamma=problem_spec.gamma,
-        epsilon=problem_spec.epsilon,
-        policy=policy,
-    )
-    return sarsa.train(
-        num_episodes=num_episodes,
-    )
+    if problem_spec.algorithm == "sarsa":
+        sarsa = algorithms.SemigradietSARSAFnApprox(
+            env=env,
+            lr=lr,
+            gamma=problem_spec.gamma,
+            epsilon=problem_spec.epsilon,
+            policy=policy,
+        )
+        return sarsa.train(
+            num_episodes=num_episodes,
+        )
+    raise ValueError(f"Unknown algorithm {problem_spec.algorithm}")
 
 
 def create_task_id(task_prefix: str) -> str:
@@ -172,3 +189,21 @@ def learning_rate(name: str, args: Mapping[str, Any]) -> optsol.LearningRateSche
         return optsol.FixedLRSchedule(args["initial_lr"])
     else:
         raise ValueError(f"Unknown lr {name}")
+
+
+def delay_wrapper(env: gym.Env, delay_config: Optional[Mapping[str, Any]]) -> gym.Env:
+    if delay_config:
+        name = delay_config["name"]
+        args = delay_config["args"]
+        if name not in DELAY_BUILDERS:
+            raise ValueError(f"Unknown delay type {name}")
+        reward_delay = DELAY_BUILDERS[name](**args)
+        return rewdelay.DelayedRewardWrapper(env, reward_delay=reward_delay)
+    return env
+
+
+def traj_mapper(env: gym.Env, mapping_method: str):
+    if mapping_method == "identity":
+        return env
+    elif mapping_method == "zero-impute":
+        return rewdelay.ZeroImputeWrapper(env)
