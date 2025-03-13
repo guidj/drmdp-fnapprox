@@ -16,6 +16,7 @@ from typing import (
     Union,
 )
 
+import gymnasium as gym
 import numpy as np
 from gymnasium.core import ActType, ObsType, RenderFrame, SupportsFloat
 
@@ -48,6 +49,8 @@ class TrajectoryStep:
     """
     A trajectory step for training RL agents.
     """
+
+    # TODO: Replace with (s,a,s',r,term,trunc,info) entity
 
     observation: ObsType
     action: ActType
@@ -87,9 +90,11 @@ class PyPolicy(abc.ABC):
 
     def __init__(
         self,
+        action_space: gym.Space,
         emit_log_probability: bool = False,
         seed: Optional[int] = None,
     ):
+        self.action_space = action_space
         self.emit_log_probability = emit_log_probability
         self.seed = seed
 
@@ -127,6 +132,27 @@ class PyPolicy(abc.ABC):
         """
 
 
+class PyValueFnPolicy(PyPolicy):
+    @abc.abstractmethod
+    def action_values_gradients(self, observation: ObsType, actions: Sequence[ActType]):
+        """
+        Value for multiple actions
+        """
+
+    @abc.abstractmethod
+    def update(self, scaled_gradients):
+        """
+        Updates the policy's value
+        """
+
+    @property
+    @abc.abstractmethod
+    def model(self):
+        """
+        Model backing the policy.
+        """
+
+
 @dataclasses.dataclass(frozen=True)
 class EnvSpec:
     """
@@ -135,6 +161,7 @@ class EnvSpec:
 
     name: str
     args: Optional[Mapping[str, Any]]
+    feats_spec: Mapping[str, Any]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -151,7 +178,6 @@ class ProblemSpec:
     epsilon: float
     gamma: float
     learning_rate_config: Mapping[str, Any]
-    feats_spec: Mapping[str, Any]
 
 
 @dataclasses.dataclass(frozen=True)
