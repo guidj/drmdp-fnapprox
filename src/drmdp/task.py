@@ -57,7 +57,7 @@ def policy_control_run_fn(exp_instance: core.ExperimentInstance):
         policy_type=problem_spec.policy_type,
     )
 
-    logging.info("Starting DRMDP Control Experiments: %s", exp_instance)
+    logging.debug("Starting DRMDP Control Experiments: %s", exp_instance)
 
     results = policy_control(
         env=env,
