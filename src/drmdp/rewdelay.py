@@ -5,7 +5,7 @@ from typing import Callable, List, Optional, Sequence, Tuple
 import gymnasium as gym
 import numpy as np
 
-from drmdp import mathutils
+from drmdp import mathutils, optsol
 
 
 class RewardDelay(abc.ABC):
@@ -97,10 +97,14 @@ class DelayedRewardWrapper(gym.Wrapper):
         obs, reward, term, trunc, info = super().step(action)
         self.segment_step += 1
         self.rewards.append(reward)
-        if self.segment_step == self.delay:
+        
+        segment = self.segment
+        segment_step = self.segment_step
+        delay = self.delay
+        if self.segment_step == self.delay - 1:
             # reset segment
             self.segment += 1
-            self.segment_step = 0
+            self.segment_step = -1
             reward = self.op(self.rewards)
             # new delay
             self.delay = self.reward_delay.sample()
@@ -114,15 +118,15 @@ class DelayedRewardWrapper(gym.Wrapper):
             trunc,
             {
                 **info,
-                "delay": self.delay,
-                "segment": self.segment,
-                "segment_step": self.segment_step,
+                "delay": delay,
+                "segment": segment,
+                "segment_step": segment_step,
             },
         )
 
     def reset(self, *, seed=None, options=None):
         self.segment = 0
-        self.segment_step = 0
+        self.segment_step = -1
         self.delay = self.reward_delay.sample()
         obs, info = super().reset(seed=seed, options=options)
         return obs, {
@@ -144,3 +148,66 @@ class ZeroImputeMissingWrapper(gym.RewardWrapper):
         if reward is None:
             return 0.0
         return reward
+
+
+class LeastLfaMissingWrapper(gym.Wrapper):
+    def __init__(
+        self,
+        env: gym.Env,
+        obs_wrapper: gym.ObservationWrapper,
+        estimation_sample_size: int,
+    ):
+        super().__init__(env)
+        if not isinstance(obs_wrapper.observation_space, gym.spaces.Box):
+            raise ValueError(f"obs_wrapper space must of type Box. Got: {type(obs_wrapper)}")
+        if not isinstance(obs_wrapper.action_space, gym.spaces.Discrete):
+            raise ValueError(f"obs_wrapper space must of type Box. Got: {type(obs_wrapper)}")        
+        self.obs_wrapper = obs_wrapper
+        self.estimation_sample_size = estimation_sample_size
+        self.obs_buffer = []
+        self.rew_buffer = []
+
+        self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
+        self.mdim = self.obs_dim  * obs_wrapper.action_space.n + self.obs_dim
+        # self._segment_states = []
+        # self._segment_actions = []
+        self._obs = None
+        self._segment_features = None
+        self._weights = None
+        
+
+    def step(self, action):
+        obs, reward, term, trunc, info = super().step(action)
+        self._segment_features[action*self.obs_dim: action*self.obs_dim] += self._obs
+        self._segment_features[-self.obs_dim:] += obs
+
+        if self._weights is not None:
+            # estimate
+            reward = np.dot(self._segment_features, self._weights)
+            # reset for next step
+            self._segment_features = np.zeros(shape=(self.mdim))
+        else:
+            # Add obs to action-specific columns
+            if info["segment_step"] == info["delay"] - 1:
+                self.obs_buffer.append(self._segment_features)
+                # aggregate reward
+                self.rew_buffer.append(reward)
+                # reset for the next one
+                self._segment_features = np.zeros(shape=(self.mdim))
+
+            # zero impute until rewards are estimated
+            reward = 0.0
+
+            if len(self.obs_buffer) >= self.estimation_sample_size:
+                # estimate rewards
+                self._weights = optsol.solve_least_squares(
+                    matrix=np.stack(self.obs_buffer), rhs=np.array(self.rew_buffer)
+                )
+        self._obs = obs
+        return obs, reward, term, trunc, info
+
+    def reset(self, *, seed=None, options=None):
+        obs, info = super().reset(seed=seed, options=options)
+        self._obs = obs
+        self._segment_features = np.zeros(shape=(self.mdim))
+        return obs, info

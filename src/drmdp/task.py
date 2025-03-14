@@ -1,3 +1,4 @@
+import copy
 import dataclasses
 import logging
 import os
@@ -9,6 +10,7 @@ import gymnasium as gym
 import numpy as np
 
 from drmdp import algorithms, core, envs, feats, logger, optsol, rewdelay
+from drmdp.envs import wrappers
 
 DELAYS: Sequence[type[rewdelay.RewardDelay]] = (
     rewdelay.FixedDelay,
@@ -37,8 +39,7 @@ def policy_control_run_fn(exp_instance: core.ExperimentInstance):
 
     rew_delay = reward_delay_distribution(problem_spec.delay_config)
     env = delay_wrapper(env, rew_delay)
-    env = traj_mapper(env, mapping_method=problem_spec.traj_mapping_method)
-
+    env = traj_mapper(env, mapping_method=problem_spec.traj_mapping_method, feats_spec=env_spec.feats_spec)
     feats_tfx = feats.create_feat_transformer(env=env, **env_spec.feats_spec)
     lr = learning_rate(**problem_spec.learning_rate_config)
     # Create spec using provided name and args for feature spec
@@ -52,7 +53,7 @@ def policy_control_run_fn(exp_instance: core.ExperimentInstance):
         policy_type=problem_spec.policy_type,
     )
 
-    logging.debug("Starting DAAF Control Experiments: %s", exp_instance)
+    logging.info("Starting DRMDP Control Experiments: %s", exp_instance)
 
     results = policy_control(
         env=env,
@@ -71,9 +72,6 @@ def policy_control_run_fn(exp_instance: core.ExperimentInstance):
                         episode=episode,
                         steps=snapshot.steps,
                         returns=np.mean(returns).item(),
-                        # Action values can be large tables
-                        # especially for options policies
-                        # so we log state values and best actions
                         info={},
                     )
 
@@ -92,25 +90,12 @@ def policy_control_run_fn(exp_instance: core.ExperimentInstance):
 
 def policy_control(
     env: gym.Env,
-    # policy: core.PyValueFnPolicy,
     algorithm: algorithms.FnApproxAlgorithm,
     num_episodes: int,
 ) -> Iterator[algorithms.PolicyControlSnapshot]:
     """
     Runs policy control with given algorithm, env, and policy spec.
     """
-    # create lrs
-    # init values
-    # traj-mapper/wrapper
-    # run algorithms
-
-    # sarsa = algorithms.SemigradietSARSAFnApprox(
-    #     env=env,
-    #     lr=lr,
-    #     gamma=problem_spec.gamma,
-    #     epsilon=problem_spec.epsilon,
-    #     policy=policy,
-    # )
     return algorithm.train(
         env=env,
         num_episodes=num_episodes,
@@ -212,13 +197,18 @@ def delay_wrapper(
     return env
 
 
-def traj_mapper(env: gym.Env, mapping_method: str):
+def traj_mapper(env: gym.Env, mapping_method: str, feats_spec: Mapping[str, Any]):
     if mapping_method == "identity":
         return env
     elif mapping_method == "zero-impute":
         return rewdelay.ZeroImputeMissingWrapper(env)
     elif mapping_method == "least-lfa":
-        return None
+        # local copy before pop
+        feats_spec = copy.deepcopy(feats_spec)
+        wrapper_name = feats_spec.pop("name")
+        return rewdelay.LeastLfaMissingWrapper(
+            env=env, obs_wrapper=wrappers.wrap(env, wrapper=wrapper_name, **feats_spec), estimation_sample_size=1000
+        )
     raise ValueError(f"Unknown mapping_method: {mapping_method}")
 
 
