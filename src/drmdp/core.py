@@ -113,6 +113,7 @@ class PyPolicy(abc.ABC):
     def action(
         self,
         observation: ObsType,
+        epsilon: float = 0.0,
         policy_state: Any = (),
         seed: Optional[int] = None,
     ) -> PolicyStep:
@@ -172,8 +173,6 @@ class ProblemSpec:
 
     policy_type: str
     traj_mapping_method: str
-    algorithm: str
-    algorithm_args: Mapping[str, Any]
     delay_config: Optional[Mapping[str, Any]]
     epsilon: float
     gamma: float

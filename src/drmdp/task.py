@@ -28,31 +28,35 @@ def policy_control_run_fn(exp_instance: core.ExperimentInstance):
         args: configuration for execution.
     """
     # init env and agent
+    env_spec = exp_instance.experiment.env_spec
+    problem_spec = exp_instance.experiment.problem_spec
     env = envs.make(
-        env_name=exp_instance.experiment.env_spec.name,
-        **exp_instance.experiment.env_spec.args
-        if exp_instance.experiment.env_spec.args
-        else {},
+        env_name=env_spec.name,
+        **env_spec.args if env_spec.args else {},
     )
 
-    env = delay_wrapper(env, exp_instance.experiment.problem_spec.delay_config)
-    env = traj_mapper(
-        env, mapping_method=exp_instance.experiment.problem_spec.traj_mapping_method
-    )
+    rew_delay = reward_delay_distribution(problem_spec.delay_config)
+    env = delay_wrapper(env, rew_delay)
+    env = traj_mapper(env, mapping_method=problem_spec.traj_mapping_method)
 
-    feats_tfx = feats.create_feat_transformer(
-        env=env, **exp_instance.experiment.env_spec.feats_spec
-    )
-    policy = algorithms.LinearFnApproxPolicy(
-        feat_transform=feats_tfx, action_space=env.action_space
+    feats_tfx = feats.create_feat_transformer(env=env, **env_spec.feats_spec)
+    lr = learning_rate(**problem_spec.learning_rate_config)
+    # Create spec using provided name and args for feature spec
+    algorithm = create_algorithm(
+        env=env,
+        feats_transform=feats_tfx,
+        delay_reward=rew_delay,
+        lr=lr,
+        gamma=problem_spec.gamma,
+        epsilon=problem_spec.epsilon,
+        policy_type=problem_spec.policy_type,
     )
 
     logging.debug("Starting DAAF Control Experiments: %s", exp_instance)
 
     results = policy_control(
         env=env,
-        policy=policy,
-        problem_spec=exp_instance.experiment.problem_spec,
+        algorithm=algorithm,
         num_episodes=exp_instance.run_config.episodes_per_run,
     )
     with logger.ExperimentLogger(
@@ -88,8 +92,8 @@ def policy_control_run_fn(exp_instance: core.ExperimentInstance):
 
 def policy_control(
     env: gym.Env,
-    policy: core.PyValueFnPolicy,
-    problem_spec: core.ProblemSpec,
+    # policy: core.PyValueFnPolicy,
+    algorithm: algorithms.FnApproxAlgorithm,
     num_episodes: int,
 ) -> Iterator[algorithms.PolicyControlSnapshot]:
     """
@@ -100,20 +104,17 @@ def policy_control(
     # traj-mapper/wrapper
     # run algorithms
 
-    # Create spec using provided name and args for feature spec
-    lr = learning_rate(**problem_spec.learning_rate_config)
-    if problem_spec.algorithm == "sarsa":
-        sarsa = algorithms.SemigradietSARSAFnApprox(
-            env=env,
-            lr=lr,
-            gamma=problem_spec.gamma,
-            epsilon=problem_spec.epsilon,
-            policy=policy,
-        )
-        return sarsa.train(
-            num_episodes=num_episodes,
-        )
-    raise ValueError(f"Unknown algorithm {problem_spec.algorithm}")
+    # sarsa = algorithms.SemigradietSARSAFnApprox(
+    #     env=env,
+    #     lr=lr,
+    #     gamma=problem_spec.gamma,
+    #     epsilon=problem_spec.epsilon,
+    #     policy=policy,
+    # )
+    return algorithm.train(
+        env=env,
+        num_episodes=num_episodes,
+    )
 
 
 def create_task_id(task_prefix: str) -> str:
@@ -191,13 +192,22 @@ def learning_rate(name: str, args: Mapping[str, Any]) -> optsol.LearningRateSche
         raise ValueError(f"Unknown lr {name}")
 
 
-def delay_wrapper(env: gym.Env, delay_config: Optional[Mapping[str, Any]]) -> gym.Env:
+def reward_delay_distribution(
+    delay_config: Optional[Mapping[str, Any]],
+) -> Optional[rewdelay.RewardDelay]:
     if delay_config:
         name = delay_config["name"]
         args = delay_config["args"]
         if name not in DELAY_BUILDERS:
             raise ValueError(f"Unknown delay type {name}")
-        reward_delay = DELAY_BUILDERS[name](**args)
+        return DELAY_BUILDERS[name](**args)
+    return None
+
+
+def delay_wrapper(
+    env: gym.Env, reward_delay: Optional[rewdelay.RewardDelay]
+) -> gym.Env:
+    if reward_delay:
         return rewdelay.DelayedRewardWrapper(env, reward_delay=reward_delay)
     return env
 
@@ -206,4 +216,38 @@ def traj_mapper(env: gym.Env, mapping_method: str):
     if mapping_method == "identity":
         return env
     elif mapping_method == "zero-impute":
-        return rewdelay.ZeroImputeWrapper(env)
+        return rewdelay.ZeroImputeMissingWrapper(env)
+
+
+def create_algorithm(
+    env: gym.Env,
+    feats_transform: feats.FeatTransform,
+    policy_type: str,
+    delay_reward: Optional[rewdelay.RewardDelay],
+    lr: optsol.LearningRateSchedule,
+    gamma: float,
+    epsilon: float,
+):
+    if policy_type == "markovian":
+        return algorithms.SemigradietSARSAFnApprox(
+            lr=lr,
+            gamma=gamma,
+            epsilon=epsilon,
+            policy=algorithms.LinearFnApproxPolicy(
+                feat_transform=feats_transform, action_space=env.action_space
+            ),
+        )
+    elif policy_type == "options":
+        if delay_reward is None:
+            raise ValueError("`delay_reward` must be provided")
+        return algorithms.OptionsSemigradietSARSAFnApprox(
+            lr=lr,
+            gamma=gamma,
+            epsilon=epsilon,
+            policy=algorithms.OptionsLinearFnApproxPolicy(
+                feat_transform=feats_transform,
+                action_space=env.action_space,
+                options_length_range=delay_reward.range(),
+            ),
+        )
+    raise ValueError(f"Unknown policy_type: {policy_type}")
