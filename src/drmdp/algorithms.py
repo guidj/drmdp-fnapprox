@@ -361,3 +361,111 @@ class OptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
     @property
     def model(self):
         return self.weights
+
+
+class SingleActionOptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
+    def __init__(
+        self,
+        feat_transform: feats.FeatTransform,
+        action_space: gym.Space,
+        options_length_range: Tuple[int, int],
+        emit_log_probability=False,
+        seed=None,
+    ):
+        if not isinstance(action_space, gym.spaces.Discrete):
+            raise ValueError(
+                f"This policy only supports discrete action spaces. Got {type(action_space)}"
+            )
+        super().__init__(action_space, emit_log_probability, seed)
+        self.feat_transform = feat_transform
+        # + plus something something
+        self.primitive_actions = tuple(range(action_space.n))
+        self.num_primitive_actions = len(self.primitive_actions)
+        self.options_length_range = options_length_range
+        self.rng = np.random.default_rng()
+
+        lower, upper = self.options_length_range
+        self.delay_options_mapping = {
+            length: self.num_primitive_actions for length in range(lower, upper + 1)
+        }
+        option_enc_size = 2**0
+        while option_enc_size <= self.delay_options_mapping[upper]:
+            option_enc_size = option_enc_size * 2  # type: ignore
+        self.option_enc_size = option_enc_size
+        # seq len + OHE[delay]
+        self.options_dim = self.option_enc_size + (upper - lower + 1)
+        self.features_dim = self.feat_transform.output_shape + self.options_dim
+        self.options_m = self.options_encoding()
+        self.weights = np.zeros(self.features_dim, dtype=np.float64)
+
+        self.action_space = gym.spaces.Discrete(
+            sum(value for value in self.delay_options_mapping.values())
+        )
+
+    def options_encoding(self):
+        """
+        Pre-compute values of every option
+        """
+        lower, upper = self.options_length_range
+        options_m = {}
+        for delay in range(lower, upper + 1):
+            options_m[delay] = self.transform_options(
+                range(self.delay_options_mapping[delay]), delay
+            )
+        return options_m
+
+    def transform_options(self, options, delay):
+        lower, upper = self.options_length_range
+        zs = np.zeros(shape=(len(options), self.options_dim))
+        ohe_delay = np.zeros(shape=(upper - lower + 1))
+        ohe_delay[upper - delay] = 1
+        for i, option in enumerate(options):
+            seq_enc = mathutils.interger_to_sequence(
+                space_size=2, sequence_length=self.option_enc_size, index=option
+            )
+            zs[i] = np.concatenate([seq_enc, ohe_delay])
+        return zs
+
+    def get_initial_state(self, batch_size=None):
+        del batch_size
+        return ()
+
+    def action(
+        self, observation, epsilon: float = 0.0, policy_state: Any = (), seed=None
+    ):
+        del seed
+        (delay,) = policy_state
+        state_qvalues, gradients = self.action_values_gradients(observation, (delay,))
+        if epsilon and self.rng.random() < epsilon:
+            option = self.rng.integers(0, self.delay_options_mapping[delay])
+        else:
+            option = self.rng.choice(
+                np.flatnonzero(state_qvalues == state_qvalues.max())
+            )
+        actions = mathutils.interger_to_sequence(
+            space_size=10, sequence_length=delay, index=option
+        )
+        return core.PolicyStep(
+            option,
+            state=policy_state,
+            info={"values": state_qvalues, "gradients": gradients, "actions": actions},
+        )
+
+    def action_values_gradients(self, observation, actions):
+        # observations = [observation] * len(actions)
+        (delay,) = actions
+        # repeat state m times
+        options_m = self.options_m[delay]
+        state_m = np.tile(
+            self.feat_transform.transform(observation, 0), (options_m.shape[0], 1)
+        )
+        # get option representations
+        features_m = np.concatenate([state_m, options_m], axis=1)
+        return np.dot(features_m, self.weights), features_m
+
+    def update(self, scaled_gradients):
+        self.weights += scaled_gradients
+
+    @property
+    def model(self):
+        return self.weights

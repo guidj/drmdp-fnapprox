@@ -250,4 +250,18 @@ def create_algorithm(
                 options_length_range=delay_reward.range(),
             ),
         )
+    elif policy_type == "single-action-options":
+        if delay_reward is None:
+            raise ValueError("`delay_reward` must be provided")
+        return algorithms.OptionsSemigradietSARSAFnApprox(
+            lr=lr,
+            gamma=gamma,
+            epsilon=epsilon,
+            policy=algorithms.SingleActionOptionsLinearFnApproxPolicy(
+                feat_transform=feats_transform,
+                action_space=env.action_space,
+                options_length_range=delay_reward.range(),
+            ),
+        )
+
     raise ValueError(f"Unknown policy_type: {policy_type}")
