@@ -51,7 +51,7 @@ class TrajectoryStep:
     """
 
     # TODO: Replace with (s,a,s',r,term,trunc,info) entity
-
+    # TODO: or remove class
     observation: ObsType
     action: ActType
     policy_info: Mapping[str, Any]
