@@ -20,7 +20,10 @@ class PolicyControlSnapshot:
 class FnApproxAlgorithm(abc.ABC):
     @abc.abstractmethod
     def train(
-        self, env: gym.Env, num_episodes: int
+        self,
+        env: gym.Env,
+        num_episodes: int,
+        monitor: core.EnvMonitor,
     ) -> Iterator[PolicyControlSnapshot]: ...
 
 
@@ -41,8 +44,12 @@ class SemigradientSARSAFnApprox(FnApproxAlgorithm):
         self.verbose = verbose
         self.policy = policy
 
-    def train(self, env: gym.Env, num_episodes: int) -> Iterator[PolicyControlSnapshot]:
-        returns = []
+    def train(
+        self,
+        env: gym.Env,
+        num_episodes: int,
+        monitor: core.EnvMonitor,
+    ) -> Iterator[PolicyControlSnapshot]:
         for episode in range(num_episodes):
             obs, _ = env.reset()
             policy_step = self.policy.action(obs, epsilon=self.epsilon)
@@ -50,8 +57,6 @@ class SemigradientSARSAFnApprox(FnApproxAlgorithm):
                 policy_step.info["values"],
                 policy_step.info["gradients"],
             )
-            steps = 0
-            rewards = 0
             while True:
                 (
                     next_obs,
@@ -60,11 +65,10 @@ class SemigradientSARSAFnApprox(FnApproxAlgorithm):
                     trunc,
                     _,
                 ) = env.step(policy_step.action)
-                rewards += reward
 
                 if term or trunc:
                     scaled_gradients = (
-                        self.lr(episode, steps)
+                        self.lr(episode, monitor.step)
                         * (reward - state_qvalues[policy_step.action])
                         * gradients[policy_step.action]
                     )
@@ -77,7 +81,7 @@ class SemigradientSARSAFnApprox(FnApproxAlgorithm):
                     next_policy_step.info["gradients"],
                 )
                 scaled_gradients = (
-                    self.lr(episode, steps)
+                    self.lr(episode, monitor.step)
                     * (
                         reward
                         + self.gamma * next_state_qvalues[next_policy_step.action]
@@ -90,15 +94,15 @@ class SemigradientSARSAFnApprox(FnApproxAlgorithm):
                 policy_step = next_policy_step
                 state_qvalues = next_state_qvalues
                 gradients = next_gradients
-                steps += 1
-            returns.append(rewards)
             if self.verbose and (episode + 1) % (num_episodes // 5) == 0:
                 logging.info(
-                    "Episode %d mean returns: %f", episode + 1, np.mean(returns)
+                    "Episode %d mean returns: %f",
+                    episode + 1,
+                    np.mean(monitor.returns + [monitor.rewards]),
                 )
             yield PolicyControlSnapshot(
-                steps=steps,
-                returns=rewards,
+                steps=monitor.step,
+                returns=monitor.rewards,
                 weights=copy.copy(self.policy.model),
             )
         env.close()
@@ -178,8 +182,12 @@ class OptionsSemigradientSARSAFnApprox(FnApproxAlgorithm):
         self.verbose = verbose
         self.egreedy_policy = policy
 
-    def train(self, env: gym.Env, num_episodes: int) -> Iterator[PolicyControlSnapshot]:
-        returns = []
+    def train(
+        self,
+        env: gym.Env,
+        num_episodes: int,
+        monitor: core.EnvMonitor,
+    ) -> Iterator[PolicyControlSnapshot]:
         for episode in range(num_episodes):
             obs, info = env.reset()
             policy_step = self.egreedy_policy.action(
@@ -190,8 +198,6 @@ class OptionsSemigradientSARSAFnApprox(FnApproxAlgorithm):
                 policy_step.info["gradients"],
                 policy_step.info["actions"],
             )
-            steps = 0
-            rewards = 0
             while True:
                 for idx, action in enumerate(actions):
                     (
@@ -201,15 +207,13 @@ class OptionsSemigradientSARSAFnApprox(FnApproxAlgorithm):
                         trunc,
                         info,
                     ) = env.step(action)
-                    rewards += reward if reward is not None else 0.0
-                    steps += 1
 
                     if term or trunc:
                         # aggregate reward is available
                         # update before terminating episode
                         if idx == len(actions) - 1:
                             scaled_gradients = (
-                                self.lr(episode, steps)
+                                self.lr(episode, monitor.step)
                                 * (reward - state_qvalues[policy_step.action])
                                 * gradients[policy_step.action]
                             )
@@ -227,7 +231,7 @@ class OptionsSemigradientSARSAFnApprox(FnApproxAlgorithm):
                     next_policy_step.info["actions"],
                 )
                 scaled_gradients = (
-                    self.lr(episode, steps)
+                    self.lr(episode, monitor.step)
                     * (
                         reward
                         + self.gamma * next_state_qvalues[next_policy_step.action]
@@ -241,14 +245,15 @@ class OptionsSemigradientSARSAFnApprox(FnApproxAlgorithm):
                 state_qvalues = next_state_qvalues
                 gradients = next_gradients
                 actions = next_actions
-            returns.append(rewards)
             if self.verbose and (episode + 1) % (num_episodes // 5) == 0:
                 logging.info(
-                    "Episode %d mean returns: %f", episode + 1, np.mean(returns)
+                    "Episode %d mean returns: %f",
+                    episode + 1,
+                    np.mean(monitor.returns + [monitor.rewards]),
                 )
             yield PolicyControlSnapshot(
-                steps=steps,
-                returns=rewards,
+                steps=monitor.step,
+                returns=monitor.rewards,
                 weights=copy.copy(self.egreedy_policy.model),
             )
         env.close()

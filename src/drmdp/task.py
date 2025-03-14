@@ -4,7 +4,7 @@ import logging
 import os
 import os.path
 import uuid
-from typing import Any, Iterator, List, Mapping, Optional, Sequence
+from typing import Any, Iterator, List, Mapping, Optional, Sequence, Tuple
 
 import gymnasium as gym
 import numpy as np
@@ -36,7 +36,7 @@ def policy_control_run_fn(exp_instance: core.ExperimentInstance):
         env_name=env_spec.name,
         **env_spec.args if env_spec.args else {},
     )
-
+    env, monitor = monitor_wrapper(env)
     rew_delay = reward_delay_distribution(problem_spec.delay_config)
     env = delay_wrapper(env, rew_delay)
     env = reward_mapper(
@@ -63,6 +63,7 @@ def policy_control_run_fn(exp_instance: core.ExperimentInstance):
         env=env,
         algorithm=algorithm,
         num_episodes=exp_instance.run_config.episodes_per_run,
+        monitor=monitor,
     )
     with logger.ExperimentLogger(
         log_dir=exp_instance.run_config.output_dir, experiment_instance=exp_instance
@@ -96,14 +97,12 @@ def policy_control(
     env: gym.Env,
     algorithm: algorithms.FnApproxAlgorithm,
     num_episodes: int,
+    monitor: core.EnvMonitor,
 ) -> Iterator[algorithms.PolicyControlSnapshot]:
     """
     Runs policy control with given algorithm, env, and policy spec.
     """
-    return algorithm.train(
-        env=env,
-        num_episodes=num_episodes,
-    )
+    return algorithm.train(env=env, num_episodes=num_episodes, monitor=monitor)
 
 
 def create_task_id(task_prefix: str) -> str:
@@ -191,6 +190,11 @@ def reward_delay_distribution(
             raise ValueError(f"Unknown delay type {name}")
         return DELAY_BUILDERS[name](**args)
     return None
+
+
+def monitor_wrapper(env: gym.Env) -> Tuple[gym.Env, core.EnvMonitor]:
+    mon_env = core.EnvMonitorWrapper(env)
+    return mon_env, mon_env.mon
 
 
 def delay_wrapper(

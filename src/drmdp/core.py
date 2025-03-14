@@ -173,3 +173,34 @@ class ExperimentInstance:
     experiment: Experiment
     run_config: RunConfig
     context: Optional[Mapping[str, Any]]
+
+
+class EnvMonitorWrapper(gym.Wrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        self.mon = EnvMonitor()
+
+    def step(self, action):
+        obs, reward, term, trunc, info = super().step(action)
+        self.mon.rewards += reward
+        self.mon.step += 1
+        return obs, reward, term, trunc, info
+
+    def reset(self, *, seed=None, options=None):
+        self.mon.reset()
+        return super().reset(seed=seed, options=options)
+
+
+class EnvMonitor:
+    def __init__(self):
+        self.returns: List[float] = []
+        self.steps: List[int] = []
+        self.rewards: float = 0
+        self.step: int = 0
+
+    def reset(self):
+        if self.step > 0:
+            self.returns.append(self.rewards)
+            self.steps.append(self.step)
+        self.rewards = 0.0
+        self.step = 0
