@@ -44,45 +44,6 @@ class PolicyStep:
     info: Mapping[str, Any]
 
 
-@dataclasses.dataclass(frozen=True)
-class TrajectoryStep:
-    """
-    A trajectory step for training RL agents.
-    """
-
-    # TODO: Replace with (s,a,s',r,term,trunc,info) entity
-    # TODO: or remove class
-    observation: ObsType
-    action: ActType
-    policy_info: Mapping[str, Any]
-    terminated: bool
-    truncated: bool
-    reward: float
-    info: Mapping[str, Any]
-
-    @staticmethod
-    def from_transition(
-        time_step: TimeStep,
-        action_step: PolicyStep,
-        next_time_step: TimeStep,
-    ) -> "TrajectoryStep":
-        """
-        Builds a trajectory step given a state and action.
-        """
-        obs, _, terminated, truncated, _ = time_step
-        _, next_reward, _, _, _ = next_time_step
-
-        return TrajectoryStep(
-            observation=obs,
-            action=action_step.action,
-            policy_info=action_step.info,
-            terminated=terminated,
-            truncated=truncated,
-            reward=next_reward,
-            info={},
-        )
-
-
 class PyPolicy(abc.ABC):
     """
     Base class for python policies.
