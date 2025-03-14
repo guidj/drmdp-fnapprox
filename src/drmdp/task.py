@@ -39,7 +39,11 @@ def policy_control_run_fn(exp_instance: core.ExperimentInstance):
 
     rew_delay = reward_delay_distribution(problem_spec.delay_config)
     env = delay_wrapper(env, rew_delay)
-    env = traj_mapper(env, mapping_method=problem_spec.traj_mapping_method, feats_spec=env_spec.feats_spec)
+    env = traj_mapper(
+        env,
+        mapping_method=problem_spec.traj_mapping_method,
+        feats_spec=env_spec.feats_spec,
+    )
     feats_tfx = feats.create_feat_transformer(env=env, **env_spec.feats_spec)
     lr = learning_rate(**problem_spec.learning_rate_config)
     # Create spec using provided name and args for feature spec
@@ -204,10 +208,12 @@ def traj_mapper(env: gym.Env, mapping_method: str, feats_spec: Mapping[str, Any]
         return rewdelay.ZeroImputeMissingWrapper(env)
     elif mapping_method == "least-lfa":
         # local copy before pop
-        feats_spec = copy.deepcopy(feats_spec)
+        feats_spec = dict(copy.deepcopy(feats_spec))
         wrapper_name = feats_spec.pop("name")
         return rewdelay.LeastLfaMissingWrapper(
-            env=env, obs_encoding_wrapper=wrappers.wrap(env, wrapper=wrapper_name, **feats_spec), estimation_sample_size=1000
+            env=env,
+            obs_encoding_wrapper=wrappers.wrap(env, wrapper=wrapper_name, **feats_spec),
+            estimation_sample_size=5000,
         )
     raise ValueError(f"Unknown mapping_method: {mapping_method}")
 

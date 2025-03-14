@@ -97,7 +97,7 @@ class DelayedRewardWrapper(gym.Wrapper):
         obs, reward, term, trunc, info = super().step(action)
         self.segment_step += 1
         self.rewards.append(reward)
-        
+
         segment = self.segment
         segment_step = self.segment_step
         delay = self.delay
@@ -159,27 +159,32 @@ class LeastLfaMissingWrapper(gym.Wrapper):
     ):
         super().__init__(env)
         if not isinstance(obs_encoding_wrapper.observation_space, gym.spaces.Box):
-            raise ValueError(f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper)}")
+            raise ValueError(
+                f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper)}"
+            )
         if not isinstance(obs_encoding_wrapper.action_space, gym.spaces.Discrete):
-            raise ValueError(f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper)}")        
+            raise ValueError(
+                f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper)}"
+            )
         self.obs_wrapper = obs_encoding_wrapper
         self.estimation_sample_size = estimation_sample_size
-        self.obs_buffer = []
-        self.rew_buffer = []
+        self.obs_buffer: List[np.ndarray] = []
+        self.rew_buffer: List[np.ndarray] = []
 
         self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
-        self.mdim = self.obs_dim  * obs_encoding_wrapper.action_space.n + self.obs_dim
+        self.mdim = self.obs_dim * obs_encoding_wrapper.action_space.n + self.obs_dim
         # self._segment_states = []
         # self._segment_actions = []
         self._obs = None
         self._segment_features = None
         self._weights = None
-        
 
     def step(self, action):
         obs, reward, term, trunc, info = super().step(action)
-        self._segment_features[action*self.obs_dim: (action +1)*self.obs_dim] += self._obs
-        self._segment_features[-self.obs_dim:] += self.obs_wrapper.observation(obs)
+        self._segment_features[action * self.obs_dim : (action + 1) * self.obs_dim] += (
+            self._obs
+        )
+        self._segment_features[-self.obs_dim :] += self.obs_wrapper.observation(obs)
 
         if self._weights is not None:
             # estimate

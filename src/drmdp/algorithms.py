@@ -280,9 +280,9 @@ class OptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
             length: self.num_primitive_actions**length
             for length in range(lower, upper + 1)
         }
-        option_enc_size = 2**0
-        while option_enc_size <= self.delay_options_mapping[upper]:
-            option_enc_size = option_enc_size * 2  # type: ignore
+        option_enc_size = 1
+        while 2**option_enc_size < self.delay_options_mapping[upper]:
+            option_enc_size += 1  # type: ignore
         self.option_enc_size = option_enc_size
         # seq len + OHE[delay]
         self.options_dim = self.option_enc_size + (upper - lower + 1)
@@ -388,9 +388,9 @@ class SingleActionOptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
         self.delay_options_mapping = {
             length: self.num_primitive_actions for length in range(lower, upper + 1)
         }
-        option_enc_size = 2**0
-        while option_enc_size <= self.delay_options_mapping[upper]:
-            option_enc_size = option_enc_size * 2  # type: ignore
+        option_enc_size = 1
+        while 2**option_enc_size < self.delay_options_mapping[upper]:
+            option_enc_size += 1  # type: ignore
         self.option_enc_size = option_enc_size
         # seq len + OHE[delay]
         self.options_dim = self.option_enc_size + (upper - lower + 1)
@@ -442,9 +442,7 @@ class SingleActionOptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
             option = self.rng.choice(
                 np.flatnonzero(state_qvalues == state_qvalues.max())
             )
-        actions = mathutils.interger_to_sequence(
-            space_size=10, sequence_length=delay, index=option
-        )
+        actions = (option,) * delay
         return core.PolicyStep(
             option,
             state=policy_state,
