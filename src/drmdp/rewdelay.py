@@ -94,15 +94,15 @@ class DelayedRewardWrapper(gym.Wrapper):
         self.op = op
 
     def step(self, action):
-        # TODO: add metadata to `info`
         obs, reward, term, trunc, info = super().step(action)
         self.segment_step += 1
         self.rewards.append(reward)
         if self.segment_step == self.delay:
+            # reset segment
             self.segment += 1
             self.segment_step = 0
             reward = self.op(self.rewards)
-            # reset segment
+            # new delay
             self.delay = self.reward_delay.sample()
             self.rewards = []
         else:

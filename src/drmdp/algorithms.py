@@ -24,7 +24,7 @@ class FnApproxAlgorithm(abc.ABC):
     ) -> Iterator[PolicyControlSnapshot]: ...
 
 
-class SemigradietSARSAFnApprox(FnApproxAlgorithm):
+class SemigradientSARSAFnApprox(FnApproxAlgorithm):
     def __init__(
         self,
         lr: optsol.LearningRateSchedule,
@@ -160,7 +160,7 @@ class LinearFnApproxPolicy(core.PyValueFnPolicy):
         return self.weights
 
 
-class OptionsSemigradietSARSAFnApprox(FnApproxAlgorithm):
+class OptionsSemigradientSARSAFnApprox(FnApproxAlgorithm):
     def __init__(
         self,
         lr: optsol.LearningRateSchedule,

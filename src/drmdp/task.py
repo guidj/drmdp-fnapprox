@@ -217,6 +217,9 @@ def traj_mapper(env: gym.Env, mapping_method: str):
         return env
     elif mapping_method == "zero-impute":
         return rewdelay.ZeroImputeMissingWrapper(env)
+    elif mapping_method == "least-lfa":
+        return None
+    raise ValueError(f"Unknown mapping_method: {mapping_method}")
 
 
 def create_algorithm(
@@ -229,7 +232,7 @@ def create_algorithm(
     epsilon: float,
 ):
     if policy_type == "markovian":
-        return algorithms.SemigradietSARSAFnApprox(
+        return algorithms.SemigradientSARSAFnApprox(
             lr=lr,
             gamma=gamma,
             epsilon=epsilon,
@@ -240,7 +243,7 @@ def create_algorithm(
     elif policy_type == "options":
         if delay_reward is None:
             raise ValueError("`delay_reward` must be provided")
-        return algorithms.OptionsSemigradietSARSAFnApprox(
+        return algorithms.OptionsSemigradientSARSAFnApprox(
             lr=lr,
             gamma=gamma,
             epsilon=epsilon,
@@ -253,7 +256,7 @@ def create_algorithm(
     elif policy_type == "single-action-options":
         if delay_reward is None:
             raise ValueError("`delay_reward` must be provided")
-        return algorithms.OptionsSemigradietSARSAFnApprox(
+        return algorithms.OptionsSemigradientSARSAFnApprox(
             lr=lr,
             gamma=gamma,
             epsilon=epsilon,
