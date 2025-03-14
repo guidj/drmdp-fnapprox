@@ -102,9 +102,15 @@ class RandomBinaryFeatTransform(FeatTransform):
 class ScaleFeatTransform(FeatTransform):
     def __init__(self, env: gym.Env):
         if not isinstance(env.observation_space, gym.spaces.Box):
-            raise ValueError("env.observation_space must be `spaces.Box`")
+            raise ValueError(
+                f"env.observation_space must be `spaces.Box`. Got {env.observation_space}",
+                env,
+            )
         if not isinstance(env.action_space, gym.spaces.Discrete):
-            raise ValueError("env.action_space must be `spaces.Discrete`")
+            raise ValueError(
+                f"env.action_space must be `spaces.Discrete`. Got {env.action_space}",
+                env,
+            )
 
         self.obs_space = env.observation_space
         self.num_actions = env.action_space.n
