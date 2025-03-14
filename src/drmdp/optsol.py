@@ -26,9 +26,6 @@ class LearningRateSchedule(abc.ABC):
 
 
 class ConstantLRSchedule(LearningRateSchedule):
-    def __init__(self, initial_lr: float):
-        super().__init__(initial_lr)
-
     def schedule(self, episode=None, step=None):
         del episode
         del step
