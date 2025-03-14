@@ -172,7 +172,7 @@ class ProblemSpec:
     """
 
     policy_type: str
-    traj_mapping_method: str
+    reward_mapper: Mapping[str, Any]
     delay_config: Optional[Mapping[str, Any]]
     epsilon: float
     gamma: float

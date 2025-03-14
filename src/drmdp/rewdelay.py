@@ -1,4 +1,5 @@
 import abc
+import logging
 import random
 from typing import Callable, List, Optional, Sequence, Tuple
 
@@ -173,8 +174,6 @@ class LeastLfaMissingWrapper(gym.Wrapper):
 
         self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
         self.mdim = self.obs_dim * obs_encoding_wrapper.action_space.n + self.obs_dim
-        # self._segment_states = []
-        # self._segment_actions = []
         self._obs = None
         self._segment_features = None
         self._weights = None
@@ -208,6 +207,7 @@ class LeastLfaMissingWrapper(gym.Wrapper):
                 self._weights = optsol.solve_least_squares(
                     matrix=np.stack(self.obs_buffer), rhs=np.array(self.rew_buffer)
                 )
+                logging.info("Estimated rewards for %s", self.env)
         self._obs = self.obs_wrapper.observation(obs)
         return obs, reward, term, trunc, info
 

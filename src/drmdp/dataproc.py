@@ -41,8 +41,8 @@ def process_data(df_raw):
 
     def simplify_meta(meta):
         new_meta = dict(**meta, **meta["experiment"])
-        new_meta["traj_mapping_method"] = MAPPERS_NAMES[
-            new_meta["problem_spec"]["traj_mapping_method"]
+        new_meta["reward_mapper"] = MAPPERS_NAMES[
+            new_meta["problem_spec"]["reward_mapper"]
         ]
         new_meta["policy_type"] = POLICY_TYPES[new_meta["problem_spec"]["policy_type"]]
         del new_meta["experiment"]
@@ -53,7 +53,7 @@ def process_data(df_raw):
         return "/".join(
             [
                 problem_spec["policy_type"],
-                problem_spec["traj_mapping_method"],
+                problem_spec["reward_mapper"],
             ]
         )
 

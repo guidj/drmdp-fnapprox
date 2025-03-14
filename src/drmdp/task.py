@@ -39,9 +39,9 @@ def policy_control_run_fn(exp_instance: core.ExperimentInstance):
 
     rew_delay = reward_delay_distribution(problem_spec.delay_config)
     env = delay_wrapper(env, rew_delay)
-    env = traj_mapper(
+    env = reward_mapper(
         env,
-        mapping_method=problem_spec.traj_mapping_method,
+        mapping_spec=problem_spec.reward_mapper,
         feats_spec=env_spec.feats_spec,
     )
     feats_tfx = feats.create_feat_transformer(env=env, **env_spec.feats_spec)
@@ -140,7 +140,7 @@ def generate_experiments_instances(
                         run_config.output_dir,
                         exp_id,
                         f"run_{idx}",
-                        experiment.problem_spec.traj_mapping_method,
+                        experiment.problem_spec.reward_mapper["name"],
                         uid(),
                     ),
                 ),
@@ -201,21 +201,25 @@ def delay_wrapper(
     return env
 
 
-def traj_mapper(env: gym.Env, mapping_method: str, feats_spec: Mapping[str, Any]):
-    if mapping_method == "identity":
+def reward_mapper(
+    env: gym.Env, mapping_spec: Mapping[str, Any], feats_spec: Mapping[str, Any]
+):
+    name = mapping_spec["name"]
+    args = mapping_spec["args"]
+    if name == "identity":
         return env
-    elif mapping_method == "zero-impute":
+    elif name == "zero-impute":
         return rewdelay.ZeroImputeMissingWrapper(env)
-    elif mapping_method == "least-lfa":
+    elif name == "least-lfa":
         # local copy before pop
         feats_spec = dict(copy.deepcopy(feats_spec))
         wrapper_name = feats_spec.pop("name")
         return rewdelay.LeastLfaMissingWrapper(
             env=env,
             obs_encoding_wrapper=wrappers.wrap(env, wrapper=wrapper_name, **feats_spec),
-            estimation_sample_size=5000,
+            **(args if args else {}),
         )
-    raise ValueError(f"Unknown mapping_method: {mapping_method}")
+    raise ValueError(f"Unknown mapping_method: {mapping_spec}")
 
 
 def create_algorithm(
