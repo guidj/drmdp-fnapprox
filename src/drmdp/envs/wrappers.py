@@ -11,7 +11,10 @@ from drmdp import constants, dataproc, mathutils, tiles
 class RandomBinaryObsWrapper(gym.ObservationWrapper):
     def __init__(self, env: gym.Env, enc_size: int):
         super().__init__(env)
-        self.obs_space = env.observation_space
+        self.observation_space = gym.spaces.Box(
+            low=np.zeros(enc_size),
+            high=np.ones(enc_size)
+        )
         self.enc_size = enc_size
         self._representations: Dict[Hashable, Any] = {}
 

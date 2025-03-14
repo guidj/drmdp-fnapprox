@@ -154,21 +154,21 @@ class LeastLfaMissingWrapper(gym.Wrapper):
     def __init__(
         self,
         env: gym.Env,
-        obs_wrapper: gym.ObservationWrapper,
+        obs_encoding_wrapper: gym.ObservationWrapper,
         estimation_sample_size: int,
     ):
         super().__init__(env)
-        if not isinstance(obs_wrapper.observation_space, gym.spaces.Box):
-            raise ValueError(f"obs_wrapper space must of type Box. Got: {type(obs_wrapper)}")
-        if not isinstance(obs_wrapper.action_space, gym.spaces.Discrete):
-            raise ValueError(f"obs_wrapper space must of type Box. Got: {type(obs_wrapper)}")        
-        self.obs_wrapper = obs_wrapper
+        if not isinstance(obs_encoding_wrapper.observation_space, gym.spaces.Box):
+            raise ValueError(f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper)}")
+        if not isinstance(obs_encoding_wrapper.action_space, gym.spaces.Discrete):
+            raise ValueError(f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper)}")        
+        self.obs_wrapper = obs_encoding_wrapper
         self.estimation_sample_size = estimation_sample_size
         self.obs_buffer = []
         self.rew_buffer = []
 
         self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
-        self.mdim = self.obs_dim  * obs_wrapper.action_space.n + self.obs_dim
+        self.mdim = self.obs_dim  * obs_encoding_wrapper.action_space.n + self.obs_dim
         # self._segment_states = []
         # self._segment_actions = []
         self._obs = None
@@ -178,8 +178,8 @@ class LeastLfaMissingWrapper(gym.Wrapper):
 
     def step(self, action):
         obs, reward, term, trunc, info = super().step(action)
-        self._segment_features[action*self.obs_dim: action*self.obs_dim] += self._obs
-        self._segment_features[-self.obs_dim:] += obs
+        self._segment_features[action*self.obs_dim: (action +1)*self.obs_dim] += self._obs
+        self._segment_features[-self.obs_dim:] += self.obs_wrapper.observation(obs)
 
         if self._weights is not None:
             # estimate
@@ -203,11 +203,11 @@ class LeastLfaMissingWrapper(gym.Wrapper):
                 self._weights = optsol.solve_least_squares(
                     matrix=np.stack(self.obs_buffer), rhs=np.array(self.rew_buffer)
                 )
-        self._obs = obs
+        self._obs = self.obs_wrapper.observation(obs)
         return obs, reward, term, trunc, info
 
     def reset(self, *, seed=None, options=None):
         obs, info = super().reset(seed=seed, options=options)
-        self._obs = obs
+        self._obs = self.obs_wrapper.observation(obs)
         self._segment_features = np.zeros(shape=(self.mdim))
         return obs, info

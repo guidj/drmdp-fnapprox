@@ -171,8 +171,8 @@ def learning_rate(name: str, args: Mapping[str, Any]) -> optsol.LearningRateSche
     """
     if "initial_lr" not in args:
         raise ValueError(f"Missing `initial_lr` from lr config: {args}")
-    if name == "fixed":
-        return optsol.FixedLRSchedule(args["initial_lr"])
+    if name == "constant":
+        return optsol.ConstantLRSchedule(args["initial_lr"])
     else:
         raise ValueError(f"Unknown lr {name}")
 
@@ -207,7 +207,7 @@ def traj_mapper(env: gym.Env, mapping_method: str, feats_spec: Mapping[str, Any]
         feats_spec = copy.deepcopy(feats_spec)
         wrapper_name = feats_spec.pop("name")
         return rewdelay.LeastLfaMissingWrapper(
-            env=env, obs_wrapper=wrappers.wrap(env, wrapper=wrapper_name, **feats_spec), estimation_sample_size=1000
+            env=env, obs_encoding_wrapper=wrappers.wrap(env, wrapper=wrapper_name, **feats_spec), estimation_sample_size=1000
         )
     raise ValueError(f"Unknown mapping_method: {mapping_method}")
 
