@@ -202,6 +202,7 @@ class OptionsSemigradientSARSAFnApprox(FnApproxAlgorithm):
                         info,
                     ) = env.step(action)
                     rewards += reward if reward is not None else 0.0
+                    steps += 1
 
                     if term or trunc:
                         # aggregate reward is available
@@ -240,7 +241,6 @@ class OptionsSemigradientSARSAFnApprox(FnApproxAlgorithm):
                 state_qvalues = next_state_qvalues
                 gradients = next_gradients
                 actions = next_actions
-                steps += 1
             returns.append(rewards)
             if self.verbose and (episode + 1) % (num_episodes // 5) == 0:
                 logging.info(
@@ -335,7 +335,7 @@ class OptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
                 np.flatnonzero(state_qvalues == state_qvalues.max())
             )
         actions = mathutils.interger_to_sequence(
-            space_size=10, sequence_length=delay, index=option
+            space_size=self.num_primitive_actions, sequence_length=delay, index=option
         )
         return core.PolicyStep(
             option,
