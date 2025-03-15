@@ -85,7 +85,7 @@ class ExperimentLogger(contextlib.AbstractContextManager):
             "episode": episode,
             "steps": steps,
             "returns": returns,
-            "info": info if info is not None else {},
+            "info": info,
         }
 
         if self._writer is None:

@@ -1,4 +1,3 @@
-import copy
 import dataclasses
 import logging
 import os
@@ -216,11 +215,11 @@ def reward_mapper(
         return rewdelay.ZeroImputeMissingWrapper(env)
     elif name == "least-lfa":
         # local copy before pop
-        feats_spec = dict(copy.deepcopy(feats_spec))
-        wrapper_name = feats_spec.pop("name")
         return rewdelay.LeastLfaMissingWrapper(
             env=env,
-            obs_encoding_wrapper=wrappers.wrap(env, wrapper=wrapper_name, **feats_spec),
+            obs_encoding_wrapper=wrappers.wrap(
+                env, wrapper=feats_spec["name"], **(feats_spec["args"] or {})
+            ),
             **(args if args else {}),
         )
     raise ValueError(f"Unknown mapping_method: {mapping_spec}")

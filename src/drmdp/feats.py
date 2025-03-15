@@ -1,6 +1,6 @@
 import abc
 import math
-from typing import Any, Dict, Hashable, Optional, Sequence
+from typing import Any, Dict, Hashable, Mapping, Optional, Sequence
 
 import gymnasium as gym
 import numpy as np
@@ -278,13 +278,13 @@ class TileFeatTransform(FeatTransform):
         )
 
 
-def create_feat_transformer(env: gym.Env, name: str, **kwargs):
+def create_feat_transformer(env: gym.Env, name: str, args: Mapping[str, Any]):
     if name == constants.RANDOM:
-        return RandomBinaryFeatTransform(env, **kwargs)
+        return RandomBinaryFeatTransform(env, **args)
     if name == constants.SCALE:
         return ScaleFeatTransform(env)
     if name == constants.GAUSSIAN_MIX:
-        return GaussianMixFeatTransform(env, **kwargs)
+        return GaussianMixFeatTransform(env, **args)
     if name == constants.TILES:
-        return TileFeatTransform(env, **kwargs)
+        return TileFeatTransform(env, **args)
     raise ValueError(f"FeatTransformer `{name}` unknown")
