@@ -71,7 +71,7 @@ class GaussianMixObsWrapper(gym.ObservationWrapper):
 
     def gm_proj(self, buffer, param_grid):
         grid_search = model_selection.GridSearchCV(
-            mixture.GaussianMixture(init_params="kmeans++"),
+            mixture.GaussianMixture(init_params="k-means++"),
             param_grid=param_grid,
             scoring=self.gmm_bic_score,
         )
