@@ -1,23 +1,24 @@
-import copy
 import dataclasses
 import logging
 import os
 import os.path
-import random
 import uuid
-from typing import Any, Iterator, List, Mapping, Sequence
+from typing import Any, Iterator, List, Mapping, Optional, Sequence, Tuple
 
 import gymnasium as gym
 import numpy as np
 
-from drmdp import core, envs, feats, logger, optsol
+from drmdp import algorithms, core, envs, feats, logger, optsol, rewdelay
+from drmdp.envs import wrappers
 
-
-@dataclasses.dataclass(frozen=True)
-class PolicyControlSnapshot:
-    steps: int
-    returns: float
-    weights: np.ndarray
+DELAYS: Sequence[type[rewdelay.RewardDelay]] = (
+    rewdelay.FixedDelay,
+    rewdelay.UniformDelay,
+    rewdelay.ClippedPoissonDelay,
+)
+DELAY_BUILDERS: Mapping[str, type[rewdelay.RewardDelay]] = {
+    clz.id(): clz for clz in DELAYS
+}
 
 
 def policy_control_run_fn(exp_instance: core.ExperimentInstance):
@@ -28,17 +29,40 @@ def policy_control_run_fn(exp_instance: core.ExperimentInstance):
         args: configuration for execution.
     """
     # init env and agent
+    env_spec = exp_instance.experiment.env_spec
+    problem_spec = exp_instance.experiment.problem_spec
     env = envs.make(
-        env_name=exp_instance.experiment.env_spec.name,
-        **exp_instance.experiment.env_spec.args
-        if exp_instance.experiment.env_spec.args
-        else {},
+        env_name=env_spec.name,
+        **env_spec.args if env_spec.args else {},
     )
-    logging.debug("Starting DAAF Control Experiments")
+    env, monitor = monitor_wrapper(env)
+    rew_delay = reward_delay_distribution(problem_spec.delay_config)
+    env = delay_wrapper(env, rew_delay)
+    env = reward_mapper(
+        env,
+        mapping_spec=problem_spec.reward_mapper,
+        feats_spec=env_spec.feats_spec,
+    )
+    feats_tfx = feats.create_feat_transformer(env=env, **env_spec.feats_spec)
+    lr = learning_rate(**problem_spec.learning_rate_config)
+    # Create spec using provided name and args for feature spec
+    algorithm = create_algorithm(
+        env=env,
+        feats_transform=feats_tfx,
+        delay_reward=rew_delay,
+        lr=lr,
+        gamma=problem_spec.gamma,
+        epsilon=problem_spec.epsilon,
+        policy_type=problem_spec.policy_type,
+    )
+
+    logging.debug("Starting DRMDP Control Experiments: %s", exp_instance)
+
     results = policy_control(
         env=env,
-        problem_spec=exp_instance.experiment.problem_spec,
+        algorithm=algorithm,
         num_episodes=exp_instance.run_config.episodes_per_run,
+        monitor=monitor,
     )
     with logger.ExperimentLogger(
         log_dir=exp_instance.run_config.output_dir, experiment_instance=exp_instance
@@ -52,9 +76,6 @@ def policy_control_run_fn(exp_instance: core.ExperimentInstance):
                         episode=episode,
                         steps=snapshot.steps,
                         returns=np.mean(returns).item(),
-                        # Action values can be large tables
-                        # especially for options policies
-                        # so we log state values and best actions
                         info={},
                     )
 
@@ -73,28 +94,14 @@ def policy_control_run_fn(exp_instance: core.ExperimentInstance):
 
 def policy_control(
     env: gym.Env,
-    problem_spec: core.ProblemSpec,
+    algorithm: algorithms.FnApproxAlgorithm,
     num_episodes: int,
-) -> Iterator[PolicyControlSnapshot]:
+    monitor: core.EnvMonitor,
+) -> Iterator[algorithms.PolicyControlSnapshot]:
     """
     Runs policy control with given algorithm, env, and policy spec.
     """
-    # create lrs
-    # init values
-    # traj-mapper/wrapper
-    # run algorithms
-
-    # Create spec using provided name and args for feature spec
-    feats_tfx = feats.create_feat_transformer(env=env, **problem_spec.feats_spec)
-    lr = learning_rate(**problem_spec.learning_rate_config)
-    return semi_gradient_sarsa(
-        env=env,
-        lr=lr,
-        gamma=problem_spec.gamma,
-        epsilon=problem_spec.epsilon,
-        num_episodes=num_episodes,
-        feat_transform=feats_tfx,
-    )
+    return algorithm.train(env=env, num_episodes=num_episodes, monitor=monitor)
 
 
 def create_task_id(task_prefix: str) -> str:
@@ -131,7 +138,7 @@ def generate_experiments_instances(
                         run_config.output_dir,
                         exp_id,
                         f"run_{idx}",
-                        experiment.problem_spec.traj_mapping_method,
+                        experiment.problem_spec.reward_mapper["name"],
                         uid(),
                     ),
                 ),
@@ -160,98 +167,107 @@ def bundle(items: Sequence[Any], bundle_size: int) -> Sequence[Sequence[Any]]:
     return bundles
 
 
-def semi_gradient_sarsa(
+def learning_rate(name: str, args: Mapping[str, Any]) -> optsol.LearningRateSchedule:
+    """
+    Returns a learning rate scheduler.
+    """
+    if "initial_lr" not in args:
+        raise ValueError(f"Missing `initial_lr` from lr config: {args}")
+    if name == "constant":
+        return optsol.ConstantLRSchedule(args["initial_lr"])
+    else:
+        raise ValueError(f"Unknown lr {name}")
+
+
+def reward_delay_distribution(
+    delay_config: Optional[Mapping[str, Any]],
+) -> Optional[rewdelay.RewardDelay]:
+    if delay_config:
+        name = delay_config["name"]
+        args = delay_config["args"]
+        if name not in DELAY_BUILDERS:
+            raise ValueError(f"Unknown delay type {name}")
+        return DELAY_BUILDERS[name](**args)
+    return None
+
+
+def monitor_wrapper(env: gym.Env) -> Tuple[gym.Env, core.EnvMonitor]:
+    mon_env = core.EnvMonitorWrapper(env)
+    return mon_env, mon_env.mon
+
+
+def delay_wrapper(
+    env: gym.Env, reward_delay: Optional[rewdelay.RewardDelay]
+) -> gym.Env:
+    if reward_delay:
+        return rewdelay.DelayedRewardWrapper(env, reward_delay=reward_delay)
+    return env
+
+
+def reward_mapper(
+    env: gym.Env, mapping_spec: Mapping[str, Any], feats_spec: Mapping[str, Any]
+):
+    name = mapping_spec["name"]
+    args = mapping_spec["args"]
+    if name == "identity":
+        return env
+    elif name == "zero-impute":
+        return rewdelay.ZeroImputeMissingWrapper(env)
+    elif name == "least-lfa":
+        # local copy before pop
+        return rewdelay.LeastLfaMissingWrapper(
+            env=env,
+            obs_encoding_wrapper=wrappers.wrap(
+                env, wrapper=feats_spec["name"], **(feats_spec["args"] or {})
+            ),
+            **(args if args else {}),
+        )
+    raise ValueError(f"Unknown mapping_method: {mapping_spec}")
+
+
+def create_algorithm(
     env: gym.Env,
+    feats_transform: feats.FeatTransform,
+    policy_type: str,
+    delay_reward: Optional[rewdelay.RewardDelay],
     lr: optsol.LearningRateSchedule,
     gamma: float,
     epsilon: float,
-    num_episodes: int,
-    feat_transform: feats.FeatTransform,
-    verbose: bool = True,
-) -> Iterator[PolicyControlSnapshot]:
-    actions = tuple(range(env.action_space.n))
-    weights = np.zeros(feat_transform.output_shape, dtype=np.float64)
-    returns = []
-
-    for episode in range(num_episodes):
-        obs, _ = env.reset()
-        state_qvalues, gradients = action_values(obs, actions, weights, feat_transform)
-        rewards = 0
-        # choose action
-        if random.random() <= epsilon:
-            action = env.action_space.sample()
-        else:
-            action = np.random.choice(
-                np.flatnonzero(state_qvalues == state_qvalues.max())
-            )
-        steps = 0
-        while True:
-            # greedy
-            (
-                next_obs,
-                reward,
-                term,
-                trunc,
-                _,
-            ) = env.step(action)
-            rewards += reward
-
-            if term or trunc:
-                weights = (
-                    weights
-                    + lr(episode, steps)
-                    * (reward - state_qvalues[action])
-                    * gradients[action]
-                )
-                break
-
-            next_state_qvalues, next_gradients = action_values(
-                next_obs, actions, weights, feat_transform
-            )
-
-            if random.random() <= epsilon:
-                next_action = env.action_space.sample()
-            else:
-                # greedy
-                next_action = np.random.choice(
-                    np.flatnonzero(next_state_qvalues == next_state_qvalues.max())
-                )
-
-            weights = (
-                weights
-                + lr(episode, steps)
-                * (
-                    reward
-                    + gamma * next_state_qvalues[next_action]
-                    - state_qvalues[action]
-                )
-                * gradients[action]
-            )
-            obs = next_obs
-            action = next_action
-            state_qvalues = next_state_qvalues
-            gradients = next_gradients
-            steps += 1
-        returns.append(rewards)
-        if verbose and (episode + 1) % (num_episodes // 5) == 0:
-            logging.info("Episode %d mean returns: %f", episode + 1, np.mean(returns))
-        yield PolicyControlSnapshot(
-            steps=steps, returns=rewards, weights=copy.copy(weights)
+):
+    if policy_type == "markovian":
+        return algorithms.SemigradientSARSAFnApprox(
+            lr=lr,
+            gamma=gamma,
+            epsilon=epsilon,
+            policy=algorithms.LinearFnApproxPolicy(
+                feat_transform=feats_transform, action_space=env.action_space
+            ),
+        )
+    elif policy_type == "options":
+        if delay_reward is None:
+            raise ValueError("`delay_reward` must be provided")
+        return algorithms.OptionsSemigradientSARSAFnApprox(
+            lr=lr,
+            gamma=gamma,
+            epsilon=epsilon,
+            policy=algorithms.OptionsLinearFnApproxPolicy(
+                feat_transform=feats_transform,
+                action_space=env.action_space,
+                options_length_range=delay_reward.range(),
+            ),
+        )
+    elif policy_type == "single-action-options":
+        if delay_reward is None:
+            raise ValueError("`delay_reward` must be provided")
+        return algorithms.OptionsSemigradientSARSAFnApprox(
+            lr=lr,
+            gamma=gamma,
+            epsilon=epsilon,
+            policy=algorithms.SingleActionOptionsLinearFnApproxPolicy(
+                feat_transform=feats_transform,
+                action_space=env.action_space,
+                options_length_range=delay_reward.range(),
+            ),
         )
 
-
-def action_values(
-    observation, actions: Sequence[int], weights, feat_transform: feats.FeatTransform
-):
-    observations = [observation] * len(actions)
-    state_action_m = feat_transform.batch_transform(observations, actions)
-    return np.dot(state_action_m, weights), state_action_m
-
-
-def learning_rate(name: str, args: Mapping[str, Any]):
-    if "initial_lr" not in args:
-        raise ValueError(f"Missing `initial_lr` from lr config: {args}")
-    if name == "fixed":
-        return optsol.FixedLRSchedule(args["initial_lr"])
-    else:
-        raise ValueError(f"Unknown lr {name}")
+    raise ValueError(f"Unknown policy_type: {policy_type}")

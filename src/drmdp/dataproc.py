@@ -8,9 +8,11 @@ import ray
 
 MAPPERS_NAMES = {
     "identity": "FR",
+    "zero-impute": "IMR",
+    "least-lfa": "LEAST-LFA",
 }
 
-POLICY_TYPES = {"options": "OP", "markovian": "PP"}
+POLICY_TYPES = {"options": "OP-A", "markovian": "PP", "single-action-options": "OP-S"}
 
 
 def collection_traj_data(env: gym.Env, steps: int):
@@ -41,21 +43,15 @@ def process_data(df_raw):
 
     def simplify_meta(meta):
         new_meta = dict(**meta, **meta["experiment"])
-        new_meta["traj_mapping_method"] = MAPPERS_NAMES[
-            new_meta["problem_spec"]["traj_mapping_method"]
+        new_meta["reward_mapper"] = MAPPERS_NAMES[
+            new_meta["problem_spec"]["reward_mapper"]["name"]
         ]
         new_meta["policy_type"] = POLICY_TYPES[new_meta["problem_spec"]["policy_type"]]
         del new_meta["experiment"]
         return new_meta
 
     def get_method(meta: Mapping[str, Any]):
-        problem_spec = meta["problem_spec"]
-        return "/".join(
-            [
-                problem_spec["policy_type"],
-                problem_spec["traj_mapping_method"],
-            ]
-        )
+        return "/".join([meta["policy_type"], meta["reward_mapper"]])
 
     df_proc = copy.deepcopy(df_raw)
     df_proc = df_proc[df_proc["meta"].apply(filter_experiment_configs)]

@@ -23,7 +23,7 @@ dependencies = [
     "scipy>=1.14.1",
     "numpy>=1.23.5",
     "rlplg==0.21.8",
-    "ray[data,default,tune]>=2.23.0",
+    "ray[data,default,tune]==2.23.0",
     "tensorflow>=2.11.1",
     "cvxpy>=1.5.3,<1.6",
     "stable-baselines3>=2.4.1",

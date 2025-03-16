@@ -1,6 +1,6 @@
 import abc
 import math
-from typing import Any, Dict, Hashable, Optional, Sequence
+from typing import Any, Dict, Hashable, Mapping, Optional, Sequence
 
 import gymnasium as gym
 import numpy as np
@@ -102,9 +102,15 @@ class RandomBinaryFeatTransform(FeatTransform):
 class ScaleFeatTransform(FeatTransform):
     def __init__(self, env: gym.Env):
         if not isinstance(env.observation_space, gym.spaces.Box):
-            raise ValueError("env.observation_space must be `spaces.Box`")
+            raise ValueError(
+                f"env.observation_space must be `spaces.Box`. Got {env.observation_space}",
+                env,
+            )
         if not isinstance(env.action_space, gym.spaces.Discrete):
-            raise ValueError("env.action_space must be `spaces.Discrete`")
+            raise ValueError(
+                f"env.action_space must be `spaces.Discrete`. Got {env.action_space}",
+                env,
+            )
 
         self.obs_space = env.observation_space
         self.num_actions = env.action_space.n
@@ -151,7 +157,7 @@ class GaussianMixFeatTransform(FeatTransform):
 
         self.obs_space = env.observation_space
         self.num_actions = env.action_space.n
-        self._gm = mixture.GaussianMixture(**params)
+        self._gm = mixture.GaussianMixture(**params, init_params="k-means++")
         self._gm.fit(
             [tup[0] for tup in dataproc.collection_traj_data(env, steps=sample_steps)]
         )
@@ -272,13 +278,13 @@ class TileFeatTransform(FeatTransform):
         )
 
 
-def create_feat_transformer(env: gym.Env, name: str, **kwargs):
+def create_feat_transformer(env: gym.Env, name: str, args: Mapping[str, Any]):
     if name == constants.RANDOM:
-        return RandomBinaryFeatTransform(env, **kwargs)
+        return RandomBinaryFeatTransform(env, **args)
     if name == constants.SCALE:
         return ScaleFeatTransform(env)
     if name == constants.GAUSSIAN_MIX:
-        return GaussianMixFeatTransform(env, **kwargs)
+        return GaussianMixFeatTransform(env, **args)
     if name == constants.TILES:
-        return TileFeatTransform(env, **kwargs)
+        return TileFeatTransform(env, **args)
     raise ValueError(f"FeatTransformer `{name}` unknown")

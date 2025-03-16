@@ -6,6 +6,7 @@ import math
 from typing import Sequence
 
 import numpy as np
+from scipy import stats
 
 
 def sequence_to_integer(space_size: int, sequence: Sequence[int]) -> int:
@@ -64,3 +65,20 @@ def hashtrick(xs, dim: int):
     # Use bincount to count occurrences of each index
     # Specify minlength to ensure output has correct size
     return np.bincount(hashed_idx, minlength=dim)
+
+
+def poisson_exact_confidence_interval(observed_value: int, confidence: float = 0.95):
+    # Calculate alpha (the complement of the confidence level)
+    alpha = 1 - confidence
+
+    # Lower bound: find the value where CDF is approximately alpha/2
+    lower_bound = 0
+    while stats.poisson.cdf(lower_bound, observed_value) < alpha / 2:
+        lower_bound += 1
+
+    # Upper bound: find the value where 1 - CDF is approximately alpha/2
+    upper_bound = observed_value
+    while 1 - stats.poisson.cdf(upper_bound, observed_value) > alpha / 2:
+        upper_bound += 1
+
+    return lower_bound, upper_bound

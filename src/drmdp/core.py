@@ -16,6 +16,7 @@ from typing import (
     Union,
 )
 
+import gymnasium as gym
 import numpy as np
 from gymnasium.core import ActType, ObsType, RenderFrame, SupportsFloat
 
@@ -43,43 +44,6 @@ class PolicyStep:
     info: Mapping[str, Any]
 
 
-@dataclasses.dataclass(frozen=True)
-class TrajectoryStep:
-    """
-    A trajectory step for training RL agents.
-    """
-
-    observation: ObsType
-    action: ActType
-    policy_info: Mapping[str, Any]
-    terminated: bool
-    truncated: bool
-    reward: float
-    info: Mapping[str, Any]
-
-    @staticmethod
-    def from_transition(
-        time_step: TimeStep,
-        action_step: PolicyStep,
-        next_time_step: TimeStep,
-    ) -> "TrajectoryStep":
-        """
-        Builds a trajectory step given a state and action.
-        """
-        obs, _, terminated, truncated, _ = time_step
-        _, next_reward, _, _, _ = next_time_step
-
-        return TrajectoryStep(
-            observation=obs,
-            action=action_step.action,
-            policy_info=action_step.info,
-            terminated=terminated,
-            truncated=truncated,
-            reward=next_reward,
-            info={},
-        )
-
-
 class PyPolicy(abc.ABC):
     """
     Base class for python policies.
@@ -87,9 +51,11 @@ class PyPolicy(abc.ABC):
 
     def __init__(
         self,
+        action_space: gym.Space,
         emit_log_probability: bool = False,
         seed: Optional[int] = None,
     ):
+        self.action_space = action_space
         self.emit_log_probability = emit_log_probability
         self.seed = seed
 
@@ -108,6 +74,7 @@ class PyPolicy(abc.ABC):
     def action(
         self,
         observation: ObsType,
+        epsilon: float = 0.0,
         policy_state: Any = (),
         seed: Optional[int] = None,
     ) -> PolicyStep:
@@ -127,6 +94,27 @@ class PyPolicy(abc.ABC):
         """
 
 
+class PyValueFnPolicy(PyPolicy):
+    @abc.abstractmethod
+    def action_values_gradients(self, observation: ObsType, actions: Sequence[ActType]):
+        """
+        Value for multiple actions
+        """
+
+    @abc.abstractmethod
+    def update(self, scaled_gradients):
+        """
+        Updates the policy's value
+        """
+
+    @property
+    @abc.abstractmethod
+    def model(self):
+        """
+        Model backing the policy.
+        """
+
+
 @dataclasses.dataclass(frozen=True)
 class EnvSpec:
     """
@@ -135,6 +123,7 @@ class EnvSpec:
 
     name: str
     args: Optional[Mapping[str, Any]]
+    feats_spec: Mapping[str, Any]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -144,14 +133,11 @@ class ProblemSpec:
     """
 
     policy_type: str
-    traj_mapping_method: str
-    algorithm: str
-    algorithm_args: Mapping[str, Any]
-    delay_config: Mapping[str, Any]
+    reward_mapper: Mapping[str, Any]
+    delay_config: Optional[Mapping[str, Any]]
     epsilon: float
     gamma: float
     learning_rate_config: Mapping[str, Any]
-    feats_spec: Mapping[str, Any]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -187,3 +173,34 @@ class ExperimentInstance:
     experiment: Experiment
     run_config: RunConfig
     context: Optional[Mapping[str, Any]]
+
+
+class EnvMonitorWrapper(gym.Wrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        self.mon = EnvMonitor()
+
+    def step(self, action):
+        obs, reward, term, trunc, info = super().step(action)
+        self.mon.rewards += reward
+        self.mon.step += 1
+        return obs, reward, term, trunc, info
+
+    def reset(self, *, seed=None, options=None):
+        self.mon.reset()
+        return super().reset(seed=seed, options=options)
+
+
+class EnvMonitor:
+    def __init__(self):
+        self.returns: List[float] = []
+        self.steps: List[int] = []
+        self.rewards: float = 0
+        self.step: int = 0
+
+    def reset(self):
+        if self.step > 0:
+            self.returns.append(self.rewards)
+            self.steps.append(self.step)
+        self.rewards = 0.0
+        self.step = 0

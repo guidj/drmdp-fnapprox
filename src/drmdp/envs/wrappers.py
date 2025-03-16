@@ -11,7 +11,9 @@ from drmdp import constants, dataproc, mathutils, tiles
 class RandomBinaryObsWrapper(gym.ObservationWrapper):
     def __init__(self, env: gym.Env, enc_size: int):
         super().__init__(env)
-        self.obs_space = env.observation_space
+        self.observation_space = gym.spaces.Box(
+            low=np.zeros(enc_size), high=np.ones(enc_size)
+        )
         self.enc_size = enc_size
         self._representations: Dict[Hashable, Any] = {}
 
@@ -69,7 +71,9 @@ class GaussianMixObsWrapper(gym.ObservationWrapper):
 
     def gm_proj(self, buffer, param_grid):
         grid_search = model_selection.GridSearchCV(
-            mixture.GaussianMixture(), param_grid=param_grid, scoring=self.gmm_bic_score
+            mixture.GaussianMixture(init_params="k-means++"),
+            param_grid=param_grid,
+            scoring=self.gmm_bic_score,
         )
         return grid_search.fit(np.stack([tup[0] for tup in buffer]))
 

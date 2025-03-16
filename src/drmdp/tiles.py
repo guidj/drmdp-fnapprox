@@ -1,6 +1,6 @@
 import itertools
 import math
-from typing import List, Optional, Sequence, Union
+from typing import Optional, Sequence, Union
 
 import numpy as np
 
@@ -80,7 +80,6 @@ class IHT:
         size = self.size
         count = self.count()
         if count >= size:
-            # TODO: Fail
             if self.overfullCount == 0:
                 print("IHT full, starting to allow collisions")
             self.overfullCount += 1
@@ -102,10 +101,10 @@ def hashcoords(coordinates, m, readonly=False):
 def tiles(
     ihtORsize: Union[IHT, int, None],
     numtilings: int,
-    floats: List[float],
-    ints: List[int] = [],
+    floats: Sequence[float],
+    ints: Sequence[int] = (),
     readonly: bool = False,
-) -> List[int]:
+) -> Sequence[int]:
     """returns num-tilings tile indices corresponding to the floats and ints"""
     qfloats = [math.floor(f * numtilings) for f in floats]
     tiles_ = []
@@ -126,7 +125,7 @@ def tileswrap(
     numtilings: int,
     floats: Sequence[float],
     wrapwidths: Sequence[int],
-    ints: Sequence[int] = [],
+    ints: Sequence[int] = (),
     readonly: bool = False,
 ) -> Sequence[int]:
     """returns num-tilings tile indices corresponding to the floats and ints, wrapping some floats"""
