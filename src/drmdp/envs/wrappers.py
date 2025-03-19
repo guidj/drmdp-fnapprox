@@ -62,7 +62,7 @@ class GaussianMixObsWrapper(gym.ObservationWrapper):
         self.grid_search = self.gm_proj(buffer, param_grid)
         self.estimator = self.grid_search.best_estimator_
         print("Best estimator:", self.grid_search.best_estimator_)
-        self.obs_dim = self.grid_search.best_estimator_.n_components + 1
+        self.obs_dim = self.grid_search.best_estimator_.n_components
 
         self.observation_space = gym.spaces.Box(
             low=np.zeros(shape=self.obs_dim, dtype=np.float32),
