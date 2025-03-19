@@ -10,7 +10,7 @@ def test_gaussian_mix_transform():
 
     # Initialize transform with some basic parameters
     params = {"n_components": 3, "random_state": 42}
-    transform = feats.GaussianMixFeatTransform(env, params, sample_steps=100)
+    transform = feats.GaussianMixFeatTransform(env, sample_steps=100, **params)
 
     # Test single transform
     obs = env.observation_space.sample()
@@ -39,7 +39,7 @@ def test_gaussian_mix_batch_transform():
 
     # Initialize transform with some basic parameters
     params = {"n_components": 3, "random_state": 42}
-    transform = feats.GaussianMixFeatTransform(env, params, sample_steps=100)
+    transform = feats.GaussianMixFeatTransform(env, sample_steps=100, **params)
 
     # Create batch of observations and actions
     batch_size = 5

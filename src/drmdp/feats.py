@@ -147,7 +147,7 @@ class ScaleFeatTransform(FeatTransform):
 
 class GaussianMixFeatTransform(FeatTransform):
     def __init__(
-        self, env: gym.Env, params, sample_steps: int = constants.DEFAULT_GM_STEPS
+        self, env: gym.Env, sample_steps: int = constants.DEFAULT_GM_STEPS, **kwargs
     ):
         # params or hps_params can be provided
         if not isinstance(env.observation_space, gym.spaces.Box):
@@ -157,7 +157,7 @@ class GaussianMixFeatTransform(FeatTransform):
 
         self.obs_space = env.observation_space
         self.num_actions = env.action_space.n
-        self._gm = mixture.GaussianMixture(**params, init_params="k-means++")
+        self._gm = mixture.GaussianMixture(**kwargs, init_params="k-means++")
         self._gm.fit(
             [tup[0] for tup in dataproc.collection_traj_data(env, steps=sample_steps)]
         )
