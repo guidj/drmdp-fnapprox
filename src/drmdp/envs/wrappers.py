@@ -61,7 +61,6 @@ class GaussianMixObsWrapper(gym.ObservationWrapper):
         buffer = dataproc.collection_traj_data(env, steps=sample_steps)
         self.grid_search = self.gm_proj(buffer, param_grid)
         self.estimator = self.grid_search.best_estimator_
-        print("Best estimator:", self.grid_search.best_estimator_)
         self.obs_dim = self.grid_search.best_estimator_.n_components
 
         self.observation_space = gym.spaces.Box(
@@ -108,8 +107,6 @@ class TilesObsWrapper(gym.ObservationWrapper):
         self.hash_dim = (
             hash_dim if hash_dim and self.tiles.max_size > hash_dim else None
         )
-        if self.hash_dim:
-            print("Hashed dim:", self.hash_dim)
         self.observation_space = gym.spaces.Box(
             low=np.zeros(shape=self.hash_dim or self.tiles.max_size),
             high=np.ones(shape=self.hash_dim or self.tiles.max_size),
