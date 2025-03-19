@@ -149,7 +149,11 @@ def run_experiments(
             task_id,
             experiment_task,
         )
-        task.policy_control_run_fn(experiment_task)
+        try:
+            task.policy_control_run_fn(experiment_task)
+        except Exception as err:
+            logging.error("Experiment %s failed", experiment_task)
+            raise err
         ids.append(task_id)
         logging.debug("Experiment %s finished", task_id)
     return ids
