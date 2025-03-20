@@ -26,6 +26,7 @@ class ControlPipelineArgs:
     output_dir: str
     log_episode_frequency: int
     task_prefix: str
+    bundle_size: int
     # ray args
     cluster_uri: Optional[str]
 
@@ -46,6 +47,7 @@ def main(args: ControlPipelineArgs):
             num_episodes=args.num_episodes,
             output_dir=args.output_dir,
             task_prefix=args.task_prefix,
+            bundle_size=args.bundle_size,
             log_episode_frequency=args.log_episode_frequency,
         )
 
@@ -72,6 +74,7 @@ def create_tasks(
     num_episodes: int,
     output_dir: str,
     task_prefix: str,
+    bundle_size: int,
     log_episode_frequency: int,
 ) -> Sequence[Tuple[ray.ObjectRef, core.ExperimentInstance]]:
     """
@@ -95,9 +98,7 @@ def create_tasks(
         experiment_instances,
         len(experiment_instances),  # type: ignore
     )
-    experiment_batches = task.bundle(
-        experiment_instances, bundle_size=constants.DEFAULT_BATCH_SIZE
-    )
+    experiment_batches = task.bundle(experiment_instances, bundle_size=bundle_size)
     logging.info(
         "Parsed %d experiments into %d instances and %d ray tasks",
         len(experiments),
@@ -169,6 +170,9 @@ def parse_args() -> ControlPipelineArgs:
     arg_parser.add_argument("--output-dir", type=str, required=True)
     arg_parser.add_argument("--log-episode-frequency", type=int, required=True)
     arg_parser.add_argument("--task-prefix", type=str, required=True)
+    arg_parser.add_argument(
+        "--bundle-size", type=int, default=constants.DEFAULT_BATCH_SIZE
+    )
     arg_parser.add_argument("--cluster-uri", type=str, default=None)
     known_args, unknown_args = arg_parser.parse_known_args()
     logging.info("Unknown args: %s", unknown_args)
