@@ -192,15 +192,16 @@ class LeastLfaMissingWrapper(gym.Wrapper):
             self._segment_features = np.zeros(shape=(self.mdim))
         else:
             # Add obs to action-specific columns
+            # and use aggregate reward
             if info["segment_step"] == info["delay"] - 1:
                 self.obs_buffer.append(self._segment_features)
                 # aggregate reward
                 self.rew_buffer.append(reward)
                 # reset for the next one
                 self._segment_features = np.zeros(shape=(self.mdim))
-
-            # zero impute until rewards are estimated
-            reward = 0.0
+            else:
+                # zero impute until rewards are estimated
+                reward = 0.0
 
             if len(self.obs_buffer) >= self.estimation_sample_size:
                 # estimate rewards
