@@ -31,6 +31,34 @@ def least_specs(estimation_sample_size: int):
                 "args": {"initial_lr": 0.01},
             },
         },
+        {
+            "policy_type": "markovian",
+            "reward_mapper": {
+                "name": "least-lfa",
+                "args": {"estimation_sample_size": estimation_sample_size},
+            },
+            "delay_config": {"name": "fixed", "args": {"delay": 6}},
+            "epsilon": 0.2,
+            "gamma": 1.0,
+            "learning_rate_config": {
+                "name": "constant",
+                "args": {"initial_lr": 0.01},
+            },
+        },
+        {
+            "policy_type": "markovian",
+            "reward_mapper": {
+                "name": "least-lfa",
+                "args": {"estimation_sample_size": estimation_sample_size},
+            },
+            "delay_config": {"name": "fixed", "args": {"delay": 8}},
+            "epsilon": 0.2,
+            "gamma": 1.0,
+            "learning_rate_config": {
+                "name": "constant",
+                "args": {"initial_lr": 0.01},
+            },
+        },
     )
 
 
@@ -95,14 +123,6 @@ COMMON_PROBLEM_SPECS = (
         "policy_type": "options",
         "reward_mapper": {"name": "identity", "args": None},
         "delay_config": {"name": "fixed", "args": {"delay": 6}},
-        "epsilon": 0.2,
-        "gamma": 1.0,
-        "learning_rate_config": {"name": "constant", "args": {"initial_lr": 0.01}},
-    },
-    {
-        "policy_type": "options",
-        "reward_mapper": {"name": "identity", "args": None},
-        "delay_config": {"name": "fixed", "args": {"delay": 8}},
         "epsilon": 0.2,
         "gamma": 1.0,
         "learning_rate_config": {"name": "constant", "args": {"initial_lr": 0.01}},

@@ -16,6 +16,7 @@ class StrictWeightedSumOfErrors(reward_functions.WeightedSumOfErrors):
     whilst keeping the reward linear w.r.t to the
     penalty team and state.
     """
+
     def __init__(
         self,
         penalty_gamma: Optional[float] = None,
@@ -47,6 +48,7 @@ class PositiveEnforcementWeightedSumOfErrors(reward_functions.WeightedSumOfError
     between [-x, 0].
     Shifts the rewards range for positive re-enforcement.
     """
+
     def __init__(
         self,
         penalty_gamma: Optional[float] = None,
