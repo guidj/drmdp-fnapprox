@@ -11,6 +11,11 @@ from drmdp.envs import wrappers
 
 
 class StrictWeightedSumOfErrors(reward_functions.WeightedSumOfErrors):
+    """
+    This reward function applies the violation penalty
+    whilst keeping the reward linear w.r.t to the
+    penalty team and state.
+    """
     def __init__(
         self,
         penalty_gamma: Optional[float] = None,
@@ -37,6 +42,11 @@ class StrictWeightedSumOfErrors(reward_functions.WeightedSumOfErrors):
 
 
 class PositiveEnforcementWeightedSumOfErrors(reward_functions.WeightedSumOfErrors):
+    """
+    This function assumes the reward is bounded
+    between [-x, 0].
+    Shifts the rewards range for positive re-enforcement.
+    """
     def __init__(
         self,
         penalty_gamma: Optional[float] = None,
@@ -52,15 +62,23 @@ class PositiveEnforcementWeightedSumOfErrors(reward_functions.WeightedSumOfError
             reward_power=1,
             bias=0,
         )
+        self.checked = False
 
     def reward(self, state, reference, k=None, action=None, violation_degree=0.0):
         del k
         del action
-        pos_enforcement = 2 * abs(self.reward_range[0])
+
+        if not self.checked:
+            rw_lb, rw_ub = self.reward_range
+            if rw_lb >= 0:
+                raise ValueError(f"Lower bound should negative: {self.reward_range}")
+            if rw_ub != 0:
+                raise ValueError(f"Upper bound should zero: {self.reward_range}")
+            self.checked = True
         return (
             self._wse_reward(state, reference)
             + violation_degree * self._violation_reward
-        ) + pos_enforcement
+        ) + (2 * abs(self.reward_range[0]))
 
 
 class GemObsAsVectorWrapper(gym.ObservationWrapper):
