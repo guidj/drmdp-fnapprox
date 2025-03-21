@@ -20,7 +20,7 @@ class PolicyControlSnapshot:
 class FnApproxAlgorithm(abc.ABC):
     def __init__(self, base_seed: Optional[int] = None):
         super().__init__()
-        self.seeder = core.Seed(base_seed)
+        self.seeder = core.Seeder(base_seed)
 
     @abc.abstractmethod
     def train(

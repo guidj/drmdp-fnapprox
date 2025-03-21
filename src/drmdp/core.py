@@ -207,7 +207,7 @@ class EnvMonitor:
         self.step = 0
 
 
-class Seed:
+class Seeder:
     MAX_INS = 1000
     MAX_EPS = 100_000
 
