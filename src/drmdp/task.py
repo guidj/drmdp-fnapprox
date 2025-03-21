@@ -54,6 +54,7 @@ def policy_control_run_fn(exp_instance: core.ExperimentInstance):
         gamma=problem_spec.gamma,
         epsilon=problem_spec.epsilon,
         policy_type=problem_spec.policy_type,
+        base_seed=exp_instance.instance_id,
     )
 
     logging.debug("Starting DRMDP Control Experiments: %s", exp_instance)
@@ -233,6 +234,7 @@ def create_algorithm(
     lr: optsol.LearningRateSchedule,
     gamma: float,
     epsilon: float,
+    base_seed: Optional[int] = None,
 ):
     if policy_type == "markovian":
         return algorithms.SemigradientSARSAFnApprox(
@@ -242,6 +244,7 @@ def create_algorithm(
             policy=algorithms.LinearFnApproxPolicy(
                 feat_transform=feats_transform, action_space=env.action_space
             ),
+            base_seed=base_seed,
         )
     elif policy_type == "options":
         if delay_reward is None:
@@ -255,6 +258,7 @@ def create_algorithm(
                 action_space=env.action_space,
                 options_length_range=delay_reward.range(),
             ),
+            base_seed=base_seed,
         )
     elif policy_type == "single-action-options":
         if delay_reward is None:
@@ -268,6 +272,7 @@ def create_algorithm(
                 action_space=env.action_space,
                 options_length_range=delay_reward.range(),
             ),
+            base_seed=base_seed,
         )
 
     raise ValueError(f"Unknown policy_type: {policy_type}")

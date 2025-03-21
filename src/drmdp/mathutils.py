@@ -14,7 +14,7 @@ def sequence_to_integer(space_size: int, sequence: Sequence[int]) -> int:
     Uses the positional system of integers to generate a unique
     sequence of numbers given represetation integer - `index`.
     Based on https://2ality.com/2013/03/permutations.html.
-    
+
     Horner's method implementation that processes digits from left to right.
     Args:
         space_size: the number of possible digits

@@ -149,6 +149,7 @@ class RunConfig:
     num_runs: int
     episodes_per_run: int
     log_episode_frequency: int
+    use_seed: bool
     output_dir: str
 
 
@@ -204,3 +205,16 @@ class EnvMonitor:
             self.steps.append(self.step)
         self.rewards = 0.0
         self.step = 0
+
+
+class Seed:
+    MAX_INS = 1000
+    MAX_EPS = 100_000
+
+    def __init__(self, instance: Optional[int] = None):
+        self.instance = instance
+
+    def get_seed(self, episode: int) -> Optional[int]:
+        if self.instance is not None:
+            return (self.MAX_INS * self.instance + 1) * (self.MAX_EPS + episode + 1)
+        return self.instance

@@ -18,6 +18,10 @@ class PolicyControlSnapshot:
 
 
 class FnApproxAlgorithm(abc.ABC):
+    def __init__(self, base_seed: Optional[int] = None):
+        super().__init__()
+        self.seeder = core.Seed(base_seed)
+
     @abc.abstractmethod
     def train(
         self,
@@ -34,9 +38,10 @@ class SemigradientSARSAFnApprox(FnApproxAlgorithm):
         gamma: float,
         epsilon: float,
         policy: core.PyValueFnPolicy,
+        base_seed: Optional[int] = None,
         verbose: bool = True,
     ):
-        super().__init__()
+        super().__init__(base_seed)
         self.lr = lr
         self.gamma = gamma
         self.epsilon = epsilon
@@ -51,7 +56,7 @@ class SemigradientSARSAFnApprox(FnApproxAlgorithm):
         monitor: core.EnvMonitor,
     ) -> Iterator[PolicyControlSnapshot]:
         for episode in range(num_episodes):
-            obs, _ = env.reset()
+            obs, _ = env.reset(seed=self.seeder.get_seed(episode=episode))
             policy_step = self.policy.action(obs, epsilon=self.epsilon)
             state_qvalues, gradients = (
                 policy_step.info["values"],
@@ -170,9 +175,10 @@ class OptionsSemigradientSARSAFnApprox(FnApproxAlgorithm):
         gamma: float,
         epsilon: float,
         policy: core.PyValueFnPolicy,
+        base_seed: Optional[int] = None,
         verbose: bool = True,
     ):
-        super().__init__()
+        super().__init__(base_seed)
 
         self.lr = lr
         self.gamma = gamma
@@ -188,7 +194,7 @@ class OptionsSemigradientSARSAFnApprox(FnApproxAlgorithm):
         monitor: core.EnvMonitor,
     ) -> Iterator[PolicyControlSnapshot]:
         for episode in range(num_episodes):
-            obs, info = env.reset()
+            obs, info = env.reset(seed=self.seeder.get_seed(episode=episode))
             policy_step = self.egreedy_policy.action(
                 obs, epsilon=self.epsilon, policy_state=(info["delay"],)
             )

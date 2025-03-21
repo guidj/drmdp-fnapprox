@@ -1,4 +1,3 @@
-from typing import Sequence
 import numpy as np
 import pytest
 
@@ -51,7 +50,6 @@ def test_hashtrick_invalid_input():
 
     with pytest.raises(ValueError):
         mathutils.hashtrick(np.zeros(10), dim=-1)  # dim must be positive
-
 
 
 def test_sequence_to_integer_empty():

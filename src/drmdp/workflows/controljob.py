@@ -27,6 +27,7 @@ class ControlPipelineArgs:
     log_episode_frequency: int
     task_prefix: str
     bundle_size: int
+    use_seed: bool
     # ray args
     cluster_uri: Optional[str]
 
@@ -49,6 +50,7 @@ def main(args: ControlPipelineArgs):
             task_prefix=args.task_prefix,
             bundle_size=args.bundle_size,
             log_episode_frequency=args.log_episode_frequency,
+            use_seed=args.use_seed,
         )
 
         # since ray tracks objectref items
@@ -76,6 +78,7 @@ def create_tasks(
     task_prefix: str,
     bundle_size: int,
     log_episode_frequency: int,
+    use_seed: bool,
 ) -> Sequence[Tuple[ray.ObjectRef, core.ExperimentInstance]]:
     """
     Runs numerical experiments on policy evaluation.
@@ -87,6 +90,7 @@ def create_tasks(
                 num_runs=num_runs,
                 episodes_per_run=num_episodes,
                 log_episode_frequency=log_episode_frequency,
+                use_seed=use_seed,
                 output_dir=output_dir,
             ),
             experiments=experiments,
@@ -173,6 +177,7 @@ def parse_args() -> ControlPipelineArgs:
     arg_parser.add_argument(
         "--bundle-size", type=int, default=constants.DEFAULT_BATCH_SIZE
     )
+    arg_parser.add_argument("--use-seed", action="store_true")
     arg_parser.add_argument("--cluster-uri", type=str, default=None)
     known_args, unknown_args = arg_parser.parse_known_args()
     logging.info("Unknown args: %s", unknown_args)
