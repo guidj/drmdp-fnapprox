@@ -12,4 +12,5 @@ python $PARENT_DIR/src/$BASE/workflows/controljob.py \
     --output-dir=$HOME/fs/$BASE/workflows/controljob/logs/$TIMESTAMP \
     --task-prefix $TIMESTAMP \
     --bundle-size 4 \
-    --log-episode-frequency=1
+    --log-episode-frequency=1 \
+    --use-seed
