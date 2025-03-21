@@ -58,6 +58,7 @@ class PyPolicy(abc.ABC):
         self.action_space = action_space
         self.emit_log_probability = emit_log_probability
         self.seed = seed
+        self.rng = np.random.default_rng(seed)
 
     @abc.abstractmethod
     def get_initial_state(self, batch_size: Optional[int] = None) -> Any:
@@ -76,7 +77,6 @@ class PyPolicy(abc.ABC):
         observation: ObsType,
         epsilon: float = 0.0,
         policy_state: Any = (),
-        seed: Optional[int] = None,
     ) -> PolicyStep:
         """Implementation of `action`.
 

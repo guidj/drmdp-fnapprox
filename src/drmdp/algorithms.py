@@ -2,7 +2,7 @@ import abc
 import copy
 import dataclasses
 import logging
-from typing import Any, Iterator, Tuple
+from typing import Any, Iterator, Optional, Tuple
 
 import gymnasium as gym
 import numpy as np
@@ -113,8 +113,8 @@ class LinearFnApproxPolicy(core.PyValueFnPolicy):
         self,
         feat_transform: feats.FeatTransform,
         action_space: gym.Space,
-        emit_log_probability=False,
-        seed=None,
+        emit_log_probability: bool = False,
+        seed: Optional[int] = None,
     ):
         if not isinstance(action_space, gym.spaces.Discrete):
             raise ValueError(
@@ -124,7 +124,6 @@ class LinearFnApproxPolicy(core.PyValueFnPolicy):
         self.feat_transform = feat_transform
         self.weights = np.zeros(feat_transform.output_shape, dtype=np.float64)
         self.actions = tuple(range(action_space.n))
-        self.rng = np.random.default_rng()
 
     def get_initial_state(self, batch_size=None):
         del batch_size
@@ -265,8 +264,8 @@ class OptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
         feat_transform: feats.FeatTransform,
         action_space: gym.Space,
         options_length_range: Tuple[int, int],
-        emit_log_probability=False,
-        seed=None,
+        emit_log_probability: bool = False,
+        seed: Optional[int] = None,
     ):
         if not isinstance(action_space, gym.spaces.Discrete):
             raise ValueError(
@@ -278,7 +277,6 @@ class OptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
         self.primitive_actions = tuple(range(action_space.n))
         self.num_primitive_actions = len(self.primitive_actions)
         self.options_length_range = options_length_range
-        self.rng = np.random.default_rng()
 
         lower, upper = self.options_length_range
         self.delay_options_mapping = {
@@ -374,8 +372,8 @@ class SingleActionOptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
         feat_transform: feats.FeatTransform,
         action_space: gym.Space,
         options_length_range: Tuple[int, int],
-        emit_log_probability=False,
-        seed=None,
+        emit_log_probability: bool = False,
+        seed: Optional[int] = None,
     ):
         if not isinstance(action_space, gym.spaces.Discrete):
             raise ValueError(
@@ -387,7 +385,6 @@ class SingleActionOptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
         self.primitive_actions = tuple(range(action_space.n))
         self.num_primitive_actions = len(self.primitive_actions)
         self.options_length_range = options_length_range
-        self.rng = np.random.default_rng()
 
         lower, upper = self.options_length_range
         self.delay_options_mapping = {
