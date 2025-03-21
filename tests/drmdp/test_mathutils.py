@@ -1,3 +1,4 @@
+from typing import Sequence
 import numpy as np
 import pytest
 
@@ -50,3 +51,49 @@ def test_hashtrick_invalid_input():
 
     with pytest.raises(ValueError):
         mathutils.hashtrick(np.zeros(10), dim=-1)  # dim must be positive
+
+
+
+def test_sequence_to_integer_empty():
+    # Test with empty sequence
+    result = mathutils.sequence_to_integer(10, [])
+    assert result == 0
+
+
+def test_sequence_to_integer_single():
+    # Test with single digit
+    result = mathutils.sequence_to_integer(10, [5])
+    assert result == 5
+
+
+def test_sequence_to_integer_multiple():
+    # Test with multiple digits
+    # For base 10, [1,2,3] -> 123
+    result = mathutils.sequence_to_integer(10, [1, 2, 3])
+    assert result == 123
+
+
+def test_sequence_to_integer_binary():
+    # Test with base 2 (binary)
+    # [1,0,1] in binary -> 5 in decimal
+    result = mathutils.sequence_to_integer(2, [1, 0, 1])
+    assert result == 5
+
+
+def test_sequence_to_integer_base3():
+    # Test with base 3
+    # [1,2,0] in base 3 -> 15 in decimal (1*9 + 2*3 + 0*1)
+    result = mathutils.sequence_to_integer(3, [1, 2, 0])
+    assert result == 15
+
+
+def test_sequence_to_integer_zeros():
+    # Test with all zeros
+    result = mathutils.sequence_to_integer(10, [0, 0, 0])
+    assert result == 0
+
+
+def test_sequence_to_integer_leading_zeros():
+    # Test with leading zeros
+    result = mathutils.sequence_to_integer(10, [0, 1, 2])
+    assert result == 12
