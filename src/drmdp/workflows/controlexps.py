@@ -223,11 +223,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "max_episode_steps": 2500,
         },
         "feats_specs": [
-            {"name": "scale", "args": None},
-            {
-                "name": "gaussian-mix",
-                "args": {"n_components": (384 // 3), "covariance_type": "diag"},
-            },
+            {"name": "tiles", "args": { "tiling_dim": 6}},
         ],
         "problem_specs": COMMON_PROBLEM_SPECS + least_specs(50_000),
     },
