@@ -42,6 +42,40 @@ class StrictWeightedSumOfErrors(reward_functions.WeightedSumOfErrors):
         )
 
 
+class EarlyStopPenaltyWeightedSumOfErrors(reward_functions.WeightedSumOfErrors):
+    """
+    This reward function applies the violation penalty
+    whilst keeping the reward linear w.r.t to the
+    penalty team and state.
+
+    The violation penalty is set to an extreme value
+    to encourage continued exploration.
+    """
+
+    def __init__(
+        self,
+        reward_weights=None,
+        normed_reward_weights=False,
+    ):
+        super().__init__(
+            reward_weights,
+            normed_reward_weights,
+            violation_reward=-((2**31) - 1),
+            gamma=None,
+            reward_power=1,
+            bias=0,
+        )
+        self.penalty_set = False
+
+    def reward(self, state, reference, k=None, action=None, violation_degree=0.0):
+        del k
+        del action
+        return (
+            self._wse_reward(state, reference)
+            + violation_degree * self._violation_reward
+        )
+
+
 class PositiveEnforcementWeightedSumOfErrors(reward_functions.WeightedSumOfErrors):
     """
     This function assumes the reward is bounded
@@ -145,18 +179,22 @@ def make(
     env_name: str,
     constraint_violation_reward: Optional[float] = 0.0,
     penalty_gamma: Optional[float] = 1.0,
-    pos_enforcement: bool = True,
+    reward_fn: str = "default",
     wrapper: Optional[str] = None,
     **kwargs,
 ) -> gym.Env:
-    if pos_enforcement:
-        rf = PositiveEnforcementWeightedSumOfErrors(
-            violation_reward=constraint_violation_reward, penalty_gamma=penalty_gamma
-        )
-    else:
+    if reward_fn == "default":
         rf = StrictWeightedSumOfErrors(
             violation_reward=constraint_violation_reward, penalty_gamma=penalty_gamma
         )
+    elif reward_fn == "pos-enf":
+        rf = PositiveEnforcementWeightedSumOfErrors(
+            violation_reward=constraint_violation_reward, penalty_gamma=penalty_gamma
+        )
+    elif reward_fn == "esp-neg":
+        rf = EarlyStopPenaltyWeightedSumOfErrors()
+    else:
+        raise ValueError(f"Unknown reward fn: {reward_fn}")
     env = GemObsAsVectorWrapper(gym_electric_motor.make(env_name, reward_function=rf))
     max_episode_steps = kwargs.get("max_episode_steps", None)
     if max_episode_steps:
