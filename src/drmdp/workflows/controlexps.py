@@ -223,7 +223,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "max_episode_steps": 2500,
         },
         "feats_specs": [
-            {"name": "tiles", "args": { "tiling_dim": 6}},
+            {"name": "tiles", "args": {"tiling_dim": 6}},
         ],
         "problem_specs": COMMON_PROBLEM_SPECS + least_specs(50_000),
     },
