@@ -5,6 +5,9 @@ from typing import Optional
 import gym_electric_motor
 import gymnasium as gym
 import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 from gym_electric_motor import reward_functions
 
 from drmdp.envs import wrappers
@@ -182,11 +185,45 @@ class GemObsAsVectorWrapper(gym.ObservationWrapper):
         return wrapped_next_state
 
 
+class DNNWrapper(gym.ObservationWrapper):
+    def __init__(self, env: gym.Env):
+        super().__init__(env)
+        # Final layer has no limits
+        self.observation_space = gym.spaces.Box(
+            low=np.ones_like(env.observation_space.low) * -1.0,
+            high=np.ones_like(env.observation_space.high),
+            dtype=env.observation_space.dtype,
+        )
+        self.net = EncoderNet(input_dim=np.size(env.observation_space.high))
+
+    def observation(self, observation):
+        with torch.no_grad():
+            return self.net(torch.from_numpy(observation))
+
+
+class EncoderNet(nn.Module):
+    def __init__(self, input_dim: int):
+        super(EncoderNet, self).__init__()
+        self.fc1 = nn.Linear(input_dim, 64)  # 5*5 from image dimension
+        self.fc2 = nn.Linear(64, 64)
+        self.fc3 = nn.Linear(64, 64)
+
+    def forward(self, inputs):
+        """
+        Forward pass
+        """
+        l1 = F.tanh(self.fc1(inputs))
+        l2 = F.tanh(self.fc2(l1))
+        output = self.fc3(l2)
+        return output
+
+
 def make(
     env_name: str,
     constraint_violation_reward: Optional[float] = 0.0,
     penalty_gamma: Optional[float] = 1.0,
     reward_fn: str = "default",
+    dnn_encoder: bool = False,
     wrapper: Optional[str] = None,
     **kwargs,
 ) -> gym.Env:
@@ -203,6 +240,8 @@ def make(
     else:
         raise ValueError(f"Unknown reward fn: {reward_fn}")
     env = GemObsAsVectorWrapper(gym_electric_motor.make(env_name, reward_function=rf))
+    if dnn_encoder:
+        env = DNNWrapper(env)
     max_episode_steps = kwargs.get("max_episode_steps", None)
     if max_episode_steps:
         env = gym.wrappers.TimeLimit(env, max_episode_steps)

@@ -73,7 +73,6 @@ class IdentityFeatTransform(FeatTransform):
         return self.obs_dim * self.num_actions  # type: ignore
 
 
-
 class RandomBinaryFeatTransform(FeatTransform):
     def __init__(self, env: gym.Env, enc_size: int):
         if not isinstance(env.action_space, gym.spaces.Discrete):
