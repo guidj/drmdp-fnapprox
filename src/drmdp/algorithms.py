@@ -47,7 +47,6 @@ class SemigradientSARSAFnApprox(FnApproxAlgorithm):
         self.epsilon = epsilon
         self.policy = policy
         self.verbose = verbose
-        self.policy = policy
 
     def train(
         self,
@@ -168,6 +167,54 @@ class LinearFnApproxPolicy(core.PyValueFnPolicy):
         return self.weights
 
 
+class RandomFnApproxPolicy(core.PyValueFnPolicy):
+    def __init__(
+        self,
+        feat_transform: feats.FeatTransform,
+        action_space: gym.Space,
+        emit_log_probability: bool = False,
+        seed: Optional[int] = None,
+    ):
+        if not isinstance(action_space, gym.spaces.Discrete):
+            raise ValueError(
+                f"This policy only supports discrete action spaces. Got {type(action_space)}"
+            )
+        super().__init__(action_space, emit_log_probability, seed)
+        self.feat_transform = feat_transform
+        self.weights = np.zeros(feat_transform.output_shape, dtype=np.float64)
+        self.actions = tuple(range(action_space.n))
+
+    def get_initial_state(self, batch_size=None):
+        del batch_size
+        return ()
+
+    def action(
+        self, observation, epsilon: float = 0.0, policy_state: Any = (), seed=None
+    ):
+        del seed
+        state_qvalues, gradients = self.action_values_gradients(
+            observation, self.actions
+        )
+        action = self.rng.choice(self.actions)
+        return core.PolicyStep(
+            action,
+            state=policy_state,
+            info={"values": state_qvalues, "gradients": gradients},
+        )
+
+    def action_values_gradients(self, observation, actions):
+        observations = [observation] * len(actions)
+        state_action_m = self.feat_transform.batch_transform(observations, actions)
+        return np.dot(state_action_m, self.weights), state_action_m
+
+    def update(self, scaled_gradients):
+        self.weights += scaled_gradients
+
+    @property
+    def model(self):
+        return self.weights
+
+
 class OptionsSemigradientSARSAFnApprox(FnApproxAlgorithm):
     def __init__(
         self,
@@ -185,7 +232,6 @@ class OptionsSemigradientSARSAFnApprox(FnApproxAlgorithm):
         self.epsilon = epsilon
         self.policy = policy
         self.verbose = verbose
-        self.egreedy_policy = policy
 
     def train(
         self,
@@ -195,7 +241,7 @@ class OptionsSemigradientSARSAFnApprox(FnApproxAlgorithm):
     ) -> Iterator[PolicyControlSnapshot]:
         for episode in range(num_episodes):
             obs, info = env.reset(seed=self.seeder.get_seed(episode=episode))
-            policy_step = self.egreedy_policy.action(
+            policy_step = self.policy.action(
                 obs, epsilon=self.epsilon, policy_state=(info["delay"],)
             )
             state_qvalues, gradients, actions = (
@@ -222,12 +268,12 @@ class OptionsSemigradientSARSAFnApprox(FnApproxAlgorithm):
                                 * (reward - state_qvalues[policy_step.action])
                                 * gradients[policy_step.action]
                             )
-                            self.egreedy_policy.update(scaled_gradients)
+                            self.policy.update(scaled_gradients)
                         break
                 if term or trunc:
                     break
 
-                next_policy_step = self.egreedy_policy.action(
+                next_policy_step = self.policy.action(
                     next_obs, epsilon=self.epsilon, policy_state=(info["delay"],)
                 )
                 next_state_qvalues, next_gradients, next_actions = (
@@ -244,7 +290,7 @@ class OptionsSemigradientSARSAFnApprox(FnApproxAlgorithm):
                     )
                     * gradients[policy_step.action]
                 )
-                self.egreedy_policy.update(scaled_gradients)
+                self.policy.update(scaled_gradients)
                 obs = next_obs
                 policy_step = next_policy_step
                 state_qvalues = next_state_qvalues
@@ -259,7 +305,7 @@ class OptionsSemigradientSARSAFnApprox(FnApproxAlgorithm):
             yield PolicyControlSnapshot(
                 steps=monitor.step,
                 returns=monitor.rewards,
-                weights=copy.copy(self.egreedy_policy.model),
+                weights=copy.copy(self.policy.model),
             )
         env.close()
 
