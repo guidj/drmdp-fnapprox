@@ -188,13 +188,18 @@ class GemObsAsVectorWrapper(gym.ObservationWrapper):
 class DNNWrapper(gym.ObservationWrapper):
     def __init__(self, env: gym.Env):
         super().__init__(env)
+        output_dim = 64
         # Final layer has no limits
         self.observation_space = gym.spaces.Box(
-            low=np.ones_like(env.observation_space.low) * -1.0,
-            high=np.ones_like(env.observation_space.high),
+            low=np.ones(shape=(output_dim,)) * -1.0,
+            high=np.ones(shape=(output_dim,)),
             dtype=env.observation_space.dtype,
         )
-        self.net = EncoderNet(input_dim=np.size(env.observation_space.high))
+        self.net = EncoderNet(
+            input_dim=np.size(env.observation_space.high),
+            output_dim=output_dim,
+            dtype=torch.from_numpy(env.observation_space.high).dtype,
+        )
 
     def observation(self, observation):
         with torch.no_grad():
@@ -202,11 +207,13 @@ class DNNWrapper(gym.ObservationWrapper):
 
 
 class EncoderNet(nn.Module):
-    def __init__(self, input_dim: int):
+    def __init__(self, input_dim: int, output_dim: int, dtype):
         super(EncoderNet, self).__init__()
-        self.fc1 = nn.Linear(input_dim, 64)  # 5*5 from image dimension
-        self.fc2 = nn.Linear(64, 64)
-        self.fc3 = nn.Linear(64, 64)
+        self.fc1 = nn.Linear(
+            input_dim, 64, dtype=dtype
+        )  # 5*5 from image dimension
+        self.fc2 = nn.Linear(64, 64, dtype=dtype)
+        self.fc3 = nn.Linear(64, output_dim, dtype=dtype)
 
     def forward(self, inputs):
         """
