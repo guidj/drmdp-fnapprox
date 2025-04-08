@@ -196,6 +196,7 @@ class EnvMonitor:
     """
     Monitors episode returns and steps.
     """
+
     def __init__(self):
         self.returns: List[float] = []
         self.steps: List[int] = []
