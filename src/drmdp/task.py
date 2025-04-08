@@ -246,7 +246,7 @@ def create_algorithm(
             ),
             base_seed=base_seed,
         )
-    elif policy_type == "random":
+    elif policy_type == "uniform-random":
         return algorithms.SemigradientSARSAFnApprox(
             lr=lr,
             gamma=gamma,
