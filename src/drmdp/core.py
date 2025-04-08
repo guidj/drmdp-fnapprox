@@ -193,6 +193,9 @@ class EnvMonitorWrapper(gym.Wrapper):
 
 
 class EnvMonitor:
+    """
+    Monitors episode returns and steps.
+    """
     def __init__(self):
         self.returns: List[float] = []
         self.steps: List[int] = []
@@ -200,11 +203,23 @@ class EnvMonitor:
         self.step: int = 0
 
     def reset(self):
+        """
+        Stack values to track new episode.
+        """
         if self.step > 0:
             self.returns.append(self.rewards)
             self.steps.append(self.step)
         self.rewards = 0.0
         self.step = 0
+
+    def clear(self):
+        """
+        Clear monitored data.
+        """
+        self.returns = []
+        self.steps = []
+        self.step = 0
+        self.rewards = 0.0
 
 
 class Seeder:
