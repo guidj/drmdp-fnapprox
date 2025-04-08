@@ -30,6 +30,50 @@ class FeatTransform(abc.ABC):
         pass
 
 
+class IdentityFeatTransform(FeatTransform):
+    def __init__(self, env: gym.Env):
+        if not isinstance(env.observation_space, gym.spaces.Box):
+            raise ValueError(
+                f"env.observation_space must be `spaces.Box`. Got {env.observation_space}",
+                env,
+            )
+        if not isinstance(env.action_space, gym.spaces.Discrete):
+            raise ValueError(
+                f"env.action_space must be `spaces.Discrete`. Got {env.action_space}",
+                env,
+            )
+
+        self.obs_space = env.observation_space
+        self.num_actions = env.action_space.n
+        self.obs_dim = np.size(self.obs_space.high)
+
+    def transform(self, observation: ObsType, action: ActType):
+        output = np.zeros(shape=self.obs_dim * self.num_actions)
+        idx = self.obs_dim * action
+        output[idx : idx + self.obs_dim] = observation
+        return output
+
+    def batch_transform(
+        self, observations: Sequence[ObsType], actions: Sequence[ActType]
+    ):
+        batch_size = len(observations)
+        output = np.zeros((batch_size, self.obs_dim * self.num_actions))
+
+        # make obs an array if necessary
+        obs = np.asarray(observations)
+        # Fill output array using loop
+        for i, (obs, action) in enumerate(zip(obs, actions)):
+            idx = self.obs_dim * action
+            output[i, idx : idx + self.obs_dim] = obs
+
+        return output
+
+    @property
+    def output_shape(self) -> int:
+        return self.obs_dim * self.num_actions  # type: ignore
+
+
+
 class RandomBinaryFeatTransform(FeatTransform):
     def __init__(self, env: gym.Env, enc_size: int):
         if not isinstance(env.action_space, gym.spaces.Discrete):
@@ -279,6 +323,8 @@ class TileFeatTransform(FeatTransform):
 
 
 def create_feat_transformer(env: gym.Env, name: str, args: Mapping[str, Any]):
+    if name == constants.IDENTITY:
+        return IdentityFeatTransform(env)
     if name == constants.RANDOM:
         return RandomBinaryFeatTransform(env, **args)
     if name == constants.SCALE:
