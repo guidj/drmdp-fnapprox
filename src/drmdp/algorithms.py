@@ -98,7 +98,7 @@ class SemigradientSARSAFnApprox(FnApproxAlgorithm):
                 policy_step = next_policy_step
                 state_qvalues = next_state_qvalues
                 gradients = next_gradients
-            if self.verbose and (episode + 1) % (num_episodes // 5) == 0:
+            if self.verbose and (episode + 1) % max((num_episodes // 5), 1) == 0:
                 logging.info(
                     "Episode %d mean returns: %f",
                     episode + 1,
@@ -296,7 +296,7 @@ class OptionsSemigradientSARSAFnApprox(FnApproxAlgorithm):
                 state_qvalues = next_state_qvalues
                 gradients = next_gradients
                 actions = next_actions
-            if self.verbose and (episode + 1) % (num_episodes // 5) == 0:
+            if self.verbose and (episode + 1) % max(num_episodes // 5, 1) == 0:
                 logging.info(
                     "Episode %d mean returns: %f",
                     episode + 1,
