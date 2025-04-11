@@ -15,8 +15,11 @@ from drmdp.envs import gem
 
 MAX_STEPS = 2500
 
+
 @dataclasses.dataclass(frozen=True)
 class Args:
+    num_runs: int
+    num_episodes: int
     output_path: str
 
 
@@ -30,10 +33,60 @@ class JobSpec:
     output_path: str
 
 
+def run_feats_spec_control_study(
+    envs, feats_specs, turns: int, num_episodes: int, output_path: str
+):
+    baseline_spec = {"name": "identity", "args": None}
+    # pair speccs with policies
+    configs = list(
+        itertools.product(envs, feats_specs, ["markovian"], range(turns))
+    ) + list(itertools.product(envs, [baseline_spec], ["uniform-random"], range(turns)))
+
+    jobs = []
+    for env_name, feats_spec, policy_type, turn in configs:
+        args = JobSpec(
+            env_name, feats_spec, policy_type, num_episodes, turn, output_path
+        )
+        jobs.append(args)
+
+    with ray.init() as context:
+        logging.info("Starting ray task: %s", context)
+        results_refs = [run_fn.remote(args) for args in jobs]
+        wait_till_completion(results_refs)
+
+
+def wait_till_completion(tasks_refs):
+    """
+    Waits for every ray task to complete.
+    """
+    unfinished_tasks = tasks_refs
+    while True:
+        finished_tasks, unfinished_tasks = ray.wait(unfinished_tasks)
+        for finished_task in finished_tasks:
+            logging.info(
+                "Completed task %s, %d left out of %d.",
+                ray.get(finished_task),
+                len(unfinished_tasks),
+                len(tasks_refs),
+            )
+
+        if len(unfinished_tasks) == 0:
+            break
+
+
 @ray.remote
-def feats_spec_control(job_spec: JobSpec):
+def run_fn(job_spec: JobSpec):
     task_id = str(uuid.uuid4())
     logging.info("Starting task %s: %s", task_id, job_spec)
+    try:
+        feats_spec_control(job_spec, task_id)
+    except Exception as err:
+        raise RuntimeError(f"Task {task_id} `{job_spec}` failed") from err
+    logging.info("Completed task %s: %s", task_id, job_spec)
+    return task_id
+
+
+def feats_spec_control(job_spec: JobSpec, task_id: str):
     env = gem.make(job_spec.env_name, reward_fn="pos-enf", max_episode_steps=MAX_STEPS)
     env, monitor = task.monitor_wrapper(env)
     rew_delay = task.reward_delay_distribution(None)
@@ -43,7 +96,6 @@ def feats_spec_control(job_spec: JobSpec):
         mapping_spec={"name": "identity", "args": None},
         feats_spec={},
     )
-
     feats_tfx = feats.create_feat_transformer(env=env, **job_spec.feats_spec)
     lr = task.learning_rate(**{"name": "constant", "args": {"initial_lr": 0.01}})
     # Create spec using provided name and args for feature spec
@@ -92,47 +144,6 @@ def feats_spec_control(job_spec: JobSpec):
     ds_result.repartition(1).write_json(
         os.path.join(job_spec.output_path, task_id),
     )
-    logging.info("Completed task %s", job_spec)
-    return task_id
-
-
-def run_feats_spec_control_study(
-    envs, feats_specs, turns: int, num_episodes: int, output_path: str
-):
-    baseline_spec = {"name": "identity", "args": None}
-    # pair speccs with policies
-    configs = list(
-        itertools.product(envs, feats_specs, ["markovian"], range(turns))
-    ) + list(itertools.product(envs, [baseline_spec], ["uniform-random"], range(turns)))
-
-    jobs = []
-    for env_name, feats_spec, policy_type, turn in configs:
-        args = JobSpec(
-            env_name, feats_spec, policy_type, num_episodes, turn, output_path
-        )
-        jobs.append(args)
-
-    results_refs = [feats_spec_control.remote(args) for args in jobs]
-    wait_till_completion(results_refs)
-
-
-def wait_till_completion(tasks_refs):
-    """
-    Waits for every ray task to complete.
-    """
-    unfinished_tasks = tasks_refs
-    while True:
-        finished_tasks, unfinished_tasks = ray.wait(unfinished_tasks)
-        for finished_task in finished_tasks:
-            logging.info(
-                "Completed task %s, %d left out of %d.",
-                ray.get(finished_task),
-                len(unfinished_tasks),
-                len(tasks_refs),
-            )
-
-        if len(unfinished_tasks) == 0:
-            break
 
 
 def main():
@@ -142,13 +153,10 @@ def main():
         [
             "Finite-CC-PMSM-v0",
             "Finite-TC-PermExDc-v0",
-            "Finite-SC-ExtExDc-v0",
             "Finite-CC-SeriesDc-v0",
             "Finite-TC-ShuntDc-v0",
-            "Finite-CC-EESM-v0",
             "Finite-SC-SynRM-v0",
             "Finite-CC-SCIM-v0",
-            "Finite-TC-DFIM-v0",
         ],
         [
             {"name": "tiles", "args": {"tiling_dim": 4}},
@@ -156,8 +164,8 @@ def main():
             {"name": "tiles", "args": {"tiling_dim": 2}},
             {"name": "scale", "args": None},
         ],
-        turns=3,
-        num_episodes=300,
+        turns=args.num_runs,
+        num_episodes=args.num_episodes,
         output_path=args.output_path,
     )
     logging.info("Output dir: %s", args.output_path)
@@ -166,6 +174,8 @@ def main():
 
 def parse_args() -> Args:
     arg_parser = argparse.ArgumentParser()
+    arg_parser.add_argument("--num-runs", type=int, required=True)
+    arg_parser.add_argument("--num-episodes", type=int, required=True)
     arg_parser.add_argument("--output-path", required=True)
     known_args, _ = arg_parser.parse_known_args()
     return Args(**vars(known_args))
