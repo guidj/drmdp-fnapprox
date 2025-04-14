@@ -1,14 +1,16 @@
 import argparse
 import dataclasses
 import itertools
+import json
 import logging
 import os.path
 import uuid
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping
 
 import numpy as np
 import ray
 import ray.data
+import tensorflow as tf
 
 from drmdp import feats, task
 from drmdp.envs import gem
@@ -140,11 +142,15 @@ def feats_spec_control(job_spec: JobSpec, task_id: str):
             }
         )
 
-    ds_result = ray.data.from_items(records)
-    # write to a single file
-    ds_result.repartition(1).write_json(
-        os.path.join(job_spec.output_path, task_id),
-    )
+    output_path = os.path.join(job_spec.output_path, f"{task_id}.jsonl")
+    write_records(output_path, records)
+
+
+def write_records(output_path: str, records):
+    with tf.io.gfile.GFile(output_path, "w") as writable:
+        for record in records:
+            json.dump(record, writable)
+            writable.write("\n")
 
 
 def main():
