@@ -4,7 +4,7 @@ import itertools
 import logging
 import os.path
 import uuid
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 import numpy as np
 import ray
@@ -49,9 +49,12 @@ def run_feats_spec_control_study(
         )
         jobs.append(args)
 
+    np.random.shuffle(jobs)
+    batch_jobs = task.bundle(jobs, bundle_size=4)
+
     with ray.init() as context:
         logging.info("Starting ray task: %s", context)
-        results_refs = [run_fn.remote(args) for args in jobs]
+        results_refs = [run_fn.remote(batch) for batch in batch_jobs]
         wait_till_completion(results_refs)
 
 
@@ -75,15 +78,18 @@ def wait_till_completion(tasks_refs):
 
 
 @ray.remote
-def run_fn(job_spec: JobSpec):
-    task_id = str(uuid.uuid4())
-    logging.info("Starting task %s: %s", task_id, job_spec)
-    try:
-        feats_spec_control(job_spec, task_id)
-    except Exception as err:
-        raise RuntimeError(f"Task {task_id} `{job_spec}` failed") from err
-    logging.info("Completed task %s: %s", task_id, job_spec)
-    return task_id
+def run_fn(job_specs: Sequence[JobSpec]):
+    tasks = []
+    for job_spec in job_specs:
+        task_id = str(uuid.uuid4())
+        logging.info("Starting task %s: %s", task_id, job_spec)
+        try:
+            feats_spec_control(job_spec, task_id)
+        except Exception as err:
+            raise RuntimeError(f"Task {task_id} `{job_spec}` failed") from err
+        logging.info("Completed task %s: %s", task_id, job_spec)
+        tasks.append(task_id)
+    return tasks
 
 
 def feats_spec_control(job_spec: JobSpec, task_id: str):
