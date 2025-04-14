@@ -301,8 +301,8 @@ class TileFeatTransform(FeatTransform):
 
         # Get tile indices for each observation-action pair
         for i in range(batch_size):
-            idx = self._tiles(obs_scaled_01[i], actions[i])
-            output[i, idx] = 1
+            indices = self._tiles(obs_scaled_01[i], actions[i])
+            output[i, indices] = 1
             if self.hash_dim:
                 hashed_output[i] = mathutils.hashtrick(output[i], self.hash_dim)  # type:ignore
         return hashed_output if self.hash_dim else output
