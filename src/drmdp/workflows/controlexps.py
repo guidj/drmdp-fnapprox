@@ -167,7 +167,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "args": {
             "pos_enforcement": True,
             "penalty_gamma": 1.0,
-            "violation_reward": 0.0,
+            "violation_reward": -100,
             "max_episode_steps": 1000,
         },
         "feats_specs": [{"name": "scale", "args": None}],
@@ -178,7 +178,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "args": {
             "pos_enforcement": True,
             "penalty_gamma": 1.0,
-            "violation_reward": 0.0,
+            "violation_reward": -100,
             "max_episode_steps": 1000,
         },
         "feats_specs": [{"name": "scale", "args": None}],
@@ -189,7 +189,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "args": {
             "pos_enforcement": True,
             "penalty_gamma": 1.0,
-            "violation_reward": 0.0,
+            "violation_reward": -100,
             "max_episode_steps": 1000,
         },
         "feats_specs": [{"name": "scale", "args": None}],
@@ -200,7 +200,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "args": {
             "pos_enforcement": True,
             "penalty_gamma": 1.0,
-            "violation_reward": 0.0,
+            "violation_reward": -100,
             "max_episode_steps": 1000,
         },
         "feats_specs": [{"name": "scale", "args": None}],
@@ -211,7 +211,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "args": {
             "pos_enforcement": True,
             "penalty_gamma": 1.0,
-            "violation_reward": 0.0,
+            "violation_reward": -100,
             "max_episode_steps": 1000,
         },
         "feats_specs": [{"name": "scale", "args": None}],
