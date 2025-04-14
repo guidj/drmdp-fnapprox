@@ -25,9 +25,8 @@ class Tiles:
         # num tilings should a power of 2
         # and at least 4 times greater than
         # the number of dimensions
-        self.num_tilings = num_tilings or pow2geq(np.size(dims_min) * 4)
+        self.num_tilings = num_tilings or (np.size(dims_min) * 4)
         self.max_size = (tiling_dim ** np.size(dims_min)) * self.num_tilings
-        print("Num tilings", self.num_tilings, "\n", "Flat dim:", self.max_size)
         self.iht = IHT(self.max_size)
 
     def __call__(self, xs):

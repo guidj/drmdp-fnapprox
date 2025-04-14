@@ -263,10 +263,11 @@ class TileFeatTransform(FeatTransform):
         self.wrapwidths = [tiling_dim] * np.size(self.obs_space.low)
         self.num_actions = env.action_space.n
 
+        # For best results,
         # num tilings should a power of 2
         # and at least 4 times greater than
-        # the number of dimensions
-        self.num_tilings = num_tilings or tiles.pow2geq(np.size(self.obs_space.low) * 4)
+        # the number of dimensions.
+        self.num_tilings = num_tilings or (np.size(self.obs_space.low) * 4)
         self.max_size = (
             (tiling_dim ** np.size(self.obs_space.low))
             * self.num_tilings
@@ -339,10 +340,11 @@ class ActionSplicedTileFeatTransform(FeatTransform):
         self.wrapwidths = [tiling_dim] * np.size(self.obs_space.low)
         self.num_actions = env.action_space.n
 
+        # For best results,
         # num tilings should a power of 2
         # and at least 4 times greater than
-        # the number of dimensions
-        self.num_tilings = num_tilings or tiles.pow2geq(np.size(self.obs_space.low) * 4)
+        # the number of dimensions.
+        self.num_tilings = num_tilings or (np.size(self.obs_space.low) * 4)
         self.max_size = (tiling_dim ** np.size(self.obs_space.low)) * self.num_tilings
         self.obs_dim = -1
         self.ihts = {
