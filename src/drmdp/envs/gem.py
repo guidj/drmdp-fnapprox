@@ -182,6 +182,36 @@ class GemObsAsVectorWrapper(gym.ObservationWrapper):
         return wrapped_next_state
 
 
+class DiscretiseActionWrapper(gym.ActionWrapper):
+    def __init__(self, env):
+        super().__init__(env)
+
+        if isinstance(env.action_space, gym.spaces.Discrete):
+            self.action_space = env.action_space
+        elif isinstance(env.action_space, gym.spaces.MultiDiscrete):
+            if not np.size(env.action_space.nvec) == 2:
+                raise ValueError(
+                    f"Only MultiDiscrete(2) is supported. Got {env.action_space}"
+                )
+            self.action_space = gym.spaces.Discrete(np.prod(env.action_space.nvec))
+        else:
+            raise ValueError(
+                f"Action space must be Discrete or MultiDiscrete. Got: {env.action_space}"
+            )
+
+    def action(self, action):
+        # covert a discrete action into a multidiscrete one
+        if isinstance(self.env.action_space, gym.spaces.Discrete):
+            return action
+        elif isinstance(self.env.action_space, gym.spaces.MultiDiscrete):
+            nvec = self.env.action_space.nvec
+            c1 = action % nvec[1]
+            c0 = (action - c1) // nvec[1]
+            return [c0, c1]
+        else:
+            raise ValueError(f"Unsupported action {action}")
+
+
 def make(
     env_name: str,
     constraint_violation_reward: Optional[float] = 0.0,
@@ -203,6 +233,7 @@ def make(
     else:
         raise ValueError(f"Unknown reward fn: {reward_fn}")
     env = GemObsAsVectorWrapper(gym_electric_motor.make(env_name, reward_function=rf))
+    env = DiscretiseActionWrapper(env)
     max_episode_steps = kwargs.get("max_episode_steps", None)
     if max_episode_steps:
         env = gym.wrappers.TimeLimit(env, max_episode_steps)
