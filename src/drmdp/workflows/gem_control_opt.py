@@ -48,13 +48,11 @@ def run_feats_spec_control_study(
             env_name, feats_spec, policy_type, num_episodes, turn, output_path
         )
         jobs.append(args)
-
     np.random.shuffle(jobs)
-    batch_jobs = task.bundle(jobs, bundle_size=4)
 
     with ray.init() as context:
         logging.info("Starting ray task: %s", context)
-        results_refs = [run_fn.remote(batch) for batch in batch_jobs]
+        results_refs = [run_fn.remote(args) for args in jobs]
         wait_till_completion(results_refs)
 
 
@@ -78,18 +76,15 @@ def wait_till_completion(tasks_refs):
 
 
 @ray.remote
-def run_fn(job_specs: Sequence[JobSpec]):
-    tasks = []
-    for job_spec in job_specs:
-        task_id = str(uuid.uuid4())
-        logging.info("Starting task %s: %s", task_id, job_spec)
-        try:
-            feats_spec_control(job_spec, task_id)
-        except Exception as err:
-            raise RuntimeError(f"Task {task_id} `{job_spec}` failed") from err
-        logging.info("Completed task %s: %s", task_id, job_spec)
-        tasks.append(task_id)
-    return tasks
+def run_fn(job_spec: JobSpec):
+    task_id = str(uuid.uuid4())
+    logging.info("Starting task %s: %s", task_id, job_spec)
+    try:
+        feats_spec_control(job_spec, task_id)
+    except Exception as err:
+        raise RuntimeError(f"Task {task_id} `{job_spec}` failed") from err
+    logging.info("Completed task %s: %s", task_id, job_spec)
+    return task_id
 
 
 def feats_spec_control(job_spec: JobSpec, task_id: str):
@@ -125,7 +120,7 @@ def feats_spec_control(job_spec: JobSpec, task_id: str):
 
     records = []
     for episode, snapshot in enumerate(results):
-        if episode % max((job_spec.num_episodes // 5), 1) == 0:
+        if episode % max((job_spec.num_episodes // 3), 1) == 0:
             logging.info(
                 "Episode: %d; Steps: %d, Mean returns: %f; Task: %s",
                 episode,
