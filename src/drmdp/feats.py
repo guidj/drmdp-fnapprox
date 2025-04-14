@@ -355,7 +355,6 @@ class ActionSplicedTileFeatTransform(FeatTransform):
         # Convert observations to numpy array if not already
         obs_scaled_01 = (np.asarray(observation) - self.obs_space.low) / self.obs_range
         obs_tiled = np.zeros(shape=self.max_size)
-        obs_hashed = np.zeros(shape=self.hash_dim) if self.hash_dim else None
         indices = self._tiles(obs_scaled_01, action)
         obs_tiled[indices] = 1
         if self.hash_dim:
