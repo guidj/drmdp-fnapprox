@@ -6,6 +6,7 @@ IDENTITY = "identity"
 SCALE = "scale"
 GAUSSIAN_MIX = "gaussian-mix"
 TILES = "tiles"
+SPLICED_TILES = "spliced-tiles"
 RANDOM = "random"
 DEFAULT_PARAMS_GRID = {
     "n_components": range(4, 12),

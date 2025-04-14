@@ -178,8 +178,8 @@ class ScaleFeatTransform(FeatTransform):
 
         # Fill output array using loop
         for i, (obs, action) in enumerate(zip(obs_scaled_01, actions)):
-            idx = self.obs_dim * action
-            output[i, idx : idx + self.obs_dim] = obs
+            start_index = self.obs_dim * action
+            output[i, start_index : start_index + self.obs_dim] = obs
 
         return output
 
@@ -281,8 +281,8 @@ class TileFeatTransform(FeatTransform):
         # Convert observations to numpy array if not already
         obs_scaled_01 = (np.asarray(observation) - self.obs_space.low) / self.obs_range
         output = np.zeros(shape=self.max_size)
-        idx = self._tiles(obs_scaled_01, action)
-        output[idx] = 1
+        indices = self._tiles(obs_scaled_01, action)
+        output[indices] = 1
         if self.hash_dim:
             return mathutils.hashtrick(output, self.hash_dim)
         return output
@@ -321,6 +321,94 @@ class TileFeatTransform(FeatTransform):
         )
 
 
+class ActionSplicedTileFeatTransform(FeatTransform):
+    def __init__(
+        self,
+        env: gym.Env,
+        tiling_dim: int,
+        num_tilings: Optional[int] = None,
+        hash_dim: Optional[int] = None,
+    ):
+        if not isinstance(env.observation_space, gym.spaces.Box):
+            raise ValueError("env.observation_space must be `spaces.Box`")
+        if not isinstance(env.action_space, gym.spaces.Discrete):
+            raise ValueError("env.action_space must be `spaces.Discrete`")
+
+        self.obs_space = env.observation_space
+        self.tiling_dim = tiling_dim
+        self.wrapwidths = [tiling_dim] * np.size(self.obs_space.low)
+        self.num_actions = env.action_space.n
+
+        # num tilings should a power of 2
+        # and at least 4 times greater than
+        # the number of dimensions
+        self.num_tilings = num_tilings or tiles.pow2geq(np.size(self.obs_space.low) * 4)
+        self.max_size = (tiling_dim ** np.size(self.obs_space.low)) * self.num_tilings
+        self.obs_dim = -1
+        self.ihts = {
+            action: tiles.IHT(self.max_size) for action in range(self.num_actions)
+        }
+        self.hash_dim = hash_dim if hash_dim and self.max_size > hash_dim else None
+        self.obs_range = self.obs_space.high - self.obs_space.low
+
+    def transform(self, observation: ObsType, action: ActType):
+        # Convert observations to numpy array if not already
+        obs_scaled_01 = (np.asarray(observation) - self.obs_space.low) / self.obs_range
+        obs_tiled = np.zeros(shape=self.max_size)
+        obs_hashed = np.zeros(shape=self.hash_dim) if self.hash_dim else None
+        indices = self._tiles(obs_scaled_01, action)
+        obs_tiled[indices] = 1
+        if self.hash_dim:
+            obs_hashed = mathutils.hashtrick(obs_tiled, self.hash_dim)
+            output = np.zeros(shape=self.hash_dim * self.num_actions)
+            start_index = self.hash_dim * action
+            output[start_index : start_index + self.hash_dim] = obs_hashed
+            return output
+
+        output = np.zeros(shape=self.max_size * self.num_actions)
+        start_index = self.max_size * action
+        output[start_index : start_index + self.max_size] = obs_tiled
+        return output
+
+    def batch_transform(
+        self, observations: Sequence[ObsType], actions: Sequence[ActType]
+    ):
+        # Convert observations to numpy array if not already
+        observations = np.asarray(observations)  # type: ignore
+
+        # Scale observations to [0,1] range
+        obs_scaled_01 = (observations - self.obs_space.low) / self.obs_range
+        batch_size = len(observations)
+        obs_tiled = np.zeros((batch_size, self.max_size))
+        hashed_output = np.zeros((batch_size, self.hash_dim)) if self.hash_dim else None
+        output_size = self.hash_dim or self.max_size
+        output = np.zeros((batch_size, output_size * self.num_actions))
+        # Get tile indices for each observation-action pair
+        for i in range(batch_size):
+            indices = self._tiles(obs_scaled_01[i], actions[i])
+            obs_tiled[i, indices] = 1
+            if self.hash_dim:
+                hashed_output[i] = mathutils.hashtrick(obs_tiled[i], self.hash_dim)  # type:ignore
+                start_index = self.hash_dim * actions[i]
+                output[i, start_index : start_index + self.hash_dim] = hashed_output[i]
+            else:
+                start_index = self.max_size * actions[i]
+                output[i, start_index : start_index + self.max_size] = obs_tiled[i]
+        return output
+
+    @property
+    def output_shape(self) -> int:
+        return (self.hash_dim or self.max_size) * self.num_actions
+
+    def _tiles(self, scaled_obs: np.ndarray, action: ActType):
+        return tiles.tileswrap(
+            self.ihts[action],
+            numtilings=self.num_tilings,
+            floats=scaled_obs * self.tiling_dim,  # type: ignore
+            wrapwidths=self.wrapwidths,
+        )
+
+
 def create_feat_transformer(env: gym.Env, name: str, args: Mapping[str, Any]):
     if name == constants.IDENTITY:
         return IdentityFeatTransform(env)
@@ -332,4 +420,6 @@ def create_feat_transformer(env: gym.Env, name: str, args: Mapping[str, Any]):
         return GaussianMixFeatTransform(env, **args)
     if name == constants.TILES:
         return TileFeatTransform(env, **args)
+    if name == constants.SPLICED_TILES:
+        return ActionSplicedTileFeatTransform(env, **args)
     raise ValueError(f"FeatTransformer `{name}` unknown")
