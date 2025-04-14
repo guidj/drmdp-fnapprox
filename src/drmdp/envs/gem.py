@@ -141,8 +141,8 @@ class GemObsAsVectorWrapper(gym.ObservationWrapper):
                 np.zeros_like(state_obs_space.low[self._mask]) + self._bias,
                 # values
                 state_obs_space.low[self._mask],
-                # constraint violation + free variable
-                np.array([0.0, 0.0]),
+                # constraint violation
+                np.array([0.0]),
             ]
         )
         obs_space_high = np.concatenate(
@@ -152,8 +152,8 @@ class GemObsAsVectorWrapper(gym.ObservationWrapper):
                 + self._bias,
                 # values
                 state_obs_space.high[self._mask],
-                # constraint violation + free variable
-                np.array([1.0, 1.0]),
+                # constraint violation
+                np.array([1.0]),
             ]
         )
         self.observation_space = gym.spaces.Box(
@@ -175,7 +175,7 @@ class GemObsAsVectorWrapper(gym.ObservationWrapper):
                 (abs(next_state - prev_ref_state) / self._denom) ** self._expo
                 + self._bias,
                 next_state,
-                np.array([cv, 1.0]),
+                np.array([cv]),
             ]
         )
         self._prev_ref_state = ref_state
