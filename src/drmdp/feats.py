@@ -267,7 +267,7 @@ class TileFeatTransform(FeatTransform):
         # num tilings should a power of 2
         # and at least 4 times greater than
         # the number of dimensions.
-        self.num_tilings = num_tilings or (np.size(self.obs_space.low) * 4)
+        self.num_tilings = num_tilings or tiles.pow2geq(np.size(self.obs_space.low) * 4)
         self.max_size = (
             (tiling_dim ** np.size(self.obs_space.low))
             * self.num_tilings
@@ -344,7 +344,7 @@ class ActionSplicedTileFeatTransform(FeatTransform):
         # num tilings should a power of 2
         # and at least 4 times greater than
         # the number of dimensions.
-        self.num_tilings = num_tilings or (np.size(self.obs_space.low) * 4)
+        self.num_tilings = num_tilings or tiles.pow2geq(np.size(self.obs_space.low) * 4)
         self.max_size = (tiling_dim ** np.size(self.obs_space.low)) * self.num_tilings
         self.obs_dim = -1
         self.ihts = {
