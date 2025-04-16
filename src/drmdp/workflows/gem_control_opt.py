@@ -50,7 +50,7 @@ def run_feats_spec_control_study(
             env_name, feats_spec, policy_type, num_episodes, turn, output_path
         )
         jobs.append(args)
-    np.random.shuffle(jobs)
+    np.random.shuffle(jobs)  # type: ignore
 
     with ray.init() as context:
         logging.info("Starting ray task: %s", context)
@@ -100,7 +100,7 @@ def feats_spec_control(job_spec: JobSpec, task_id: str):
         feats_spec={},
     )
     feats_tfx = feats.create_feat_transformer(env=env, **job_spec.feats_spec)
-    lr = task.learning_rate(**{"name": "constant", "args": {"initial_lr": 0.01}})
+    lr = task.learning_rate(**{"name": "constant", "args": {"initial_lr": 0.01}})  # type: ignore
     # Create spec using provided name and args for feature spec
     algorithm = task.create_algorithm(
         env=env,

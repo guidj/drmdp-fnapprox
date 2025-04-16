@@ -391,7 +391,7 @@ class ActionSplicedTileFeatTransform(FeatTransform):
             if self.hash_dim:
                 hashed_output[i] = mathutils.hashtrick(obs_tiled[i], self.hash_dim)  # type:ignore
                 start_index = self.hash_dim * actions[i]
-                output[i, start_index : start_index + self.hash_dim] = hashed_output[i]
+                output[i, start_index : start_index + self.hash_dim] = hashed_output[i]  # type: ignore
             else:
                 start_index = self.max_size * actions[i]
                 output[i, start_index : start_index + self.max_size] = obs_tiled[i]
@@ -399,7 +399,7 @@ class ActionSplicedTileFeatTransform(FeatTransform):
 
     @property
     def output_shape(self) -> int:
-        return (self.hash_dim or self.max_size) * self.num_actions
+        return (self.hash_dim or self.max_size) * self.num_actions  # type: ignore
 
     def _tiles(self, scaled_obs: np.ndarray, action: ActType):
         return tiles.tileswrap(
