@@ -175,7 +175,43 @@ COMMON_PROBLEM_SPECS = (
 
 SPECS: Sequence[Mapping[str, Any]] = (
     {
-        "name": "Finite-CC-PMSM-v0",
+        "name": "Finite-CC-PermExDc-v0",
+        "args": {
+            "pos_enforcement": True,
+            "penalty_gamma": 1.0,
+            "violation_reward": -100,
+            "max_episode_steps": 1000,
+        },
+        "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 4}}],
+        "problem_specs": COMMON_PROBLEM_SPECS
+        + least_specs(50_000, feats_spec={"name": "scale", "args": None}),
+    },
+    {
+        "name": "Finite-CC-ShuntDc-v0",
+        "args": {
+            "pos_enforcement": True,
+            "penalty_gamma": 1.0,
+            "violation_reward": -100,
+            "max_episode_steps": 1000,
+        },
+        "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 4}}],
+        "problem_specs": COMMON_PROBLEM_SPECS
+        + least_specs(50_000, {"name": "scale", "args": None}),
+    },
+    {
+        "name": "Finite-SC-PermExDc-v0",
+        "args": {
+            "pos_enforcement": True,
+            "penalty_gamma": 1.0,
+            "violation_reward": -100,
+            "max_episode_steps": 1000,
+        },
+        "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 3}}],
+        "problem_specs": COMMON_PROBLEM_SPECS
+        + least_specs(50_000, {"name": "scale", "args": None}),
+    },
+    {
+        "name": "Finite-SC-ShuntDc-v0",
         "args": {
             "pos_enforcement": True,
             "penalty_gamma": 1.0,
@@ -184,7 +220,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         },
         "feats_specs": [{"name": "scale", "args": None}],
         "problem_specs": COMMON_PROBLEM_SPECS
-        + least_specs(50_000, feats_spec={"name": "scale", "args": None}),
+        + least_specs(50_000, {"name": "scale", "args": None}),
     },
     {
         "name": "Finite-TC-PermExDc-v0",
@@ -194,36 +230,12 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "violation_reward": -100,
             "max_episode_steps": 1000,
         },
-        "feats_specs": [{"name": "scale", "args": None}],
-        "problem_specs": COMMON_PROBLEM_SPECS
-        + least_specs(50_000, {"name": "scale", "args": None}),
-    },
-    {
-        "name": "Finite-CC-SeriesDc-v0",
-        "args": {
-            "pos_enforcement": True,
-            "penalty_gamma": 1.0,
-            "violation_reward": -100,
-            "max_episode_steps": 1000,
-        },
-        "feats_specs": [{"name": "scale", "args": None}],
+        "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
         "problem_specs": COMMON_PROBLEM_SPECS
         + least_specs(50_000, {"name": "scale", "args": None}),
     },
     {
         "name": "Finite-TC-ShuntDc-v0",
-        "args": {
-            "pos_enforcement": True,
-            "penalty_gamma": 1.0,
-            "violation_reward": -100,
-            "max_episode_steps": 1000,
-        },
-        "feats_specs": [{"name": "scale", "args": None}],
-        "problem_specs": COMMON_PROBLEM_SPECS
-        + least_specs(50_000, {"name": "scale", "args": None}),
-    },
-    {
-        "name": "Finite-CC-SCIM-v0",
         "args": {
             "pos_enforcement": True,
             "penalty_gamma": 1.0,
