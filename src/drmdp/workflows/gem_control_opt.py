@@ -97,7 +97,6 @@ def feats_spec_control(job_spec: JobSpec, task_id: str):
     env = task.reward_mapper(
         env,
         mapping_spec={"name": "identity", "args": None},
-        feats_spec={},
     )
     feats_tfx = feats.create_feat_transformer(env=env, **job_spec.feats_spec)
     lr = task.learning_rate(**{"name": "constant", "args": {"initial_lr": 0.01}})  # type: ignore
