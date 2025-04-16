@@ -13,18 +13,17 @@ def sequence_to_integer(space_size: int, sequence: Sequence[int]) -> int:
     """
     Uses the positional system of integers to generate a unique
     sequence of numbers given represetation integer - `index`.
-
     Based on https://2ality.com/2013/03/permutations.html.
 
+    Horner's method implementation that processes digits from left to right.
     Args:
         space_size: the number of possible digits
         sequence_size: the length of the sequence of digits.
-        index: the index of the unique sequence.
     """
-    id_ = 0
-    for idx, value_index in enumerate(reversed(sequence)):
-        id_ = id_ + value_index * int(pow(space_size, idx))
-    return id_
+    integer = 0
+    for digit in sequence:
+        integer = integer * space_size + digit
+    return integer
 
 
 def interger_to_sequence(

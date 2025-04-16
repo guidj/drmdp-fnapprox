@@ -10,7 +10,7 @@ def test_gaussian_mix_transform():
 
     # Initialize transform with some basic parameters
     params = {"n_components": 3, "random_state": 42}
-    transform = feats.GaussianMixFeatTransform(env, params, sample_steps=100)
+    transform = feats.GaussianMixFeatTransform(env, sample_steps=100, **params)
 
     # Test single transform
     obs = env.observation_space.sample()
@@ -39,7 +39,7 @@ def test_gaussian_mix_batch_transform():
 
     # Initialize transform with some basic parameters
     params = {"n_components": 3, "random_state": 42}
-    transform = feats.GaussianMixFeatTransform(env, params, sample_steps=100)
+    transform = feats.GaussianMixFeatTransform(env, sample_steps=100, **params)
 
     # Create batch of observations and actions
     batch_size = 5
@@ -199,3 +199,80 @@ def test_tile_batch_transform():
             observations[i], actions[i]
         )
     np.testing.assert_array_equal(batch_result_hashed, individual_results_hashed)
+
+
+def test_action_spliced_tile_transform():
+    env = gym.make("MountainCar-v0")
+    transform = feats.ActionSplicedTileFeatTransform(env, tiling_dim=2, num_tilings=1)
+
+    # Test single transform
+    obs = env.observation_space.sample()
+    action = env.action_space.sample()
+    result = transform.transform(obs, action)
+    assert result.shape == (transform.output_shape,)
+    # Test that at least one value is positive
+    assert np.any(result > 0)
+    # Test that values are only in the action-specific section
+    action_section = result[
+        action * transform.max_size : (action + 1) * transform.max_size
+    ]
+    assert np.any(action_section > 0)
+    assert np.all(result[: action * transform.max_size] == 0)
+    assert np.all(result[(action + 1) * transform.max_size :] == 0)
+
+    # Test with hashing
+    transform_hashed = feats.ActionSplicedTileFeatTransform(
+        env, tiling_dim=8, num_tilings=16, hash_dim=4
+    )
+    result_hashed = transform_hashed.transform(obs, action)
+    assert result_hashed.shape == (transform_hashed.output_shape,)
+    # Test that at least one value is positive
+    assert np.any(result_hashed > 0)
+    # Test that values are only in the action-specific section
+    action_section = result_hashed[
+        action * transform_hashed.hash_dim : (action + 1) * transform_hashed.hash_dim
+    ]
+    assert np.any(action_section > 0)
+    assert np.all(result_hashed[: action * transform_hashed.hash_dim] == 0)
+    assert np.all(result_hashed[(action + 1) * transform_hashed.hash_dim :] == 0)
+
+
+def test_action_spliced_tile_batch_transform():
+    env = gym.make("MountainCar-v0")
+    transform = feats.ActionSplicedTileFeatTransform(env, tiling_dim=2, num_tilings=1)
+
+    # Test batch transform
+    batch_size = 5
+    observations = [env.observation_space.sample() for _ in range(batch_size)]
+    actions = [env.action_space.sample() for _ in range(batch_size)]
+    batch_result = transform.batch_transform(observations, actions)
+
+    # Compare with individual transforms
+    individual_results = np.zeros((batch_size, transform.output_shape))
+    for i in range(batch_size):
+        individual_results[i] = transform.transform(observations[i], actions[i])
+    np.testing.assert_array_equal(batch_result, individual_results)
+
+    # Test with hashing
+    transform_hashed = feats.ActionSplicedTileFeatTransform(
+        env, tiling_dim=8, num_tilings=16, hash_dim=4
+    )
+    batch_result_hashed = transform_hashed.batch_transform(observations, actions)
+    individual_results_hashed = np.zeros((batch_size, transform_hashed.output_shape))
+    for i in range(batch_size):
+        individual_results_hashed[i] = transform_hashed.transform(
+            observations[i], actions[i]
+        )
+    np.testing.assert_array_equal(batch_result_hashed, individual_results_hashed)
+
+    # Test that values are only in action-specific sections
+    for i in range(batch_size):
+        action = actions[i]
+        result = batch_result_hashed[i]
+        action_section = result[
+            action * transform_hashed.hash_dim : (action + 1)
+            * transform_hashed.hash_dim
+        ]
+        assert np.any(action_section > 0)
+        assert np.all(result[: action * transform_hashed.hash_dim] == 0)
+        assert np.all(result[(action + 1) * transform_hashed.hash_dim :] == 0)

@@ -97,7 +97,7 @@ def main():
     """
     args = parse_args()
     # The trailing slash at the end is for gcs paths
-    paths = tf.io.gfile.glob(os.path.join(args.input_dir, "**/**/**/**"))
+    paths = tf.io.gfile.glob(os.path.join(args.input_dir, "**/**/**/**/"))
     ray_env = {}
 
     logging.info("Running with args: %s", vars(args))

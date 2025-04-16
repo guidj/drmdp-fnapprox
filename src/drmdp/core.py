@@ -58,6 +58,7 @@ class PyPolicy(abc.ABC):
         self.action_space = action_space
         self.emit_log_probability = emit_log_probability
         self.seed = seed
+        self.rng = np.random.default_rng(seed)
 
     @abc.abstractmethod
     def get_initial_state(self, batch_size: Optional[int] = None) -> Any:
@@ -76,7 +77,6 @@ class PyPolicy(abc.ABC):
         observation: ObsType,
         epsilon: float = 0.0,
         policy_state: Any = (),
-        seed: Optional[int] = None,
     ) -> PolicyStep:
         """Implementation of `action`.
 
@@ -149,6 +149,7 @@ class RunConfig:
     num_runs: int
     episodes_per_run: int
     log_episode_frequency: int
+    use_seed: bool
     output_dir: str
 
 
@@ -192,6 +193,10 @@ class EnvMonitorWrapper(gym.Wrapper):
 
 
 class EnvMonitor:
+    """
+    Monitors episode returns and steps.
+    """
+
     def __init__(self):
         self.returns: List[float] = []
         self.steps: List[int] = []
@@ -199,8 +204,33 @@ class EnvMonitor:
         self.step: int = 0
 
     def reset(self):
+        """
+        Stack values to track new episode.
+        """
         if self.step > 0:
             self.returns.append(self.rewards)
             self.steps.append(self.step)
         self.rewards = 0.0
         self.step = 0
+
+    def clear(self):
+        """
+        Clear monitored data.
+        """
+        self.returns = []
+        self.steps = []
+        self.step = 0
+        self.rewards = 0.0
+
+
+class Seeder:
+    MAX_INS = 1000
+    MAX_EPS = 100_000
+
+    def __init__(self, instance: Optional[int] = None):
+        self.instance = instance
+
+    def get_seed(self, episode: int) -> Optional[int]:
+        if self.instance is not None:
+            return (self.MAX_INS * self.instance + 1) * (self.MAX_EPS + episode + 1)
+        return self.instance

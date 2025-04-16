@@ -26,6 +26,8 @@ class ControlPipelineArgs:
     output_dir: str
     log_episode_frequency: int
     task_prefix: str
+    bundle_size: int
+    use_seed: bool
     # ray args
     cluster_uri: Optional[str]
 
@@ -46,7 +48,9 @@ def main(args: ControlPipelineArgs):
             num_episodes=args.num_episodes,
             output_dir=args.output_dir,
             task_prefix=args.task_prefix,
+            bundle_size=args.bundle_size,
             log_episode_frequency=args.log_episode_frequency,
+            use_seed=args.use_seed,
         )
 
         # since ray tracks objectref items
@@ -72,7 +76,9 @@ def create_tasks(
     num_episodes: int,
     output_dir: str,
     task_prefix: str,
+    bundle_size: int,
     log_episode_frequency: int,
+    use_seed: bool,
 ) -> Sequence[Tuple[ray.ObjectRef, core.ExperimentInstance]]:
     """
     Runs numerical experiments on policy evaluation.
@@ -84,6 +90,7 @@ def create_tasks(
                 num_runs=num_runs,
                 episodes_per_run=num_episodes,
                 log_episode_frequency=log_episode_frequency,
+                use_seed=use_seed,
                 output_dir=output_dir,
             ),
             experiments=experiments,
@@ -95,9 +102,7 @@ def create_tasks(
         experiment_instances,
         len(experiment_instances),  # type: ignore
     )
-    experiment_batches = task.bundle(
-        experiment_instances, bundle_size=constants.DEFAULT_BATCH_SIZE
-    )
+    experiment_batches = task.bundle(experiment_instances, bundle_size=bundle_size)
     logging.info(
         "Parsed %d experiments into %d instances and %d ray tasks",
         len(experiments),
@@ -149,7 +154,11 @@ def run_experiments(
             task_id,
             experiment_task,
         )
-        task.policy_control_run_fn(experiment_task)
+        try:
+            task.policy_control_run_fn(experiment_task)
+        except Exception as err:
+            logging.error("Experiment %s failed", experiment_task)
+            raise err
         ids.append(task_id)
         logging.debug("Experiment %s finished", task_id)
     return ids
@@ -165,6 +174,10 @@ def parse_args() -> ControlPipelineArgs:
     arg_parser.add_argument("--output-dir", type=str, required=True)
     arg_parser.add_argument("--log-episode-frequency", type=int, required=True)
     arg_parser.add_argument("--task-prefix", type=str, required=True)
+    arg_parser.add_argument(
+        "--bundle-size", type=int, default=constants.DEFAULT_BATCH_SIZE
+    )
+    arg_parser.add_argument("--use-seed", action="store_true")
     arg_parser.add_argument("--cluster-uri", type=str, default=None)
     known_args, unknown_args = arg_parser.parse_known_args()
     logging.info("Unknown args: %s", unknown_args)

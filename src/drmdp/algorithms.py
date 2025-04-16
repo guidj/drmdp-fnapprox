@@ -2,7 +2,7 @@ import abc
 import copy
 import dataclasses
 import logging
-from typing import Any, Iterator, Tuple
+from typing import Any, Iterator, Optional, Tuple
 
 import gymnasium as gym
 import numpy as np
@@ -18,6 +18,10 @@ class PolicyControlSnapshot:
 
 
 class FnApproxAlgorithm(abc.ABC):
+    def __init__(self, base_seed: Optional[int] = None):
+        super().__init__()
+        self.seeder = core.Seeder(base_seed)
+
     @abc.abstractmethod
     def train(
         self,
@@ -34,15 +38,15 @@ class SemigradientSARSAFnApprox(FnApproxAlgorithm):
         gamma: float,
         epsilon: float,
         policy: core.PyValueFnPolicy,
+        base_seed: Optional[int] = None,
         verbose: bool = True,
     ):
-        super().__init__()
+        super().__init__(base_seed)
         self.lr = lr
         self.gamma = gamma
         self.epsilon = epsilon
         self.policy = policy
         self.verbose = verbose
-        self.policy = policy
 
     def train(
         self,
@@ -51,7 +55,7 @@ class SemigradientSARSAFnApprox(FnApproxAlgorithm):
         monitor: core.EnvMonitor,
     ) -> Iterator[PolicyControlSnapshot]:
         for episode in range(num_episodes):
-            obs, _ = env.reset()
+            obs, _ = env.reset(seed=self.seeder.get_seed(episode=episode))
             policy_step = self.policy.action(obs, epsilon=self.epsilon)
             state_qvalues, gradients = (
                 policy_step.info["values"],
@@ -94,7 +98,7 @@ class SemigradientSARSAFnApprox(FnApproxAlgorithm):
                 policy_step = next_policy_step
                 state_qvalues = next_state_qvalues
                 gradients = next_gradients
-            if self.verbose and (episode + 1) % (num_episodes // 5) == 0:
+            if self.verbose and (episode + 1) % max((num_episodes // 5), 1) == 0:
                 logging.info(
                     "Episode %d mean returns: %f",
                     episode + 1,
@@ -113,8 +117,8 @@ class LinearFnApproxPolicy(core.PyValueFnPolicy):
         self,
         feat_transform: feats.FeatTransform,
         action_space: gym.Space,
-        emit_log_probability=False,
-        seed=None,
+        emit_log_probability: bool = False,
+        seed: Optional[int] = None,
     ):
         if not isinstance(action_space, gym.spaces.Discrete):
             raise ValueError(
@@ -124,7 +128,6 @@ class LinearFnApproxPolicy(core.PyValueFnPolicy):
         self.feat_transform = feat_transform
         self.weights = np.zeros(feat_transform.output_shape, dtype=np.float64)
         self.actions = tuple(range(action_space.n))
-        self.rng = np.random.default_rng()
 
     def get_initial_state(self, batch_size=None):
         del batch_size
@@ -164,6 +167,54 @@ class LinearFnApproxPolicy(core.PyValueFnPolicy):
         return self.weights
 
 
+class RandomFnApproxPolicy(core.PyValueFnPolicy):
+    def __init__(
+        self,
+        feat_transform: feats.FeatTransform,
+        action_space: gym.Space,
+        emit_log_probability: bool = False,
+        seed: Optional[int] = None,
+    ):
+        if not isinstance(action_space, gym.spaces.Discrete):
+            raise ValueError(
+                f"This policy only supports discrete action spaces. Got {type(action_space)}"
+            )
+        super().__init__(action_space, emit_log_probability, seed)
+        self.feat_transform = feat_transform
+        self.weights = np.zeros(feat_transform.output_shape, dtype=np.float64)
+        self.actions = tuple(range(action_space.n))
+
+    def get_initial_state(self, batch_size=None):
+        del batch_size
+        return ()
+
+    def action(
+        self, observation, epsilon: float = 0.0, policy_state: Any = (), seed=None
+    ):
+        del seed
+        state_qvalues, gradients = self.action_values_gradients(
+            observation, self.actions
+        )
+        action = self.rng.choice(self.actions)
+        return core.PolicyStep(
+            action,
+            state=policy_state,
+            info={"values": state_qvalues, "gradients": gradients},
+        )
+
+    def action_values_gradients(self, observation, actions):
+        observations = [observation] * len(actions)
+        state_action_m = self.feat_transform.batch_transform(observations, actions)
+        return np.dot(state_action_m, self.weights), state_action_m
+
+    def update(self, scaled_gradients):
+        self.weights += scaled_gradients
+
+    @property
+    def model(self):
+        return self.weights
+
+
 class OptionsSemigradientSARSAFnApprox(FnApproxAlgorithm):
     def __init__(
         self,
@@ -171,16 +222,16 @@ class OptionsSemigradientSARSAFnApprox(FnApproxAlgorithm):
         gamma: float,
         epsilon: float,
         policy: core.PyValueFnPolicy,
+        base_seed: Optional[int] = None,
         verbose: bool = True,
     ):
-        super().__init__()
+        super().__init__(base_seed)
 
         self.lr = lr
         self.gamma = gamma
         self.epsilon = epsilon
         self.policy = policy
         self.verbose = verbose
-        self.egreedy_policy = policy
 
     def train(
         self,
@@ -189,8 +240,8 @@ class OptionsSemigradientSARSAFnApprox(FnApproxAlgorithm):
         monitor: core.EnvMonitor,
     ) -> Iterator[PolicyControlSnapshot]:
         for episode in range(num_episodes):
-            obs, info = env.reset()
-            policy_step = self.egreedy_policy.action(
+            obs, info = env.reset(seed=self.seeder.get_seed(episode=episode))
+            policy_step = self.policy.action(
                 obs, epsilon=self.epsilon, policy_state=(info["delay"],)
             )
             state_qvalues, gradients, actions = (
@@ -217,12 +268,12 @@ class OptionsSemigradientSARSAFnApprox(FnApproxAlgorithm):
                                 * (reward - state_qvalues[policy_step.action])
                                 * gradients[policy_step.action]
                             )
-                            self.egreedy_policy.update(scaled_gradients)
+                            self.policy.update(scaled_gradients)
                         break
                 if term or trunc:
                     break
 
-                next_policy_step = self.egreedy_policy.action(
+                next_policy_step = self.policy.action(
                     next_obs, epsilon=self.epsilon, policy_state=(info["delay"],)
                 )
                 next_state_qvalues, next_gradients, next_actions = (
@@ -239,13 +290,13 @@ class OptionsSemigradientSARSAFnApprox(FnApproxAlgorithm):
                     )
                     * gradients[policy_step.action]
                 )
-                self.egreedy_policy.update(scaled_gradients)
+                self.policy.update(scaled_gradients)
                 obs = next_obs
                 policy_step = next_policy_step
                 state_qvalues = next_state_qvalues
                 gradients = next_gradients
                 actions = next_actions
-            if self.verbose and (episode + 1) % (num_episodes // 5) == 0:
+            if self.verbose and (episode + 1) % max(num_episodes // 5, 1) == 0:
                 logging.info(
                     "Episode %d mean returns: %f",
                     episode + 1,
@@ -254,7 +305,7 @@ class OptionsSemigradientSARSAFnApprox(FnApproxAlgorithm):
             yield PolicyControlSnapshot(
                 steps=monitor.step,
                 returns=monitor.rewards,
-                weights=copy.copy(self.egreedy_policy.model),
+                weights=copy.copy(self.policy.model),
             )
         env.close()
 
@@ -265,8 +316,8 @@ class OptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
         feat_transform: feats.FeatTransform,
         action_space: gym.Space,
         options_length_range: Tuple[int, int],
-        emit_log_probability=False,
-        seed=None,
+        emit_log_probability: bool = False,
+        seed: Optional[int] = None,
     ):
         if not isinstance(action_space, gym.spaces.Discrete):
             raise ValueError(
@@ -278,7 +329,6 @@ class OptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
         self.primitive_actions = tuple(range(action_space.n))
         self.num_primitive_actions = len(self.primitive_actions)
         self.options_length_range = options_length_range
-        self.rng = np.random.default_rng()
 
         lower, upper = self.options_length_range
         self.delay_options_mapping = {
@@ -374,8 +424,8 @@ class SingleActionOptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
         feat_transform: feats.FeatTransform,
         action_space: gym.Space,
         options_length_range: Tuple[int, int],
-        emit_log_probability=False,
-        seed=None,
+        emit_log_probability: bool = False,
+        seed: Optional[int] = None,
     ):
         if not isinstance(action_space, gym.spaces.Discrete):
             raise ValueError(
@@ -387,7 +437,6 @@ class SingleActionOptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
         self.primitive_actions = tuple(range(action_space.n))
         self.num_primitive_actions = len(self.primitive_actions)
         self.options_length_range = options_length_range
-        self.rng = np.random.default_rng()
 
         lower, upper = self.options_length_range
         self.delay_options_mapping = {

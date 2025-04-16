@@ -174,9 +174,9 @@ class LeastLfaMissingWrapper(gym.Wrapper):
 
         self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
         self.mdim = self.obs_dim * obs_encoding_wrapper.action_space.n + self.obs_dim
+        self.weights = None
         self._obs = None
         self._segment_features = None
-        self._weights = None
 
     def step(self, action):
         obs, reward, term, trunc, info = super().step(action)
@@ -185,26 +185,26 @@ class LeastLfaMissingWrapper(gym.Wrapper):
         )
         self._segment_features[-self.obs_dim :] += self.obs_wrapper.observation(obs)
 
-        if self._weights is not None:
+        if self.weights is not None:
             # estimate
-            reward = np.dot(self._segment_features, self._weights)
-            # reset for next step
+            reward = np.dot(self._segment_features, self.weights)
             self._segment_features = np.zeros(shape=(self.mdim))
         else:
             # Add obs to action-specific columns
+            # and use aggregate reward
             if info["segment_step"] == info["delay"] - 1:
                 self.obs_buffer.append(self._segment_features)
                 # aggregate reward
                 self.rew_buffer.append(reward)
                 # reset for the next one
                 self._segment_features = np.zeros(shape=(self.mdim))
-
-            # zero impute until rewards are estimated
-            reward = 0.0
+            else:
+                # zero impute until rewards are estimated
+                reward = 0.0
 
             if len(self.obs_buffer) >= self.estimation_sample_size:
                 # estimate rewards
-                self._weights = optsol.solve_least_squares(
+                self.weights = optsol.solve_least_squares(
                     matrix=np.stack(self.obs_buffer), rhs=np.array(self.rew_buffer)
                 )
                 logging.info("Estimated rewards for %s", self.env)

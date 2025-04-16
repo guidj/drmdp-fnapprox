@@ -31,6 +31,34 @@ def least_specs(estimation_sample_size: int):
                 "args": {"initial_lr": 0.01},
             },
         },
+        {
+            "policy_type": "markovian",
+            "reward_mapper": {
+                "name": "least-lfa",
+                "args": {"estimation_sample_size": estimation_sample_size},
+            },
+            "delay_config": {"name": "fixed", "args": {"delay": 6}},
+            "epsilon": 0.2,
+            "gamma": 1.0,
+            "learning_rate_config": {
+                "name": "constant",
+                "args": {"initial_lr": 0.01},
+            },
+        },
+        {
+            "policy_type": "markovian",
+            "reward_mapper": {
+                "name": "least-lfa",
+                "args": {"estimation_sample_size": estimation_sample_size},
+            },
+            "delay_config": {"name": "fixed", "args": {"delay": 8}},
+            "epsilon": 0.2,
+            "gamma": 1.0,
+            "learning_rate_config": {
+                "name": "constant",
+                "args": {"initial_lr": 0.01},
+            },
+        },
     )
 
 
@@ -60,6 +88,22 @@ COMMON_PROBLEM_SPECS = (
         "learning_rate_config": {"name": "constant", "args": {"initial_lr": 0.01}},
     },
     {
+        "policy_type": "markovian",
+        "reward_mapper": {"name": "zero-impute", "args": None},
+        "delay_config": {"name": "fixed", "args": {"delay": 6}},
+        "epsilon": 0.2,
+        "gamma": 1.0,
+        "learning_rate_config": {"name": "constant", "args": {"initial_lr": 0.01}},
+    },
+    {
+        "policy_type": "markovian",
+        "reward_mapper": {"name": "zero-impute", "args": None},
+        "delay_config": {"name": "fixed", "args": {"delay": 8}},
+        "epsilon": 0.2,
+        "gamma": 1.0,
+        "learning_rate_config": {"name": "constant", "args": {"initial_lr": 0.01}},
+    },
+    {
         "policy_type": "options",
         "reward_mapper": {"name": "identity", "args": None},
         "delay_config": {"name": "fixed", "args": {"delay": 2}},
@@ -76,6 +120,14 @@ COMMON_PROBLEM_SPECS = (
         "learning_rate_config": {"name": "constant", "args": {"initial_lr": 0.01}},
     },
     {
+        "policy_type": "options",
+        "reward_mapper": {"name": "identity", "args": None},
+        "delay_config": {"name": "fixed", "args": {"delay": 6}},
+        "epsilon": 0.2,
+        "gamma": 1.0,
+        "learning_rate_config": {"name": "constant", "args": {"initial_lr": 0.01}},
+    },
+    {
         "policy_type": "single-action-options",
         "reward_mapper": {"name": "identity", "args": None},
         "delay_config": {"name": "fixed", "args": {"delay": 2}},
@@ -87,6 +139,22 @@ COMMON_PROBLEM_SPECS = (
         "policy_type": "single-action-options",
         "reward_mapper": {"name": "identity", "args": None},
         "delay_config": {"name": "fixed", "args": {"delay": 4}},
+        "epsilon": 0.2,
+        "gamma": 1.0,
+        "learning_rate_config": {"name": "constant", "args": {"initial_lr": 0.01}},
+    },
+    {
+        "policy_type": "single-action-options",
+        "reward_mapper": {"name": "identity", "args": None},
+        "delay_config": {"name": "fixed", "args": {"delay": 6}},
+        "epsilon": 0.2,
+        "gamma": 1.0,
+        "learning_rate_config": {"name": "constant", "args": {"initial_lr": 0.01}},
+    },
+    {
+        "policy_type": "single-action-options",
+        "reward_mapper": {"name": "identity", "args": None},
+        "delay_config": {"name": "fixed", "args": {"delay": 8}},
         "epsilon": 0.2,
         "gamma": 1.0,
         "learning_rate_config": {"name": "constant", "args": {"initial_lr": 0.01}},
@@ -99,7 +167,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "args": {
             "pos_enforcement": True,
             "penalty_gamma": 1.0,
-            "violation_reward": 0.0,
+            "violation_reward": -100,
             "max_episode_steps": 1000,
         },
         "feats_specs": [{"name": "scale", "args": None}],
@@ -110,7 +178,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "args": {
             "pos_enforcement": True,
             "penalty_gamma": 1.0,
-            "violation_reward": 0.0,
+            "violation_reward": -100,
             "max_episode_steps": 1000,
         },
         "feats_specs": [{"name": "scale", "args": None}],
@@ -121,7 +189,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "args": {
             "pos_enforcement": True,
             "penalty_gamma": 1.0,
-            "violation_reward": 0.0,
+            "violation_reward": -100,
             "max_episode_steps": 1000,
         },
         "feats_specs": [{"name": "scale", "args": None}],
@@ -132,7 +200,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "args": {
             "pos_enforcement": True,
             "penalty_gamma": 1.0,
-            "violation_reward": 0.0,
+            "violation_reward": -100,
             "max_episode_steps": 1000,
         },
         "feats_specs": [{"name": "scale", "args": None}],
@@ -143,7 +211,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "args": {
             "pos_enforcement": True,
             "penalty_gamma": 1.0,
-            "violation_reward": 0.0,
+            "violation_reward": -100,
             "max_episode_steps": 1000,
         },
         "feats_specs": [{"name": "scale", "args": None}],
@@ -154,7 +222,9 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "args": {
             "max_episode_steps": 2500,
         },
-        "feats_specs": [{"name": "scale", "args": None}],
+        "feats_specs": [
+            {"name": "tiles", "args": {"tiling_dim": 6}},
+        ],
         "problem_specs": COMMON_PROBLEM_SPECS + least_specs(50_000),
     },
     {
