@@ -41,7 +41,6 @@ def policy_control_run_fn(exp_instance: core.ExperimentInstance):
     env = reward_mapper(
         env,
         mapping_spec=problem_spec.reward_mapper,
-        feats_spec=env_spec.feats_spec,
     )
     feats_tfx = feats.create_feat_transformer(env=env, **env_spec.feats_spec)
     lr = learning_rate(**problem_spec.learning_rate_config)
@@ -205,9 +204,7 @@ def delay_wrapper(
     return env
 
 
-def reward_mapper(
-    env: gym.Env, mapping_spec: Mapping[str, Any], feats_spec: Mapping[str, Any]
-):
+def reward_mapper(env: gym.Env, mapping_spec: Mapping[str, Any]):
     name = mapping_spec["name"]
     args = mapping_spec["args"]
     if name == "identity":
@@ -215,13 +212,15 @@ def reward_mapper(
     elif name == "zero-impute":
         return rewdelay.ZeroImputeMissingWrapper(env)
     elif name == "least-lfa":
+        m_args = dict(**args)
+        feats_spec = m_args.pop("feats_spec")
         # local copy before pop
         return rewdelay.LeastLfaMissingWrapper(
             env=env,
             obs_encoding_wrapper=wrappers.wrap(
                 env, wrapper=feats_spec["name"], **(feats_spec["args"] or {})
             ),
-            **(args if args else {}),
+            **m_args,
         )
     raise ValueError(f"Unknown mapping_method: {mapping_spec}")
 

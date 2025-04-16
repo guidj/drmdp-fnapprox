@@ -1,13 +1,16 @@
 from typing import Any, Mapping, Sequence
 
 
-def least_specs(estimation_sample_size: int):
+def least_specs(estimation_sample_size: int, feats_spec: Mapping[str, Any]):
     return (
         {
             "policy_type": "markovian",
             "reward_mapper": {
                 "name": "least-lfa",
-                "args": {"estimation_sample_size": estimation_sample_size},
+                "args": {
+                    "estimation_sample_size": estimation_sample_size,
+                    "feats_spec": feats_spec,
+                },
             },
             "delay_config": {"name": "fixed", "args": {"delay": 2}},
             "epsilon": 0.2,
@@ -21,7 +24,10 @@ def least_specs(estimation_sample_size: int):
             "policy_type": "markovian",
             "reward_mapper": {
                 "name": "least-lfa",
-                "args": {"estimation_sample_size": estimation_sample_size},
+                "args": {
+                    "estimation_sample_size": estimation_sample_size,
+                    "feats_spec": feats_spec,
+                },
             },
             "delay_config": {"name": "fixed", "args": {"delay": 4}},
             "epsilon": 0.2,
@@ -35,7 +41,10 @@ def least_specs(estimation_sample_size: int):
             "policy_type": "markovian",
             "reward_mapper": {
                 "name": "least-lfa",
-                "args": {"estimation_sample_size": estimation_sample_size},
+                "args": {
+                    "estimation_sample_size": estimation_sample_size,
+                    "feats_spec": feats_spec,
+                },
             },
             "delay_config": {"name": "fixed", "args": {"delay": 6}},
             "epsilon": 0.2,
@@ -49,7 +58,10 @@ def least_specs(estimation_sample_size: int):
             "policy_type": "markovian",
             "reward_mapper": {
                 "name": "least-lfa",
-                "args": {"estimation_sample_size": estimation_sample_size},
+                "args": {
+                    "estimation_sample_size": estimation_sample_size,
+                    "feats_spec": feats_spec,
+                },
             },
             "delay_config": {"name": "fixed", "args": {"delay": 8}},
             "epsilon": 0.2,
@@ -171,7 +183,8 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "max_episode_steps": 1000,
         },
         "feats_specs": [{"name": "scale", "args": None}],
-        "problem_specs": COMMON_PROBLEM_SPECS + least_specs(50_000),
+        "problem_specs": COMMON_PROBLEM_SPECS
+        + least_specs(50_000, feats_spec={"name": "scale", "args": None}),
     },
     {
         "name": "Finite-TC-PermExDc-v0",
@@ -182,7 +195,8 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "max_episode_steps": 1000,
         },
         "feats_specs": [{"name": "scale", "args": None}],
-        "problem_specs": COMMON_PROBLEM_SPECS + least_specs(50_000),
+        "problem_specs": COMMON_PROBLEM_SPECS
+        + least_specs(50_000, {"name": "scale", "args": None}),
     },
     {
         "name": "Finite-CC-SeriesDc-v0",
@@ -193,7 +207,8 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "max_episode_steps": 1000,
         },
         "feats_specs": [{"name": "scale", "args": None}],
-        "problem_specs": COMMON_PROBLEM_SPECS + least_specs(50_000),
+        "problem_specs": COMMON_PROBLEM_SPECS
+        + least_specs(50_000, {"name": "scale", "args": None}),
     },
     {
         "name": "Finite-TC-ShuntDc-v0",
@@ -204,7 +219,8 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "max_episode_steps": 1000,
         },
         "feats_specs": [{"name": "scale", "args": None}],
-        "problem_specs": COMMON_PROBLEM_SPECS + least_specs(50_000),
+        "problem_specs": COMMON_PROBLEM_SPECS
+        + least_specs(50_000, {"name": "scale", "args": None}),
     },
     {
         "name": "Finite-CC-SCIM-v0",
@@ -215,7 +231,8 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "max_episode_steps": 1000,
         },
         "feats_specs": [{"name": "scale", "args": None}],
-        "problem_specs": COMMON_PROBLEM_SPECS + least_specs(50_000),
+        "problem_specs": COMMON_PROBLEM_SPECS
+        + least_specs(50_000, {"name": "scale", "args": None}),
     },
     {
         "name": "MountainCar-v0",
@@ -225,7 +242,8 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "feats_specs": [
             {"name": "tiles", "args": {"tiling_dim": 6}},
         ],
-        "problem_specs": COMMON_PROBLEM_SPECS + least_specs(50_000),
+        "problem_specs": COMMON_PROBLEM_SPECS
+        + least_specs(50_000, {"name": "tiles", "args": {"tiling_dim": 6}}),
     },
     {
         "name": "RedGreen-v0",
@@ -234,7 +252,8 @@ SPECS: Sequence[Mapping[str, Any]] = (
             {"name": "random", "args": {"enc_size": 32}},
             {"name": "tiles", "args": {"tiling_dim": 6}},
         ],
-        "problem_specs": COMMON_PROBLEM_SPECS + least_specs(20_000),
+        "problem_specs": COMMON_PROBLEM_SPECS
+        + least_specs(20_000, {"name": "tiles", "args": {"tiling_dim": 6}}),
     },
     {
         "name": "IceWorld-v0",
@@ -243,7 +262,8 @@ SPECS: Sequence[Mapping[str, Any]] = (
             {"name": "random", "args": {"enc_size": 64}},
             {"name": "tiles", "args": {"tiling_dim": 6}},
         ],
-        "problem_specs": COMMON_PROBLEM_SPECS + least_specs(50_000),
+        "problem_specs": COMMON_PROBLEM_SPECS
+        + least_specs(50_000, {"name": "tiles", "args": {"tiling_dim": 6}}),
     },
     {
         "name": "GridWorld-v0",
@@ -252,6 +272,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
             {"name": "random", "args": {"enc_size": 64}},
             {"name": "tiles", "args": {"tiling_dim": 6}},
         ],
-        "problem_specs": COMMON_PROBLEM_SPECS + least_specs(50_000),
+        "problem_specs": COMMON_PROBLEM_SPECS
+        + least_specs(50_000, {"name": "tiles", "args": {"tiling_dim": 6}}),
     },
 )
