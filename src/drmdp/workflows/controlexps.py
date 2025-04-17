@@ -180,7 +180,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "pos_enforcement": True,
             "penalty_gamma": 1.0,
             "violation_reward": -100,
-            "max_episode_steps": 1000,
+            "max_episode_steps": 2500,
         },
         "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 4}}],
         "problem_specs": COMMON_PROBLEM_SPECS
@@ -192,7 +192,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "pos_enforcement": True,
             "penalty_gamma": 1.0,
             "violation_reward": -100,
-            "max_episode_steps": 1000,
+            "max_episode_steps": 2500,
         },
         "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 4}}],
         "problem_specs": COMMON_PROBLEM_SPECS
@@ -204,7 +204,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "pos_enforcement": True,
             "penalty_gamma": 1.0,
             "violation_reward": -100,
-            "max_episode_steps": 1000,
+            "max_episode_steps": 2500,
         },
         "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 3}}],
         "problem_specs": COMMON_PROBLEM_SPECS
@@ -216,7 +216,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "pos_enforcement": True,
             "penalty_gamma": 1.0,
             "violation_reward": -100,
-            "max_episode_steps": 1000,
+            "max_episode_steps": 2500,
         },
         "feats_specs": [{"name": "scale", "args": None}],
         "problem_specs": COMMON_PROBLEM_SPECS
@@ -228,7 +228,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "pos_enforcement": True,
             "penalty_gamma": 1.0,
             "violation_reward": -100,
-            "max_episode_steps": 1000,
+            "max_episode_steps": 2500,
         },
         "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
         "problem_specs": COMMON_PROBLEM_SPECS
@@ -240,7 +240,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "pos_enforcement": True,
             "penalty_gamma": 1.0,
             "violation_reward": -100,
-            "max_episode_steps": 1000,
+            "max_episode_steps": 2500,
         },
         "feats_specs": [{"name": "scale", "args": None}],
         "problem_specs": COMMON_PROBLEM_SPECS
