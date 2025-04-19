@@ -179,7 +179,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "args": {
             "reward_fn": "pos-enf",
             "penalty_gamma": 1.0,
-            "violation_reward": -100,
+            "constraint_violation_reward": 0.0,
             "max_episode_steps": 2500,
         },
         "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 4}}],
@@ -191,7 +191,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "args": {
             "reward_fn": "pos-enf",
             "penalty_gamma": 1.0,
-            "violation_reward": -100,
+            "constraint_violation_reward": 0.0,
             "max_episode_steps": 2500,
         },
         "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 4}}],
@@ -203,7 +203,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "args": {
             "reward_fn": "pos-enf",
             "penalty_gamma": 1.0,
-            "violation_reward": -100,
+            "constraint_violation_reward": 0.0,
             "max_episode_steps": 2500,
         },
         "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 3}}],
@@ -215,7 +215,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "args": {
             "reward_fn": "pos-enf",
             "penalty_gamma": 1.0,
-            "violation_reward": -100,
+            "constraint_violation_reward": 0.0,
             "max_episode_steps": 2500,
         },
         "feats_specs": [{"name": "scale", "args": None}],
@@ -227,7 +227,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "args": {
             "reward_fn": "pos-enf",
             "penalty_gamma": 1.0,
-            "violation_reward": -100,
+            "constraint_violation_reward": 0.0,
             "max_episode_steps": 2500,
         },
         "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
@@ -239,7 +239,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "args": {
             "reward_fn": "pos-enf",
             "penalty_gamma": 1.0,
-            "violation_reward": -100,
+            "constraint_violation_reward": 0.0,
             "max_episode_steps": 2500,
         },
         "feats_specs": [{"name": "scale", "args": None}],
