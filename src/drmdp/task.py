@@ -21,7 +21,7 @@ DELAY_BUILDERS: Mapping[str, type[rewdelay.RewardDelay]] = {
 }
 
 
-def policy_control_run_fn(exp_instance: core.ExperimentInstance):
+def policy_control(exp_instance: core.ExperimentInstance):
     """
     Entry point running on-policy evaluation for DAAF.
 
@@ -58,12 +58,10 @@ def policy_control_run_fn(exp_instance: core.ExperimentInstance):
 
     logging.debug("Starting DRMDP Control Experiments: %s", exp_instance)
 
-    results = policy_control(
-        env=env,
-        algorithm=algorithm,
-        num_episodes=exp_instance.run_config.episodes_per_run,
-        monitor=monitor,
+    results = algorithm.train(
+        env=env, num_episodes=exp_instance.run_config.episodes_per_run, monitor=monitor
     )
+
     with logger.ExperimentLogger(
         log_dir=exp_instance.run_config.output_dir, experiment_instance=exp_instance
     ) as exp_logger:
@@ -90,18 +88,6 @@ def policy_control_run_fn(exp_instance: core.ExperimentInstance):
                 f"Task {exp_instance.exp_id}, run {exp_instance.instance_id} failed"
             ) from err
     env.close()
-
-
-def policy_control(
-    env: gym.Env,
-    algorithm: algorithms.FnApproxAlgorithm,
-    num_episodes: int,
-    monitor: core.EnvMonitor,
-) -> Iterator[algorithms.PolicyControlSnapshot]:
-    """
-    Runs policy control with given algorithm, env, and policy spec.
-    """
-    return algorithm.train(env=env, num_episodes=num_episodes, monitor=monitor)
 
 
 def create_task_id(task_prefix: str) -> str:

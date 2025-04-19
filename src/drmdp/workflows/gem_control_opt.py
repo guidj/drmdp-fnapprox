@@ -111,12 +111,8 @@ def feats_spec_control(job_spec: JobSpec, task_id: str):
         policy_type=job_spec.policy_type,
         base_seed=0,
     )
-
-    results = task.policy_control(
-        env=env,
-        algorithm=algorithm,
-        num_episodes=job_spec.num_episodes,
-        monitor=monitor,
+    results = algorithm.train(
+        env=env, num_episodes=job_spec.num_episodes, monitor=monitor
     )
 
     records = []

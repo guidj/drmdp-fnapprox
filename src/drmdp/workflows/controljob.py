@@ -155,7 +155,7 @@ def run_experiments(
             experiment_task,
         )
         try:
-            task.policy_control_run_fn(experiment_task)
+            task.policy_control(experiment_task)
         except Exception as err:
             logging.error("Experiment %s failed", experiment_task)
             raise err
