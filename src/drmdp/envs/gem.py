@@ -214,9 +214,9 @@ class DiscretiseActionWrapper(gym.ActionWrapper):
 
 def make(
     env_name: str,
+    reward_fn: str,
     constraint_violation_reward: Optional[float] = 0.0,
     penalty_gamma: Optional[float] = 1.0,
-    reward_fn: str = "default",
     wrapper: Optional[str] = None,
     **kwargs,
 ) -> gym.Env:
