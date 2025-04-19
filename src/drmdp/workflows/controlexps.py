@@ -177,7 +177,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
     {
         "name": "Finite-CC-PermExDc-v0",
         "args": {
-            "pos_enforcement": True,
+            "reward_fn": "pos-enf",
             "penalty_gamma": 1.0,
             "violation_reward": -100,
             "max_episode_steps": 2500,
@@ -189,7 +189,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
     {
         "name": "Finite-CC-ShuntDc-v0",
         "args": {
-            "pos_enforcement": True,
+            "reward_fn": "pos-enf",
             "penalty_gamma": 1.0,
             "violation_reward": -100,
             "max_episode_steps": 2500,
@@ -201,7 +201,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
     {
         "name": "Finite-SC-PermExDc-v0",
         "args": {
-            "pos_enforcement": True,
+            "reward_fn": "pos-enf",
             "penalty_gamma": 1.0,
             "violation_reward": -100,
             "max_episode_steps": 2500,
@@ -213,7 +213,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
     {
         "name": "Finite-SC-ShuntDc-v0",
         "args": {
-            "pos_enforcement": True,
+            "reward_fn": "pos-enf",
             "penalty_gamma": 1.0,
             "violation_reward": -100,
             "max_episode_steps": 2500,
@@ -225,7 +225,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
     {
         "name": "Finite-TC-PermExDc-v0",
         "args": {
-            "pos_enforcement": True,
+            "reward_fn": "pos-enf",
             "penalty_gamma": 1.0,
             "violation_reward": -100,
             "max_episode_steps": 2500,
@@ -237,7 +237,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
     {
         "name": "Finite-TC-ShuntDc-v0",
         "args": {
-            "pos_enforcement": True,
+            "reward_fn": "pos-enf",
             "penalty_gamma": 1.0,
             "violation_reward": -100,
             "max_episode_steps": 2500,
