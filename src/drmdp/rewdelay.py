@@ -237,7 +237,7 @@ class LeastLfaMissingWrapper(gym.Wrapper):
                     self.estimation_meta["error"] = {"rmse": error}
                     self.estimation_meta["estimate"] = {
                         "mean": self.weights,
-                        "cov": mv.cov,
+                        "cov": mv.cov.flatten(),
                     }
                     logging.debug("Estimated rewards for %s. RMSE: %f", self.env, error)
                 else:
