@@ -246,7 +246,7 @@ class LeastLfaMissingWrapper(gym.Wrapper):
                     self.obs_buffer = self.obs_buffer[:-nsamples_drop]
                     self.rew_buffer = self.rew_buffer[:-nsamples_drop]
                     logging.info(
-                        "Failed estimation. Dropping %d samples", nsamples_drop
+                        "Failed estimation for %s. Dropping %d samples", self.env, nsamples_drop
                     )
 
         # For the next step
