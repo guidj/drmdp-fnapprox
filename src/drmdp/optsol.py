@@ -1,10 +1,62 @@
 import abc
+import dataclasses
 from typing import Optional
 
 import gymnasium as gym
 import numpy as np
+from scipy import linalg
 
 from drmdp import dataproc
+
+
+@dataclasses.dataclass
+class MultivariateNormal:
+    """
+    A multivariate normal distribution.
+    """
+
+    mean: np.ndarray
+    cov: np.ndarray
+
+    @staticmethod
+    def perturb_covariance_matrix(cov, noise: float = 1e-6):
+        eig_values, eig_matrix = np.linalg.eig(cov)
+        perturbed_eig_values = np.maximum(
+            eig_values, np.array([noise] * len(eig_values))
+        )
+        return eig_matrix * np.diag(perturbed_eig_values) * np.linalg.inv(eig_matrix)
+
+    @classmethod
+    def least_squares(cls, matrix, rhs) -> "MultivariateNormal":
+        """
+        Least-squares estimation: mean and covariance.
+        """
+        # computes approx, even if X isn't a full rank matrix
+        coeff = solve_least_squares(matrix, rhs)
+        cov = cls.perturb_covariance_matrix(linalg.inv(np.matmul(matrix.T, matrix)))
+        return MultivariateNormal(coeff, cov)
+
+    @classmethod
+    def bayes_linear_regression(
+        cls, matrix, rhs, prior: "MultivariateNormal"
+    ) -> "MultivariateNormal":
+        """
+        Bayesian least-squares estimation: mean and covariance.
+        """
+        matrix = matrix.astype(prior.mean.dtype)
+        rhs = rhs.astype(prior.mean.dtype)
+        try:
+            # Σᵦ_new = (Σᵦ^-1 + X'X)^-1 * σ²
+            # μᵦ_new = (Σᵦ^-1 + X'X)^-1 * (Σᵦ^-1*μᵦ + X'Y)
+            # assuming sigma^2 = 1
+            inv_prior_sigma = linalg.inv(prior.cov)
+            cov = linalg.inv(inv_prior_sigma + np.matmul(matrix.T, matrix))
+            mean = np.matmul(
+                cov, (np.matmul(inv_prior_sigma, prior.mean) + np.matmul(matrix.T, rhs))
+            )
+            return MultivariateNormal(mean, cov)
+        except linalg.LinAlgError as err:
+            raise ValueError("Failed Bayesian estimation") from err
 
 
 class LearningRateSchedule(abc.ABC):
