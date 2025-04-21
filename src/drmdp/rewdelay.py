@@ -6,7 +6,7 @@ from typing import Callable, List, Optional, Sequence, Tuple
 import gymnasium as gym
 import numpy as np
 
-from drmdp import mathutils, optsol
+from drmdp import mathutils, metrics, optsol
 
 
 class RewardDelay(abc.ABC):
@@ -177,6 +177,7 @@ class LeastLfaMissingWrapper(gym.Wrapper):
         self.weights = None
         self._obs_feats = None
         self._segment_features = None
+        self.estimation_meta = {}
 
     def step(self, action):
         next_obs, reward, term, trunc, info = super().step(action)
@@ -208,10 +209,15 @@ class LeastLfaMissingWrapper(gym.Wrapper):
 
             if len(self.obs_buffer) >= self.estimation_sample_size:
                 # estimate rewards
-                self.weights = optsol.solve_least_squares(
-                    matrix=np.stack(self.obs_buffer), rhs=np.array(self.rew_buffer)
+                matrix = np.stack(self.obs_buffer)
+                rewards = np.array(self.rew_buffer)
+                self.weights = optsol.solve_least_squares(matrix=matrix, rhs=rewards)
+                error = metrics.rmse(
+                    v_pred=np.dot(matrix, self.weights), v_true=rewards, axis=0
                 )
-                logging.info("Estimated rewards for %s", self.env)
+                self.estimation_meta["sample"] = {"size": rewards.shape[0]}
+                self.estimation_meta["error"] = {"rmse": error}
+                logging.info("Estimated rewards for %s. RMSE: %f", self.env, error)
         # For the next step
         self._obs_feats = next_obs_feats
         return next_obs, reward, term, trunc, info
