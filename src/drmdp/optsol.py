@@ -44,7 +44,7 @@ class MultivariateNormal:
         try:
             cov = cls.perturb_covariance_matrix(inverse_op(np.matmul(matrix.T, matrix)))
         except linalg.LinAlgError as err:
-            if "singular matrix" in err.args[0]:
+            if "Singular matrix" in err.args[0]:
                 return None
             raise err
         return MultivariateNormal(coeff, cov)
