@@ -227,13 +227,14 @@ class LeastLfaMissingWrapper(gym.Wrapper):
                         ],
                         axis=1,
                     )
-
-                self.weights = optsol.solve_least_squares(matrix=matrix, rhs=rewards)
+                mv = optsol.MultivariateNormal.least_squares(matrix=matrix, rhs=rewards)
+                self.weights = mv.mean
                 error = metrics.rmse(
                     v_pred=np.dot(matrix, self.weights), v_true=rewards, axis=0
                 )
                 self.estimation_meta["sample"] = {"size": rewards.shape[0]}
                 self.estimation_meta["error"] = {"rmse": error}
+                self.estimation_meta["estimate"] = {"mean": self.weights, "cov": mv.cov}
                 logging.info("Estimated rewards for %s. RMSE: %f", self.env, error)
         # For the next step
         self._obs_feats = next_obs_feats
