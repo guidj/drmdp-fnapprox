@@ -335,13 +335,9 @@ def write_records(output_path: str, records):
 def main():
     args = parse_args()
     os.path.join(args.output_path)
-    specs = [
-        {"name": spec["name"], "args": spec["args"], "feats_specs": spec["feats_specs"]}
-        for spec in SPECS
-    ]
 
     run_reward_estimation_study(
-        specs,
+        SPECS,
         sample_sizes=EST_SAMPLE_SIZES,
         turns=args.num_runs,
         num_episodes=args.num_episodes,
