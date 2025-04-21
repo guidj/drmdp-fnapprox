@@ -228,14 +228,27 @@ class LeastLfaMissingWrapper(gym.Wrapper):
                         axis=1,
                     )
                 mv = optsol.MultivariateNormal.least_squares(matrix=matrix, rhs=rewards)
-                self.weights = mv.mean
-                error = metrics.rmse(
-                    v_pred=np.dot(matrix, self.weights), v_true=rewards, axis=0
-                )
-                self.estimation_meta["sample"] = {"size": rewards.shape[0]}
-                self.estimation_meta["error"] = {"rmse": error}
-                self.estimation_meta["estimate"] = {"mean": self.weights, "cov": mv.cov}
-                logging.info("Estimated rewards for %s. RMSE: %f", self.env, error)
+                if mv is not None:
+                    self.weights = mv.mean
+                    error = metrics.rmse(
+                        v_pred=np.dot(matrix, self.weights), v_true=rewards, axis=0
+                    )
+                    self.estimation_meta["sample"] = {"size": rewards.shape[0]}
+                    self.estimation_meta["error"] = {"rmse": error}
+                    self.estimation_meta["estimate"] = {
+                        "mean": self.weights,
+                        "cov": mv.cov,
+                    }
+                    logging.info("Estimated rewards for %s. RMSE: %f", self.env, error)
+                else:
+                    # drop latest 5% of samples
+                    nsamples_drop = int(self.estimation_sample_size * 0.05)
+                    self.obs_buffer = self.obs_buffer[:-nsamples_drop]
+                    self.rew_buffer = self.rew_buffer[:-nsamples_drop]
+                    logging.info(
+                        "Failed estimation. Dropping %d samples", nsamples_drop
+                    )
+
         # For the next step
         self._obs_feats = next_obs_feats
         return next_obs, reward, term, trunc, info
