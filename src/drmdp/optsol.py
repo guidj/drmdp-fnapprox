@@ -27,14 +27,22 @@ class MultivariateNormal:
         return eig_matrix * np.diag(perturbed_eig_values) * np.linalg.inv(eig_matrix)
 
     @classmethod
-    def least_squares(cls, matrix, rhs) -> "MultivariateNormal":
+    def least_squares(
+        cls, matrix, rhs, inverse: str = "pseudo"
+    ) -> "MultivariateNormal":
         """
         Least-squares estimation: mean and covariance.
         """
-        # computes approx, even if X isn't a full rank matrix
+        if inverse == "exact":
+            inverse_op = linalg.inv
+        elif inverse == "pseudo":
+            inverse_op = linalg.pinv
+        else:
+            raise ValueError(f"Unknown inverse: {inverse}")
+
         coeff = solve_least_squares(matrix, rhs)
         try:
-            cov = cls.perturb_covariance_matrix(linalg.inv(np.matmul(matrix.T, matrix)))
+            cov = cls.perturb_covariance_matrix(inverse_op(np.matmul(matrix.T, matrix)))
         except linalg.LinAlgError as err:
             if "singular matrix" in err.args[0]:
                 return None
@@ -54,8 +62,8 @@ class MultivariateNormal:
             # Σᵦ_new = (Σᵦ^-1 + X'X)^-1 * σ²
             # μᵦ_new = (Σᵦ^-1 + X'X)^-1 * (Σᵦ^-1*μᵦ + X'Y)
             # assuming sigma^2 = 1
-            inv_prior_sigma = linalg.inv(prior.cov)
-            cov = linalg.inv(inv_prior_sigma + np.matmul(matrix.T, matrix))
+            inv_prior_sigma = linalg.pinv(prior.cov)
+            cov = linalg.pinv(inv_prior_sigma + np.matmul(matrix.T, matrix))
             mean = np.matmul(
                 cov, (np.matmul(inv_prior_sigma, prior.mean) + np.matmul(matrix.T, rhs))
             )
