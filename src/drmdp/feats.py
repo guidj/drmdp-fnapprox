@@ -87,7 +87,7 @@ class RandomBinaryFeatTransform(FeatTransform):
         self._representations: Dict[Hashable, Any] = {}
 
     def transform(self, observation: ObsType, action: ActType):
-        array = np.array(observation, dtype=np.int64)
+        array = np.asarray(observation, dtype=np.int64)
         key: Hashable = -1
         if np.shape(array) == ():
             key = array.item()
@@ -114,7 +114,7 @@ class RandomBinaryFeatTransform(FeatTransform):
         output = np.zeros((batch_size, self.obs_dim * self.num_actions))
 
         # Convert observations to keys for lookup
-        obs_arrays = [np.array(obs, dtype=np.int64) for obs in observations]
+        obs_arrays = [np.asarray(obs, dtype=np.int64) for obs in observations]
         keys = [
             arr.item() if np.shape(arr) == () else tuple(arr.tolist())
             for arr in obs_arrays
