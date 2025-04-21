@@ -192,7 +192,9 @@ class LeastLfaMissingWrapper(gym.Wrapper):
 
         if self.weights is not None:
             # estimate
-            reward = np.dot(self._segment_features, self.weights)
+            reward = np.dot(
+                np.concatenate([self._segment_features, np.array([1.0])]), self.weights
+            )
             # reset for the next example
             self._segment_features *= 0
         else:
@@ -210,7 +212,13 @@ class LeastLfaMissingWrapper(gym.Wrapper):
 
             if len(self.obs_buffer) >= self.estimation_sample_size:
                 # estimate rewards
-                matrix = np.stack(self.obs_buffer)
+                matrix = np.concatenate(
+                    [
+                        np.stack(self.obs_buffer),
+                        np.expand_dims(np.ones(shape=len(self.obs_buffer)), axis=-1),
+                    ],
+                    axis=1,
+                )
                 rewards = np.array(self.rew_buffer)
                 self.weights = optsol.solve_least_squares(matrix=matrix, rhs=rewards)
                 error = metrics.rmse(
