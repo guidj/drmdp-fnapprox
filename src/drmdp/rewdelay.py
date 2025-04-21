@@ -191,7 +191,8 @@ class LeastLfaMissingWrapper(gym.Wrapper):
         if self.weights is not None:
             # estimate
             reward = np.dot(self._segment_features, self.weights)
-            self._segment_features = np.zeros(shape=(self.mdim))
+            # reset for the next example
+            self._segment_features *= 0
         else:
             # Add example to buffer and
             # use aggregate reward.
@@ -199,8 +200,8 @@ class LeastLfaMissingWrapper(gym.Wrapper):
                 self.obs_buffer.append(self._segment_features)
                 # aggregate reward
                 self.rew_buffer.append(reward)
-                # reset for the next one
-                self._segment_features = np.zeros(shape=(self.mdim))
+                # reset for the next segment
+                self._segment_features *= 0
             else:
                 # zero impute until rewards are estimated
                 reward = 0.0
@@ -218,5 +219,6 @@ class LeastLfaMissingWrapper(gym.Wrapper):
     def reset(self, *, seed=None, options=None):
         obs, info = super().reset(seed=seed, options=options)
         self._obs_feats = self.obs_wrapper.observation(obs)
+        # Init segment and step features array
         self._segment_features = np.zeros(shape=(self.mdim))
         return obs, info
