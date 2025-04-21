@@ -166,24 +166,28 @@ def run_reward_estimation_study(
                 )
                 jobs.extend([job_spec, dataclasses.replace(job_spec, use_bias=False)])
     np.random.shuffle(jobs)
+    job_batches = task.bundle(jobs, bundle_size=3)
 
     with ray.init() as context:
         logging.info("Starting ray task: %s", context)
-        results_refs = [run_fn.remote(job) for job in jobs]
+        results_refs = [run_fn.remote(job_batch) for job_batch in job_batches]
         results = wait_till_completion(results_refs)
         write_records(os.path.join(output_path, "result.jsonl"), results)
 
 
 @ray.remote
-def run_fn(job_spec: JobSpec):
-    task_id = str(uuid.uuid4())
-    logging.info("Starting task %s: %s", task_id, job_spec)
-    try:
-        result = reward_estimation(job_spec)
-    except Exception as err:
-        raise RuntimeError(f"Task {task_id} `{job_spec}` failed") from err
-    logging.info("Completed task %s: %s", task_id, job_spec)
-    return {"task_id": task_id, **dataclasses.asdict(job_spec), **result}
+def run_fn(jobs: Sequence[JobSpec]):
+    results = []
+    for job_spec in jobs:
+        task_id = str(uuid.uuid4())
+        logging.info("Starting task %s: %s", task_id, job_spec)
+        try:
+            result = reward_estimation(job_spec)
+        except Exception as err:
+            raise RuntimeError(f"Task {task_id} `{job_spec}` failed") from err
+        logging.info("Completed task %s: %s", task_id, job_spec)
+        results.append({"task_id": task_id, **dataclasses.asdict(job_spec), **result})
+    return results
 
 
 def wait_till_completion(tasks_refs):
@@ -196,10 +200,11 @@ def wait_till_completion(tasks_refs):
         finished_tasks, unfinished_tasks = ray.wait(unfinished_tasks)
         for finished_task in finished_tasks:
             result = ray.get(finished_task)
-            results.append(result)
+            results.extend(result)
+
             logging.info(
                 "Completed task %s, %d left out of %d.",
-                result["task_id"],
+                [entry["task_id"] for entry in result],
                 len(unfinished_tasks),
                 len(tasks_refs),
             )
