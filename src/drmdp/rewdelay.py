@@ -242,9 +242,15 @@ class LeastLfaMissingWrapper(gym.Wrapper):
                     logging.info("Estimated rewards for %s. RMSE: %f", self.env, error)
                 else:
                     # drop latest 5% of samples
+                    rng = np.random.default_rng()
                     nsamples_drop = int(self.estimation_sample_size * 0.05)
-                    self.obs_buffer = self.obs_buffer[:-nsamples_drop]
-                    self.rew_buffer = self.rew_buffer[:-nsamples_drop]
+                    indices = rng.choice(
+                        np.arange(self.estimation_sample_size),
+                        self.estimation_sample_size - nsamples_drop,
+                        replace=False,
+                    )
+                    self.obs_buffer = np.asarray(self.obs_buffer)[indices].tolist()
+                    self.rew_buffer = np.asarray(self.rew_buffer)[indices].tolist()
                     logging.info(
                         "Failed estimation for %s. Dropping %d samples",
                         self.env,
