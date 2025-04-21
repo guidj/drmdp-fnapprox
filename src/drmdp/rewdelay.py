@@ -157,6 +157,7 @@ class LeastLfaMissingWrapper(gym.Wrapper):
         env: gym.Env,
         obs_encoding_wrapper: gym.ObservationWrapper,
         estimation_sample_size: int,
+        use_bias: bool = True,
     ):
         super().__init__(env)
         if not isinstance(obs_encoding_wrapper.observation_space, gym.spaces.Box):
@@ -169,6 +170,7 @@ class LeastLfaMissingWrapper(gym.Wrapper):
             )
         self.obs_wrapper = obs_encoding_wrapper
         self.estimation_sample_size = estimation_sample_size
+        self.use_bias = use_bias
         self.obs_buffer: List[np.ndarray] = []
         self.rew_buffer: List[np.ndarray] = []
 
@@ -177,7 +179,7 @@ class LeastLfaMissingWrapper(gym.Wrapper):
         self.weights = None
         self._obs_feats = None
         self._segment_features = None
-        self.estimation_meta = {}
+        self.estimation_meta = {"use_bias": self.use_bias}
 
     def step(self, action):
         next_obs, reward, term, trunc, info = super().step(action)
@@ -192,9 +194,10 @@ class LeastLfaMissingWrapper(gym.Wrapper):
 
         if self.weights is not None:
             # estimate
-            reward = np.dot(
-                np.concatenate([self._segment_features, np.array([1.0])]), self.weights
-            )
+            feats = self._segment_features
+            if self.use_bias:
+                feats = np.concatenate([self._segment_features, np.array([1.0])])
+            reward = np.dot(feats, self.weights)
             # reset for the next example
             self._segment_features *= 0
         else:
@@ -212,14 +215,19 @@ class LeastLfaMissingWrapper(gym.Wrapper):
 
             if len(self.obs_buffer) >= self.estimation_sample_size:
                 # estimate rewards
-                matrix = np.concatenate(
-                    [
-                        np.stack(self.obs_buffer),
-                        np.expand_dims(np.ones(shape=len(self.obs_buffer)), axis=-1),
-                    ],
-                    axis=1,
-                )
+                matrix = np.stack(self.obs_buffer)
                 rewards = np.array(self.rew_buffer)
+                if self.use_bias:
+                    matrix = np.concatenate(
+                        [
+                            matrix,
+                            np.expand_dims(
+                                np.ones(shape=len(self.obs_buffer)), axis=-1
+                            ),
+                        ],
+                        axis=1,
+                    )
+
                 self.weights = optsol.solve_least_squares(matrix=matrix, rhs=rewards)
                 error = metrics.rmse(
                     v_pred=np.dot(matrix, self.weights), v_true=rewards, axis=0
