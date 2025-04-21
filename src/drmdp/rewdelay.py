@@ -184,7 +184,8 @@ class LeastLfaMissingWrapper(gym.Wrapper):
         next_obs_feats = self.obs_wrapper.observation(next_obs)
         # Add s to action-specific columns
         # and s' to the last columns.
-        self._segment_features[action * self.obs_dim : (action + 1) * self.obs_dim] += (
+        start_index = action * self.obs_dim
+        self._segment_features[start_index : start_index + self.obs_dim] += (
             self._obs_feats
         )
         self._segment_features[-self.obs_dim :] += next_obs_feats
