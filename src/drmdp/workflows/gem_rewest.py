@@ -10,15 +10,119 @@ from typing import Any, Mapping, Sequence
 
 import numpy as np
 import ray
-import ray.data
 import tensorflow as tf
 
 from drmdp import core, envs, feats, logger, task
-from drmdp.workflows import controlexps
 
 MAX_STEPS = 2500
 EST_SAMPLE_SIZES = (10_000, 25_000, 50_000, 100_000, 150_000)
 REWARD_DELAYS = (2, 4, 6)
+
+SPECS: Sequence[Mapping[str, Any]] = (
+    {
+        "name": "Finite-CC-PermExDc-v0",
+        "args": {
+            "reward_fn": "pos-enf",
+            "penalty_gamma": 1.0,
+            "constraint_violation_reward": 0.0,
+            "max_episode_steps": 2500,
+        },
+        "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 4}}],
+        "least_spec": {"name": "scale", "args": None},
+    },
+    {
+        "name": "Finite-CC-ShuntDc-v0",
+        "args": {
+            "reward_fn": "pos-enf",
+            "penalty_gamma": 1.0,
+            "constraint_violation_reward": 0.0,
+            "max_episode_steps": 2500,
+        },
+        "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 4}}],
+        "least_spec": {"name": "scale", "args": None},
+    },
+    {
+        "name": "Finite-SC-PermExDc-v0",
+        "args": {
+            "reward_fn": "pos-enf",
+            "penalty_gamma": 1.0,
+            "constraint_violation_reward": 0.0,
+            "max_episode_steps": 2500,
+        },
+        "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 3}}],
+        "least_spec": {"name": "scale", "args": None},
+    },
+    {
+        "name": "Finite-SC-ShuntDc-v0",
+        "args": {
+            "reward_fn": "pos-enf",
+            "penalty_gamma": 1.0,
+            "constraint_violation_reward": 0.0,
+            "max_episode_steps": 2500,
+        },
+        "feats_specs": [{"name": "scale", "args": None}],
+        "least_spec": {"name": "scale", "args": None},
+    },
+    {
+        "name": "Finite-TC-PermExDc-v0",
+        "args": {
+            "reward_fn": "pos-enf",
+            "penalty_gamma": 1.0,
+            "constraint_violation_reward": 0.0,
+            "max_episode_steps": 2500,
+        },
+        "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
+        "least_spec": {"name": "scale", "args": None},
+    },
+    {
+        "name": "Finite-TC-ShuntDc-v0",
+        "args": {
+            "reward_fn": "pos-enf",
+            "penalty_gamma": 1.0,
+            "constraint_violation_reward": 0.0,
+            "max_episode_steps": 2500,
+        },
+        "feats_specs": [{"name": "scale", "args": None}],
+        "least_spec": {"name": "scale", "args": None},
+    },
+    {
+        "name": "MountainCar-v0",
+        "args": {
+            "max_episode_steps": 2500,
+        },
+        "feats_specs": [
+            {"name": "tiles", "args": {"tiling_dim": 6}},
+        ],
+        "least_spec": {"name": "tiles", "args": {"tiling_dim": 6}},
+    },
+    {
+        "name": "RedGreen-v0",
+        "args": None,
+        "feats_specs": [
+            {"name": "random", "args": {"enc_size": 32}},
+            {"name": "tiles", "args": {"tiling_dim": 6}},
+        ],
+        "least_spec": {"name": "tiles", "args": {"tiling_dim": 6}},
+    },
+    {
+        "name": "IceWorld-v0",
+        "args": None,
+        "feats_specs": [
+            {"name": "random", "args": {"enc_size": 64}},
+            {"name": "tiles", "args": {"tiling_dim": 6}},
+        ],
+        "least_spec": {"name": "tiles", "args": {"tiling_dim": 6}},
+    },
+    {
+        "name": "GridWorld-v0",
+        "args": None,
+        "feats_specs": [
+            {"name": "random", "args": {"enc_size": 64}},
+            {"name": "tiles", "args": {"tiling_dim": 6}},
+        ],
+        "least_spec": {"name": "tiles", "args": {"tiling_dim": 6}},
+    },
+)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -36,6 +140,7 @@ class JobSpec:
     rwest_sample_size: int
     num_episodes: int
     reward_delay: int
+    least_spec: Mapping[str, Any]
     use_bias: bool
     turn: int
 
@@ -55,6 +160,7 @@ def run_reward_estimation_study(
                     rwest_sample_size=sample_size,
                     num_episodes=num_episodes,
                     reward_delay=reward_delay,
+                    least_spec=spec["least_spec"],
                     use_bias=True,
                     turn=turn,
                 )
@@ -156,7 +262,7 @@ def create_exp_instance(job_spec: JobSpec):
             "args": {
                 "estimation_sample_size": job_spec.rwest_sample_size,
                 "use_bias": job_spec.use_bias,
-                "feats_spec": {"name": "scale", "args": None},
+                "feats_spec": job_spec.least_spec,
             },
         },
         delay_config={"name": "fixed", "args": {"delay": job_spec.reward_delay}},
@@ -231,7 +337,7 @@ def main():
     os.path.join(args.output_path)
     specs = [
         {"name": spec["name"], "args": spec["args"], "feats_specs": spec["feats_specs"]}
-        for spec in controlexps.SPECS
+        for spec in SPECS
     ]
 
     run_reward_estimation_study(
