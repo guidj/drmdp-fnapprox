@@ -15,7 +15,7 @@ import tensorflow as tf
 from drmdp import core, envs, feats, logger, task
 
 MAX_STEPS = 2500
-EST_SAMPLE_SIZES = (10_000, 25_000, 50_000, 100_000)
+EST_SAMPLE_SIZES = (10_000, 25_000, 50_000, 75_000)
 REWARD_DELAYS = (2, 4, 6)
 
 SPECS: Sequence[Mapping[str, Any]] = (
