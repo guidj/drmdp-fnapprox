@@ -33,7 +33,12 @@ class MultivariateNormal:
         """
         # computes approx, even if X isn't a full rank matrix
         coeff = solve_least_squares(matrix, rhs)
-        cov = cls.perturb_covariance_matrix(linalg.inv(np.matmul(matrix.T, matrix)))
+        try:
+            cov = cls.perturb_covariance_matrix(linalg.inv(np.matmul(matrix.T, matrix)))
+        except linalg.LinAlgError as err:
+            if "singular matrix" in err.args[0]:
+                return None
+            raise err
         return MultivariateNormal(coeff, cov)
 
     @classmethod
