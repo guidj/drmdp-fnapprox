@@ -14,7 +14,7 @@ import tensorflow as tf
 
 from drmdp import core, envs, feats, logger, task
 
-MAX_STEPS = 2500
+MAX_STEPS = 2000
 EST_SAMPLE_SIZES = (10_000, 25_000, 50_000, 75_000)
 REWARD_DELAYS = (2, 4, 6)
 
@@ -25,7 +25,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "reward_fn": "pos-enf",
             "penalty_gamma": 1.0,
             "constraint_violation_reward": 0.0,
-            "max_episode_steps": 2500,
+            "max_episode_steps": MAX_STEPS,
         },
         "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 4}}],
         "least_spec": {"name": "scale", "args": None},
@@ -36,7 +36,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "reward_fn": "pos-enf",
             "penalty_gamma": 1.0,
             "constraint_violation_reward": 0.0,
-            "max_episode_steps": 2500,
+            "max_episode_steps": MAX_STEPS,
         },
         "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 4}}],
         "least_spec": {"name": "scale", "args": None},
@@ -47,7 +47,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "reward_fn": "pos-enf",
             "penalty_gamma": 1.0,
             "constraint_violation_reward": 0.0,
-            "max_episode_steps": 2500,
+            "max_episode_steps": MAX_STEPS,
         },
         "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 3}}],
         "least_spec": {"name": "scale", "args": None},
@@ -58,7 +58,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "reward_fn": "pos-enf",
             "penalty_gamma": 1.0,
             "constraint_violation_reward": 0.0,
-            "max_episode_steps": 2500,
+            "max_episode_steps": MAX_STEPS,
         },
         "feats_specs": [{"name": "scale", "args": None}],
         "least_spec": {"name": "scale", "args": None},
@@ -69,7 +69,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "reward_fn": "pos-enf",
             "penalty_gamma": 1.0,
             "constraint_violation_reward": 0.0,
-            "max_episode_steps": 2500,
+            "max_episode_steps": MAX_STEPS,
         },
         "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
         "least_spec": {"name": "scale", "args": None},
@@ -80,7 +80,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "reward_fn": "pos-enf",
             "penalty_gamma": 1.0,
             "constraint_violation_reward": 0.0,
-            "max_episode_steps": 2500,
+            "max_episode_steps": MAX_STEPS,
         },
         "feats_specs": [{"name": "scale", "args": None}],
         "least_spec": {"name": "scale", "args": None},
@@ -88,7 +88,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
     {
         "name": "MountainCar-v0",
         "args": {
-            "max_episode_steps": 2500,
+            "max_episode_steps": MAX_STEPS,
         },
         "feats_specs": [
             {"name": "tiles", "args": {"tiling_dim": 6}},
