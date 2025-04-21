@@ -177,7 +177,7 @@ def run_reward_estimation_study(
 @ray.remote
 def run_fn(job_spec: JobSpec):
     task_id = str(uuid.uuid4())
-    logging.info("Starting task %s", task_id)
+    logging.info("Starting task %s, %s", task_id, job_spec)
     try:
         result = reward_estimation(job_spec)
     except Exception as err:
