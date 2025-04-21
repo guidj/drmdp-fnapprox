@@ -36,6 +36,7 @@ class JobSpec:
     rwest_sample_size: int
     num_episodes: int
     reward_delay: int
+    use_bias: bool
     turn: int
 
 
@@ -47,17 +48,17 @@ def run_reward_estimation_study(
     for spec, sample_size, turn in configs:
         for feats_spec in spec["feats_specs"]:
             for reward_delay in REWARD_DELAYS:
-                jobs.append(
-                    JobSpec(
-                        env_name=spec["name"],
-                        env_args=spec["args"],
-                        feats_spec=feats_spec,
-                        rwest_sample_size=sample_size,
-                        num_episodes=num_episodes,
-                        reward_delay=reward_delay,
-                        turn=turn,
-                    )
+                job_spec = JobSpec(
+                    env_name=spec["name"],
+                    env_args=spec["args"],
+                    feats_spec=feats_spec,
+                    rwest_sample_size=sample_size,
+                    num_episodes=num_episodes,
+                    reward_delay=reward_delay,
+                    use_bias=True,
+                    turn=turn,
                 )
+                jobs.extend([job_spec, dataclasses.replace(job_spec, use_bias=False)])
     np.random.shuffle(jobs)
 
     with ray.init() as context:
@@ -154,6 +155,7 @@ def create_exp_instance(job_spec: JobSpec):
             "name": "least-lfa",
             "args": {
                 "estimation_sample_size": job_spec.rwest_sample_size,
+                "use_bias": job_spec.use_bias,
                 "feats_spec": {"name": "scale", "args": None},
             },
         },
