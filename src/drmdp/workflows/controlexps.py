@@ -10,6 +10,7 @@ def least_specs(estimation_sample_size: int, feats_spec: Mapping[str, Any]):
                 "args": {
                     "estimation_sample_size": estimation_sample_size,
                     "feats_spec": feats_spec,
+                    "use_bias": True,
                 },
             },
             "delay_config": {"name": "fixed", "args": {"delay": 2}},
@@ -27,6 +28,7 @@ def least_specs(estimation_sample_size: int, feats_spec: Mapping[str, Any]):
                 "args": {
                     "estimation_sample_size": estimation_sample_size,
                     "feats_spec": feats_spec,
+                    "use_bias": True,
                 },
             },
             "delay_config": {"name": "fixed", "args": {"delay": 4}},
@@ -44,6 +46,7 @@ def least_specs(estimation_sample_size: int, feats_spec: Mapping[str, Any]):
                 "args": {
                     "estimation_sample_size": estimation_sample_size,
                     "feats_spec": feats_spec,
+                    "use_bias": True,
                 },
             },
             "delay_config": {"name": "fixed", "args": {"delay": 6}},
@@ -61,6 +64,7 @@ def least_specs(estimation_sample_size: int, feats_spec: Mapping[str, Any]):
                 "args": {
                     "estimation_sample_size": estimation_sample_size,
                     "feats_spec": feats_spec,
+                    "use_bias": True,
                 },
             },
             "delay_config": {"name": "fixed", "args": {"delay": 8}},
