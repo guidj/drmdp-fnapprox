@@ -15,7 +15,7 @@ import tensorflow as tf
 from drmdp import core, envs, feats, logger, task
 
 MAX_STEPS = 2000
-EST_SAMPLE_SIZES = (10_000, 25_000, 50_000, 75_000)
+EST_SAMPLE_SIZES = (5000, 10_000, 15_000, 20_000, 50_000)
 REWARD_DELAYS = (2, 4, 6)
 
 SPECS: Sequence[Mapping[str, Any]] = (
@@ -99,7 +99,6 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "name": "RedGreen-v0",
         "args": None,
         "feats_specs": [
-            {"name": "random", "args": {"enc_size": 32}},
             {"name": "tiles", "args": {"tiling_dim": 6}},
         ],
         "least_spec": {"name": "tiles", "args": {"tiling_dim": 6}},
@@ -108,7 +107,6 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "name": "IceWorld-v0",
         "args": None,
         "feats_specs": [
-            {"name": "random", "args": {"enc_size": 64}},
             {"name": "tiles", "args": {"tiling_dim": 6}},
         ],
         "least_spec": {"name": "tiles", "args": {"tiling_dim": 6}},
@@ -117,10 +115,9 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "name": "GridWorld-v0",
         "args": None,
         "feats_specs": [
-            {"name": "random", "args": {"enc_size": 64}},
             {"name": "tiles", "args": {"tiling_dim": 6}},
         ],
-        "least_spec": {"name": "tiles", "args": {"tiling_dim": 6}},
+        "least_spec": {"name": "tiles", "args": {"tiling_dim": 8}},
     },
 )
 
@@ -183,7 +180,7 @@ def run_fn(job_spec: JobSpec):
     except Exception as err:
         raise RuntimeError(f"Task {task_id} `{job_spec}` failed") from err
     logging.info("Completed task %s: %s", task_id, job_spec)
-    return {"task_id": task_id, **dataclasses.asdict(job_spec), **result}
+    return {"task_id": task_id, **dataclasses.asdict(job_spec), "meta": result}
 
 
 def wait_till_completion(tasks_refs):

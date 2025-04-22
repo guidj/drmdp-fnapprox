@@ -261,7 +261,6 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "name": "RedGreen-v0",
         "args": None,
         "feats_specs": [
-            {"name": "random", "args": {"enc_size": 32}},
             {"name": "tiles", "args": {"tiling_dim": 6}},
         ],
         "problem_specs": COMMON_PROBLEM_SPECS
@@ -271,7 +270,6 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "name": "IceWorld-v0",
         "args": None,
         "feats_specs": [
-            {"name": "random", "args": {"enc_size": 64}},
             {"name": "tiles", "args": {"tiling_dim": 6}},
         ],
         "problem_specs": COMMON_PROBLEM_SPECS
@@ -281,8 +279,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "name": "GridWorld-v0",
         "args": None,
         "feats_specs": [
-            {"name": "random", "args": {"enc_size": 64}},
-            {"name": "tiles", "args": {"tiling_dim": 6}},
+            {"name": "tiles", "args": {"tiling_dim": 8}},
         ],
         "problem_specs": COMMON_PROBLEM_SPECS
         + least_specs(50_000, {"name": "tiles", "args": {"tiling_dim": 6}}),
