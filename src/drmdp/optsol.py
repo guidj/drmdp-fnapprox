@@ -42,7 +42,11 @@ class MultivariateNormal:
 
         coeff = solve_least_squares(matrix, rhs)
         try:
-            cov = cls.perturb_covariance_matrix(inverse_op(np.matmul(matrix.T, matrix)))
+            # Σᵦ = (Σᵦ^-1 + X'X)^-1 * σ²
+            # Sigma^2 is the variance of the error term
+            # Here, we assume sigma^2 = 1
+            cov = inverse_op(np.matmul(matrix.T, matrix))
+            cov = cls.perturb_covariance_matrix(cov)
         except linalg.LinAlgError as err:
             if "Singular matrix" in err.args[0]:
                 return None
@@ -61,7 +65,8 @@ class MultivariateNormal:
         try:
             # Σᵦ_new = (Σᵦ^-1 + X'X)^-1 * σ²
             # μᵦ_new = (Σᵦ^-1 + X'X)^-1 * (Σᵦ^-1*μᵦ + X'Y)
-            # assuming sigma^2 = 1
+            # Sigma^2 is the variance of the error term
+            # Here, we assume sigma^2 = 1
             inv_prior_sigma = linalg.pinv(prior.cov)
             cov = linalg.pinv(inv_prior_sigma + np.matmul(matrix.T, matrix))
             mean = np.matmul(
