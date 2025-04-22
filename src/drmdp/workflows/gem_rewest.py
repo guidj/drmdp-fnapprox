@@ -168,6 +168,7 @@ class ResultWriter:
     def sync(self):
         results = [ray.get(result_ref) for result_ref in self.results_refs]
         write_records(self.output_path, results)
+        self.results_refs.clear()
 
 
 def run_reward_estimation_study(
@@ -200,7 +201,7 @@ def run_reward_estimation_study(
         wait_till_completion(results_refs, result_writer)
 
 
-@ray.remote(num_returns=2)
+@ray.remote
 def run_fn(job_spec: JobSpec):
     task_id = str(uuid.uuid4())
     logging.info("Starting task %s, %s", task_id, job_spec)
@@ -210,7 +211,7 @@ def run_fn(job_spec: JobSpec):
         raise RuntimeError(f"Task {task_id} `{job_spec}` failed") from err
     logging.info("Completed task %s: %s", task_id, job_spec)
     result = {"task_id": task_id, **dataclasses.asdict(job_spec), "meta": result}
-    return task_id, result
+    return result
 
 
 def wait_till_completion(tasks_refs, result_writer: ResultWriter):
@@ -221,11 +222,9 @@ def wait_till_completion(tasks_refs, result_writer: ResultWriter):
     while True:
         finished_tasks, unfinished_tasks = ray.wait(unfinished_tasks)
         for finished_task in finished_tasks:
-            task_id_ref, result_ref = finished_task
-            result_writer.write(result_ref)
+            result_writer.write(finished_task)
             logging.info(
-                "Completed task %s, %d left out of %d.",
-                ray.get(task_id_ref),
+                "Completed task. %d left out of %d.",
                 len(unfinished_tasks),
                 len(tasks_refs),
             )
