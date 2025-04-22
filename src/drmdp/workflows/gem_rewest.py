@@ -167,11 +167,12 @@ class ResultWriter:
             self.sync()
 
     def sync(self):
-        write_records(
-            os.path.join(self.output_path, f"result-{self.partition}.jsonl"),
-            records=self.results,
-        )
-        self.results = []
+        if self.results:
+            write_records(
+                os.path.join(self.output_path, f"result-{self.partition}.jsonl"),
+                records=self.results,
+            )
+            self.results = []
 
 
 def run_reward_estimation_study(
