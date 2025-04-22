@@ -232,7 +232,9 @@ def make(
     elif reward_fn == "esp-neg":
         rf = EarlyStopPenaltyWeightedSumOfErrors()
     else:
-        raise ValueError(f"Unknown reward fn: {reward_fn}")
+        raise ValueError(
+            f"Unknown reward fn: {reward_fn}. Must be one of: `default`, `pos-enf`, `esp-neg`."
+        )
     env = GemObsAsVectorWrapper(gym_electric_motor.make(env_name, reward_function=rf))
     env = DiscretiseActionWrapper(env)
     max_episode_steps = kwargs.get("max_episode_steps", None)
