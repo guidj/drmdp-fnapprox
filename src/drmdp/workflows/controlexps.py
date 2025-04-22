@@ -277,11 +277,11 @@ SPECS: Sequence[Mapping[str, Any]] = (
     },
     {
         "name": "GridWorld-v0",
-        "args": None,
+        "args": {"max_episode_steps": 2500},
         "feats_specs": [
             {"name": "tiles", "args": {"tiling_dim": 8}},
         ],
         "problem_specs": COMMON_PROBLEM_SPECS
-        + least_specs(50_000, {"name": "tiles", "args": {"tiling_dim": 6}}),
+        + least_specs(50_000, {"name": "tiles", "args": {"tiling_dim": 8}}),
     },
 )

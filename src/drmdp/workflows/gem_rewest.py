@@ -113,9 +113,9 @@ SPECS: Sequence[Mapping[str, Any]] = (
     },
     {
         "name": "GridWorld-v0",
-        "args": None,
+        "args": {"max_episode_steps": 2500},
         "feats_specs": [
-            {"name": "tiles", "args": {"tiling_dim": 6}},
+            {"name": "tiles", "args": {"tiling_dim": 8}},
         ],
         "least_spec": {"name": "tiles", "args": {"tiling_dim": 8}},
     },
@@ -140,6 +140,25 @@ class JobSpec:
     least_spec: Mapping[str, Any]
     use_bias: bool
     turn: int
+
+
+# @ray.remote
+# class ResultWriter:
+#     def __init__(self, output_path: str, partition_size: int = 10):
+#         self.output_path = output_path
+#         self.partition_size =  partition_size
+#         self.results_refs = []
+
+#     def write(self, result_ref):
+#         self.results_refs.append(result_ref)
+#         if len(self.results_refs) > self.partition_size:
+#             self.sync()
+
+#     def sync(self):
+#         results = [
+#             ray.get(result_ref) for result_ref in self.results_refs
+#         ]
+#         write_records(self.output_path, results)
 
 
 def run_reward_estimation_study(
