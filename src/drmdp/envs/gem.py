@@ -141,8 +141,8 @@ class GemObsAsVectorWrapper(gym.ObservationWrapper):
                 np.zeros_like(state_obs_space.low[self._mask]) + self._bias,
                 # values
                 state_obs_space.low[self._mask],
-                # constraint violation
-                np.array([0.0]),
+                # constraint violation + free variable
+                np.array([0.0, 0.0]),
             ]
         )
         obs_space_high = np.concatenate(
@@ -152,8 +152,8 @@ class GemObsAsVectorWrapper(gym.ObservationWrapper):
                 + self._bias,
                 # values
                 state_obs_space.high[self._mask],
-                # constraint violation
-                np.array([1.0]),
+                # constraint violation + free variable
+                np.array([1.0, 1.0]),
             ]
         )
         self.observation_space = gym.spaces.Box(
@@ -175,7 +175,8 @@ class GemObsAsVectorWrapper(gym.ObservationWrapper):
                 (abs(next_state - prev_ref_state) / self._denom) ** self._expo
                 + self._bias,
                 next_state,
-                np.array([cv]),
+                # constraint violation + free variable
+                np.array([cv, 1.0]),
             ]
         )
         self._prev_ref_state = ref_state
@@ -214,9 +215,9 @@ class DiscretiseActionWrapper(gym.ActionWrapper):
 
 def make(
     env_name: str,
+    reward_fn: str,
     constraint_violation_reward: Optional[float] = 0.0,
     penalty_gamma: Optional[float] = 1.0,
-    reward_fn: str = "default",
     wrapper: Optional[str] = None,
     **kwargs,
 ) -> gym.Env:
@@ -231,7 +232,9 @@ def make(
     elif reward_fn == "esp-neg":
         rf = EarlyStopPenaltyWeightedSumOfErrors()
     else:
-        raise ValueError(f"Unknown reward fn: {reward_fn}")
+        raise ValueError(
+            f"Unknown reward fn: {reward_fn}. Must be one of: `default`, `pos-enf`, `esp-neg`."
+        )
     env = GemObsAsVectorWrapper(gym_electric_motor.make(env_name, reward_function=rf))
     env = DiscretiseActionWrapper(env)
     max_episode_steps = kwargs.get("max_episode_steps", None)

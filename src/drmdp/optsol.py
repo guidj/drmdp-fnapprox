@@ -1,10 +1,80 @@
 import abc
+import dataclasses
 from typing import Optional
 
 import gymnasium as gym
 import numpy as np
+from scipy import linalg
 
 from drmdp import dataproc
+
+
+@dataclasses.dataclass
+class MultivariateNormal:
+    """
+    A multivariate normal distribution.
+    """
+
+    mean: np.ndarray
+    cov: np.ndarray
+
+    @staticmethod
+    def perturb_covariance_matrix(cov, noise: float = 1e-6):
+        eig_values, eig_matrix = np.linalg.eig(cov)
+        perturbed_eig_values = np.maximum(
+            eig_values, np.array([noise] * len(eig_values))
+        )
+        return eig_matrix * np.diag(perturbed_eig_values) * np.linalg.inv(eig_matrix)
+
+    @classmethod
+    def least_squares(
+        cls, matrix, rhs, inverse: str = "pseudo"
+    ) -> Optional["MultivariateNormal"]:
+        """
+        Least-squares estimation: mean and covariance.
+        """
+        if inverse == "exact":
+            inverse_op = linalg.inv
+        elif inverse == "pseudo":
+            inverse_op = linalg.pinv
+        else:
+            raise ValueError(f"Unknown inverse: {inverse}")
+
+        coeff = solve_least_squares(matrix, rhs)
+        try:
+            # Σᵦ = (Σᵦ^-1 + X'X)^-1 * σ²
+            # Sigma^2 is the variance of the error term
+            # Here, we assume sigma^2 = 1
+            cov = inverse_op(np.matmul(matrix.T, matrix))
+            cov = cls.perturb_covariance_matrix(cov)
+        except linalg.LinAlgError as err:
+            if "Singular matrix" in err.args[0]:
+                return None
+            raise err
+        return MultivariateNormal(coeff, cov)
+
+    @classmethod
+    def bayes_linear_regression(
+        cls, matrix, rhs, prior: "MultivariateNormal"
+    ) -> Optional["MultivariateNormal"]:
+        """
+        Bayesian least-squares estimation: mean and covariance.
+        """
+        matrix = matrix.astype(prior.mean.dtype)
+        rhs = rhs.astype(prior.mean.dtype)
+        try:
+            # Σᵦ_new = (Σᵦ^-1 + X'X)^-1 * σ²
+            # μᵦ_new = (Σᵦ^-1 + X'X)^-1 * (Σᵦ^-1*μᵦ + X'Y)
+            # Sigma^2 is the variance of the error term
+            # Here, we assume sigma^2 = 1
+            inv_prior_sigma = linalg.pinv(prior.cov)
+            cov = linalg.pinv(inv_prior_sigma + np.matmul(matrix.T, matrix))
+            mean = np.matmul(
+                cov, (np.matmul(inv_prior_sigma, prior.mean) + np.matmul(matrix.T, rhs))
+            )
+            return MultivariateNormal(mean, cov)
+        except linalg.LinAlgError as err:
+            raise ValueError("Failed Bayesian estimation") from err
 
 
 class LearningRateSchedule(abc.ABC):

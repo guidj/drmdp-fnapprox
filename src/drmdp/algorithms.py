@@ -191,6 +191,7 @@ class RandomFnApproxPolicy(core.PyValueFnPolicy):
     def action(
         self, observation, epsilon: float = 0.0, policy_state: Any = (), seed=None
     ):
+        del epsilon
         del seed
         state_qvalues, gradients = self.action_values_gradients(
             observation, self.actions

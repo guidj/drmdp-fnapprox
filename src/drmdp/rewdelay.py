@@ -6,7 +6,7 @@ from typing import Callable, List, Optional, Sequence, Tuple
 import gymnasium as gym
 import numpy as np
 
-from drmdp import mathutils, optsol
+from drmdp import mathutils, metrics, optsol
 
 
 class RewardDelay(abc.ABC):
@@ -157,6 +157,7 @@ class LeastLfaMissingWrapper(gym.Wrapper):
         env: gym.Env,
         obs_encoding_wrapper: gym.ObservationWrapper,
         estimation_sample_size: int,
+        use_bias: bool = True,
     ):
         super().__init__(env)
         if not isinstance(obs_encoding_wrapper.observation_space, gym.spaces.Box):
@@ -169,34 +170,44 @@ class LeastLfaMissingWrapper(gym.Wrapper):
             )
         self.obs_wrapper = obs_encoding_wrapper
         self.estimation_sample_size = estimation_sample_size
+        self.use_bias = use_bias
         self.obs_buffer: List[np.ndarray] = []
         self.rew_buffer: List[np.ndarray] = []
 
         self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
         self.mdim = self.obs_dim * obs_encoding_wrapper.action_space.n + self.obs_dim
         self.weights = None
-        self._obs = None
+        self._obs_feats = None
         self._segment_features = None
+        self.estimation_meta = {"use_bias": self.use_bias}
 
     def step(self, action):
-        obs, reward, term, trunc, info = super().step(action)
-        self._segment_features[action * self.obs_dim : (action + 1) * self.obs_dim] += (
-            self._obs
+        next_obs, reward, term, trunc, info = super().step(action)
+        next_obs_feats = self.obs_wrapper.observation(next_obs)
+        # Add s to action-specific columns
+        # and s' to the last columns.
+        start_index = action * self.obs_dim
+        self._segment_features[start_index : start_index + self.obs_dim] += (
+            self._obs_feats
         )
-        self._segment_features[-self.obs_dim :] += self.obs_wrapper.observation(obs)
+        self._segment_features[-self.obs_dim :] += next_obs_feats
 
         if self.weights is not None:
             # estimate
-            reward = np.dot(self._segment_features, self.weights)
+            feats = self._segment_features
+            if self.use_bias:
+                feats = np.concatenate([self._segment_features, np.array([1.0])])
+            reward = np.dot(feats, self.weights)
+            # reset for the next example
             self._segment_features = np.zeros(shape=(self.mdim))
         else:
-            # Add obs to action-specific columns
-            # and use aggregate reward
+            # Add example to buffer and
+            # use aggregate reward.
             if info["segment_step"] == info["delay"] - 1:
                 self.obs_buffer.append(self._segment_features)
                 # aggregate reward
                 self.rew_buffer.append(reward)
-                # reset for the next one
+                # reset for the next segment
                 self._segment_features = np.zeros(shape=(self.mdim))
             else:
                 # zero impute until rewards are estimated
@@ -204,15 +215,55 @@ class LeastLfaMissingWrapper(gym.Wrapper):
 
             if len(self.obs_buffer) >= self.estimation_sample_size:
                 # estimate rewards
-                self.weights = optsol.solve_least_squares(
-                    matrix=np.stack(self.obs_buffer), rhs=np.array(self.rew_buffer)
-                )
-                logging.info("Estimated rewards for %s", self.env)
-        self._obs = self.obs_wrapper.observation(obs)
-        return obs, reward, term, trunc, info
+                matrix = np.stack(self.obs_buffer)
+                rewards = np.array(self.rew_buffer)
+                if self.use_bias:
+                    matrix = np.concatenate(
+                        [
+                            matrix,
+                            np.expand_dims(
+                                np.ones(shape=len(self.obs_buffer)), axis=-1
+                            ),
+                        ],
+                        axis=1,
+                    )
+                mv = optsol.MultivariateNormal.least_squares(matrix=matrix, rhs=rewards)
+                if mv is not None:
+                    self.weights = mv.mean
+                    error = metrics.rmse(
+                        v_pred=np.dot(matrix, self.weights), v_true=rewards, axis=0
+                    )
+                    self.estimation_meta["sample"] = {"size": rewards.shape[0]}
+                    self.estimation_meta["error"] = {"rmse": error}
+                    self.estimation_meta["estimate"] = {
+                        "mean": self.weights.tolist(),
+                        "cov": np.real(mv.cov).flatten().tolist(),
+                    }
+                    logging.debug("Estimated rewards for %s. RMSE: %f", self.env, error)
+                else:
+                    # drop latest 5% of samples
+                    rng = np.random.default_rng()
+                    nsamples_drop = int(self.estimation_sample_size * 0.05)
+                    indices = rng.choice(
+                        np.arange(self.estimation_sample_size),
+                        self.estimation_sample_size - nsamples_drop,
+                        replace=False,
+                    )
+                    self.obs_buffer = np.asarray(self.obs_buffer)[indices].tolist()
+                    self.rew_buffer = np.asarray(self.rew_buffer)[indices].tolist()
+                    logging.debug(
+                        "Failed estimation for %s. Dropping %d samples",
+                        self.env,
+                        nsamples_drop,
+                    )
+
+        # For the next step
+        self._obs_feats = next_obs_feats
+        return next_obs, reward, term, trunc, info
 
     def reset(self, *, seed=None, options=None):
         obs, info = super().reset(seed=seed, options=options)
-        self._obs = self.obs_wrapper.observation(obs)
+        self._obs_feats = self.obs_wrapper.observation(obs)
+        # Init segment and step features array
         self._segment_features = np.zeros(shape=(self.mdim))
         return obs, info

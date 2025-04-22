@@ -1,4 +1,3 @@
-import dataclasses
 import logging
 import os
 import os.path
@@ -21,7 +20,7 @@ DELAY_BUILDERS: Mapping[str, type[rewdelay.RewardDelay]] = {
 }
 
 
-def policy_control_run_fn(exp_instance: core.ExperimentInstance):
+def policy_control(exp_instance: core.ExperimentInstance):
     """
     Entry point running on-policy evaluation for DAAF.
 
@@ -58,12 +57,10 @@ def policy_control_run_fn(exp_instance: core.ExperimentInstance):
 
     logging.debug("Starting DRMDP Control Experiments: %s", exp_instance)
 
-    results = policy_control(
-        env=env,
-        algorithm=algorithm,
-        num_episodes=exp_instance.run_config.episodes_per_run,
-        monitor=monitor,
+    results = algorithm.train(
+        env=env, num_episodes=exp_instance.run_config.episodes_per_run, monitor=monitor
     )
+
     with logger.ExperimentLogger(
         log_dir=exp_instance.run_config.output_dir, experiment_instance=exp_instance
     ) as exp_logger:
@@ -92,18 +89,6 @@ def policy_control_run_fn(exp_instance: core.ExperimentInstance):
     env.close()
 
 
-def policy_control(
-    env: gym.Env,
-    algorithm: algorithms.FnApproxAlgorithm,
-    num_episodes: int,
-    monitor: core.EnvMonitor,
-) -> Iterator[algorithms.PolicyControlSnapshot]:
-    """
-    Runs policy control with given algorithm, env, and policy spec.
-    """
-    return algorithm.train(env=env, num_episodes=num_episodes, monitor=monitor)
-
-
 def create_task_id(task_prefix: str) -> str:
     """
     Creates a task id using a given prefix
@@ -121,21 +106,28 @@ def uid() -> str:
 
 def generate_experiments_instances(
     experiments: Sequence[core.Experiment],
-    run_config: core.RunConfig,
+    num_runs: int,
+    num_episodes_per_epoch: int,
+    log_episode_frequency: int,
+    use_seed: bool,
+    output_dir: str,
     task_prefix: str,
 ) -> Iterator[core.ExperimentInstance]:
     for experiment in experiments:
         exp_id = "-".join([create_task_id(task_prefix), experiment.env_spec.name])
-        for idx in range(run_config.num_runs):
+        for idx in range(num_runs):
             yield core.ExperimentInstance(
                 exp_id=exp_id,
                 instance_id=idx,
                 experiment=experiment,
-                run_config=dataclasses.replace(
-                    run_config,
+                run_config=core.RunConfig(
+                    num_runs=num_runs,
+                    episodes_per_run=num_episodes_per_epoch * experiment.epochs,
+                    log_episode_frequency=log_episode_frequency,
+                    use_seed=use_seed,
                     # replace run output with run specific values
                     output_dir=os.path.join(
-                        run_config.output_dir,
+                        output_dir,
                         exp_id,
                         f"run_{idx}",
                         experiment.problem_spec.reward_mapper["name"],

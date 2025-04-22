@@ -86,14 +86,12 @@ def create_tasks(
     experiments = tuple(parse_experiments(specs=controlexps.SPECS))
     experiment_instances = tuple(
         task.generate_experiments_instances(
-            run_config=core.RunConfig(
-                num_runs=num_runs,
-                episodes_per_run=num_episodes,
-                log_episode_frequency=log_episode_frequency,
-                use_seed=use_seed,
-                output_dir=output_dir,
-            ),
             experiments=experiments,
+            num_runs=num_runs,
+            num_episodes_per_epoch=num_episodes,
+            log_episode_frequency=log_episode_frequency,
+            use_seed=use_seed,
+            output_dir=output_dir,
             task_prefix=task_prefix,
         )
     )
@@ -134,6 +132,7 @@ def parse_experiments(
                             feats_spec=feat_tfx_spec,
                         ),
                         problem_spec=core.ProblemSpec(**problem_spec),
+                        epochs=spec["epochs"],
                     )
                 )
     return experiment_specs
@@ -155,7 +154,7 @@ def run_experiments(
             experiment_task,
         )
         try:
-            task.policy_control_run_fn(experiment_task)
+            task.policy_control(experiment_task)
         except Exception as err:
             logging.error("Experiment %s failed", experiment_task)
             raise err

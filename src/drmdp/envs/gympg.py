@@ -65,9 +65,11 @@ def make(env_name: str, wrapper: Optional[str] = None, **kwargs) -> gym.Env:
         env = GridWorldObsAsVectorWrapper(
             gridworld.GridWorld(size, cliffs, exits, start)
         )
+        env = episode_steps_limit(env, kwargs.get("max_episode_steps", None))
     elif env_name == "RedGreen-v0":
         cure = kwargs.get("cure", DEFAULT_RG_CURE)
         env = RedgreenObsAsVectorWrapper(redgreen.RedGreenSeq(cure))
+        env = episode_steps_limit(env, kwargs.get("max_episode_steps", None))
     elif env_name == "IceWorld-v0":
         map_name = kwargs.get("map_name", DEFAULT_ICE_MAP)
         map_ = iceworld.MAPS[map_name]
@@ -75,6 +77,7 @@ def make(env_name: str, wrapper: Optional[str] = None, **kwargs) -> gym.Env:
         env = IceworldObsAsVectorWrapper(
             iceworld.IceWorld(size, lakes=lakes, goals=goals, start=start)
         )
+        env = episode_steps_limit(env, kwargs.get("max_episode_steps", None))
     elif env_name == "MountainCar-v0":
         max_episode_steps = kwargs.get(
             "max_episode_steps", DEFAULT_MC_MAX_EPISODE_STEPS
@@ -83,3 +86,9 @@ def make(env_name: str, wrapper: Optional[str] = None, **kwargs) -> gym.Env:
     else:
         raise ValueError(f"Environment `{env_name}` unknown")
     return wrappers.wrap(env, wrapper=wrapper, **kwargs)
+
+
+def episode_steps_limit(env: gym.Env, max_episode_steps: Optional[int] = None):
+    if max_episode_steps:
+        return gym.wrappers.TimeLimit(env, max_episode_steps=max_episode_steps)
+    return env
