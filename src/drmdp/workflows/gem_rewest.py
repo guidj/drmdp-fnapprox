@@ -173,6 +173,7 @@ class ResultWriter:
                 records=self.results,
             )
             self.results = []
+            self.partition += 1
 
 
 def run_reward_estimation_study(
