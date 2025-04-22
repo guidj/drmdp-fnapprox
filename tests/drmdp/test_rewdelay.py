@@ -53,7 +53,7 @@ def test_least_lfa_missing_wrapper_step():
     obs_wrapper = DummyObsWrapper(env)
     delay_wrapper = DelayedRewardWrapper(env, FixedDelay(delay=2))
     wrapped = LeastLfaMissingWrapper(
-        delay_wrapper, obs_wrapper, estimation_sample_size=2
+        delay_wrapper, obs_wrapper, estimation_sample_size=2, use_bias=False
     )
 
     obs, info = wrapped.reset()

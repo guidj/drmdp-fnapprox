@@ -6,7 +6,7 @@ import logging
 import os.path
 import tempfile
 import uuid
-from typing import Any, Mapping, Sequence
+from typing import Any, List, Mapping, Sequence
 
 import numpy as np
 import ray
@@ -158,7 +158,7 @@ class ResultWriter:
     def __init__(self, output_path: str, partition_size: int = 100):
         self.output_path = output_path
         self.partition_size = partition_size
-        self.results = []
+        self.results: List[Any] = []
         self.partition = 0
 
     def write(self, result):
@@ -197,11 +197,11 @@ def run_reward_estimation_study(
                     turn=turn,
                 )
                 jobs.extend([job_spec, dataclasses.replace(job_spec, use_bias=False)])
-    np.random.shuffle(jobs)
+    np.random.shuffle(jobs) # type: ignore
 
     with ray.init() as context:
         logging.info("Starting ray task: %s", context)
-        result_writer = ResultWriter.remote(output_path)
+        result_writer = ResultWriter.remote(output_path) # type: ignore
         results_refs = [run_fn.remote(job) for job in jobs]
         wait_till_completion(results_refs, result_writer)
 
@@ -227,7 +227,7 @@ def wait_till_completion(tasks_refs, result_writer: ResultWriter):
     while True:
         finished_tasks, unfinished_tasks = ray.wait(unfinished_tasks)
         for finished_task in finished_tasks:
-            ray.get(result_writer.write.remote(finished_task))
+            ray.get(result_writer.write.remote(finished_task)) # type: ignore
             logging.info(
                 "Completed task. %d left out of %d.",
                 len(unfinished_tasks),
@@ -238,7 +238,7 @@ def wait_till_completion(tasks_refs, result_writer: ResultWriter):
             break
 
     # Flush remaining files
-    ray.get(result_writer.sync.remote())
+    ray.get(result_writer.sync.remote()) # type: ignore
 
 
 def reward_estimation(job_spec: JobSpec):

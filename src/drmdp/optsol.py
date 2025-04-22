@@ -29,7 +29,7 @@ class MultivariateNormal:
     @classmethod
     def least_squares(
         cls, matrix, rhs, inverse: str = "pseudo"
-    ) -> "MultivariateNormal":
+    ) -> Optional["MultivariateNormal"]:
         """
         Least-squares estimation: mean and covariance.
         """
@@ -56,7 +56,7 @@ class MultivariateNormal:
     @classmethod
     def bayes_linear_regression(
         cls, matrix, rhs, prior: "MultivariateNormal"
-    ) -> "MultivariateNormal":
+    ) -> Optional["MultivariateNormal"]:
         """
         Bayesian least-squares estimation: mean and covariance.
         """
