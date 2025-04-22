@@ -158,17 +158,17 @@ class ResultWriter:
     def __init__(self, output_path: str, partition_size: int = 100):
         self.output_path = output_path
         self.partition_size = partition_size
-        self.results_refs = []
+        self.results = []
+        self.partition = 0
 
-    def write(self, result_ref):
-        self.results_refs.append(result_ref)
-        if len(self.results_refs) >= self.partition_size:
+    def write(self, result):
+        self.results.append(result)
+        if len(self.results) >= self.partition_size:
             self.sync()
 
     def sync(self):
-        results = [ray.get(result_ref) for result_ref in self.results_refs]
-        write_records(self.output_path, results)
-        self.results_refs.clear()
+        write_records(f"{self.output_path}-{self.partition}-result.jsonl", self.results)
+        self.results = []
 
 
 def run_reward_estimation_study(
@@ -232,7 +232,7 @@ def wait_till_completion(tasks_refs, result_writer: ResultWriter):
         if len(unfinished_tasks) == 0:
             break
 
-    result_writer.sync()
+    result_writer.sync.remote()
 
 
 def reward_estimation(job_spec: JobSpec):
