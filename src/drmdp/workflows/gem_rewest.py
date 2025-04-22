@@ -29,6 +29,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         },
         "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 4}}],
         "least_spec": {"name": "scale", "args": None},
+        "epochs": 1,
     },
     {
         "name": "Finite-CC-ShuntDc-v0",
@@ -40,6 +41,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         },
         "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 4}}],
         "least_spec": {"name": "scale", "args": None},
+        "epochs": 1,
     },
     {
         "name": "Finite-SC-PermExDc-v0",
@@ -51,6 +53,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         },
         "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 3}}],
         "least_spec": {"name": "scale", "args": None},
+        "epochs": 1,
     },
     {
         "name": "Finite-SC-ShuntDc-v0",
@@ -62,6 +65,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         },
         "feats_specs": [{"name": "scale", "args": None}],
         "least_spec": {"name": "scale", "args": None},
+        "epochs": 1,
     },
     {
         "name": "Finite-TC-PermExDc-v0",
@@ -73,6 +77,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         },
         "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
         "least_spec": {"name": "scale", "args": None},
+        "epochs": 1,
     },
     {
         "name": "Finite-TC-ShuntDc-v0",
@@ -84,6 +89,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         },
         "feats_specs": [{"name": "scale", "args": None}],
         "least_spec": {"name": "scale", "args": None},
+        "epochs": 1,
     },
     {
         "name": "MountainCar-v0",
@@ -94,6 +100,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
             {"name": "tiles", "args": {"tiling_dim": 6}},
         ],
         "least_spec": {"name": "tiles", "args": {"tiling_dim": 6}},
+        "epochs": 5,
     },
     {
         "name": "RedGreen-v0",
@@ -102,6 +109,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
             {"name": "tiles", "args": {"tiling_dim": 6}},
         ],
         "least_spec": {"name": "tiles", "args": {"tiling_dim": 6}},
+        "epochs": 5,
     },
     {
         "name": "IceWorld-v0",
@@ -110,6 +118,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
             {"name": "tiles", "args": {"tiling_dim": 6}},
         ],
         "least_spec": {"name": "tiles", "args": {"tiling_dim": 6}},
+        "epochs": 5,
     },
     {
         "name": "GridWorld-v0",
@@ -118,6 +127,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
             {"name": "tiles", "args": {"tiling_dim": 8}},
         ],
         "least_spec": {"name": "tiles", "args": {"tiling_dim": 8}},
+        "epochs": 5,
     },
 )
 
@@ -139,26 +149,8 @@ class JobSpec:
     reward_delay: int
     least_spec: Mapping[str, Any]
     use_bias: bool
+    epochs: int
     turn: int
-
-
-# @ray.remote
-# class ResultWriter:
-#     def __init__(self, output_path: str, partition_size: int = 10):
-#         self.output_path = output_path
-#         self.partition_size =  partition_size
-#         self.results_refs = []
-
-#     def write(self, result_ref):
-#         self.results_refs.append(result_ref)
-#         if len(self.results_refs) > self.partition_size:
-#             self.sync()
-
-#     def sync(self):
-#         results = [
-#             ray.get(result_ref) for result_ref in self.results_refs
-#         ]
-#         write_records(self.output_path, results)
 
 
 def run_reward_estimation_study(
@@ -178,6 +170,7 @@ def run_reward_estimation_study(
                     reward_delay=reward_delay,
                     least_spec=spec["least_spec"],
                     use_bias=True,
+                    epochs=spec["epochs"],
                     turn=turn,
                 )
                 jobs.extend([job_spec, dataclasses.replace(job_spec, use_bias=False)])
@@ -290,7 +283,7 @@ def create_exp_instance(job_spec: JobSpec):
     )
     run_config = core.RunConfig(
         num_runs=1,
-        episodes_per_run=job_spec.num_episodes,
+        episodes_per_run=job_spec.num_episodes * job_spec.epochs,
         log_episode_frequency=100,
         use_seed=True,
         output_dir=tempfile.gettempdir(),
@@ -299,8 +292,7 @@ def create_exp_instance(job_spec: JobSpec):
         exp_id=str(uuid.uuid4()),
         instance_id=job_spec.turn,
         experiment=core.Experiment(
-            env_spec=env_spec,
-            problem_spec=problem_spec,
+            env_spec=env_spec, problem_spec=problem_spec, epochs=job_spec.epochs
         ),
         run_config=run_config,
         context={},

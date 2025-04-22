@@ -1,4 +1,3 @@
-import dataclasses
 import logging
 import os
 import os.path
@@ -107,21 +106,28 @@ def uid() -> str:
 
 def generate_experiments_instances(
     experiments: Sequence[core.Experiment],
-    run_config: core.RunConfig,
+    num_runs: int,
+    num_episodes_per_epoch: int,
+    log_episode_frequency: int,
+    use_seed: bool,
+    output_dir: str,
     task_prefix: str,
 ) -> Iterator[core.ExperimentInstance]:
     for experiment in experiments:
         exp_id = "-".join([create_task_id(task_prefix), experiment.env_spec.name])
-        for idx in range(run_config.num_runs):
+        for idx in range(num_runs):
             yield core.ExperimentInstance(
                 exp_id=exp_id,
                 instance_id=idx,
                 experiment=experiment,
-                run_config=dataclasses.replace(
-                    run_config,
+                run_config=core.RunConfig(
+                    num_runs=num_runs,
+                    episodes_per_run=num_episodes_per_epoch * experiment.epochs,
+                    log_episode_frequency=log_episode_frequency,
+                    use_seed=use_seed,
                     # replace run output with run specific values
                     output_dir=os.path.join(
-                        run_config.output_dir,
+                        output_dir,
                         exp_id,
                         f"run_{idx}",
                         experiment.problem_spec.reward_mapper["name"],

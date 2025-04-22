@@ -161,6 +161,7 @@ class Experiment:
 
     env_spec: EnvSpec
     problem_spec: ProblemSpec
+    epochs: int
 
 
 @dataclasses.dataclass(frozen=True)
