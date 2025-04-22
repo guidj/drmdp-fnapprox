@@ -167,7 +167,10 @@ class ResultWriter:
             self.sync()
 
     def sync(self):
-        write_records(f"{self.output_path}-{self.partition}-result.jsonl", self.results)
+        write_records(
+            os.path.join(self.output_path, f"result-{self.partition}.jsonl"),
+            records=self.results,
+        )
         self.results = []
 
 
