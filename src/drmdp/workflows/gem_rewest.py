@@ -222,7 +222,7 @@ def wait_till_completion(tasks_refs, result_writer: ResultWriter):
     while True:
         finished_tasks, unfinished_tasks = ray.wait(unfinished_tasks)
         for finished_task in finished_tasks:
-            result_writer.write(finished_task)
+            result_writer.write.remote(finished_task)
             logging.info(
                 "Completed task. %d left out of %d.",
                 len(unfinished_tasks),
