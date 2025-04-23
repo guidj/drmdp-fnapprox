@@ -129,6 +129,7 @@ class DelayedRewardWrapper(gym.Wrapper):
         self.segment = 0
         self.segment_step = -1
         self.delay = self.reward_delay.sample()
+        self.rewards = []
         obs, info = super().reset(seed=seed, options=options)
         return obs, {
             **info,
