@@ -184,7 +184,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "reward_fn": "pos-enf",
             "penalty_gamma": 1.0,
             "constraint_violation_reward": 0.0,
-            "max_episode_steps": 2500,
+            "max_episode_steps": 200,
         },
         "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 4}}],
         "problem_specs": COMMON_PROBLEM_SPECS
@@ -197,9 +197,9 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "reward_fn": "pos-enf",
             "penalty_gamma": 1.0,
             "constraint_violation_reward": 0.0,
-            "max_episode_steps": 2500,
+            "max_episode_steps": 200,
         },
-        "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 4}}],
+        "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
         "problem_specs": COMMON_PROBLEM_SPECS
         + least_specs(10_000, {"name": "scale", "args": None}),
         "epochs": 1,
@@ -210,7 +210,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "reward_fn": "pos-enf",
             "penalty_gamma": 1.0,
             "constraint_violation_reward": 0.0,
-            "max_episode_steps": 2500,
+            "max_episode_steps": 200,
         },
         "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 3}}],
         "problem_specs": COMMON_PROBLEM_SPECS
@@ -223,7 +223,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "reward_fn": "pos-enf",
             "penalty_gamma": 1.0,
             "constraint_violation_reward": 0.0,
-            "max_episode_steps": 2500,
+            "max_episode_steps": 200,
         },
         "feats_specs": [{"name": "scale", "args": None}],
         "problem_specs": COMMON_PROBLEM_SPECS
@@ -236,7 +236,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "reward_fn": "pos-enf",
             "penalty_gamma": 1.0,
             "constraint_violation_reward": 0.0,
-            "max_episode_steps": 2500,
+            "max_episode_steps": 200,
         },
         "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
         "problem_specs": COMMON_PROBLEM_SPECS
@@ -249,7 +249,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "reward_fn": "pos-enf",
             "penalty_gamma": 1.0,
             "constraint_violation_reward": 0.0,
-            "max_episode_steps": 2500,
+            "max_episode_steps": 200,
         },
         "feats_specs": [{"name": "scale", "args": None}],
         "problem_specs": COMMON_PROBLEM_SPECS
