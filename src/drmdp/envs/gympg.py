@@ -23,7 +23,8 @@ class GridWorldObsAsVectorWrapper(gym.ObservationWrapper):
                     env.observation_space["agent"][1].n,
                 ]
             ),
-            low=np.zeros(shape=2, dtype=np.int32),
+            low=np.zeros(shape=2),
+            dtype=np.int64,
         )
 
     def observation(self, observation: ObsType):
@@ -40,7 +41,8 @@ class IceworldObsAsVectorWrapper(gym.ObservationWrapper):
                     env.observation_space["agent"][1].n,
                 ]
             ),
-            low=np.zeros(shape=2, dtype=np.int32),
+            low=np.zeros(shape=2),
+            dtype=np.int64,
         )
 
     def observation(self, observation: ObsType):
@@ -51,11 +53,13 @@ class RedgreenObsAsVectorWrapper(gym.ObservationWrapper):
     def __init__(self, env):
         super().__init__(env)
         self.observation_space = gym.spaces.Box(
-            high=np.array([env.observation_space["pos"].n]), low=np.array([0])
+            high=np.array([env.observation_space["pos"].n]),
+            low=np.array([0]),
+            dtype=np.int64,
         )
 
     def observation(self, observation: ObsType):
-        return np.array([observation["pos"]])
+        return np.array([observation["pos"]], dtype=np.int64)
 
 
 def make(env_name: str, wrapper: Optional[str] = None, **kwargs) -> gym.Env:
