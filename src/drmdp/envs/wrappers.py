@@ -64,8 +64,8 @@ class GaussianMixObsWrapper(gym.ObservationWrapper):
         self.obs_dim = self.grid_search.best_estimator_.n_components
 
         self.observation_space = gym.spaces.Box(
-            low=np.zeros(shape=self.obs_dim, dtype=np.float32),
-            high=np.ones(shape=self.obs_dim, dtype=np.float32),
+            low=np.zeros(shape=self.obs_dim, dtype=np.float64),
+            high=np.ones(shape=self.obs_dim, dtype=np.float64),
         )
 
     def gm_proj(self, buffer, param_grid):
