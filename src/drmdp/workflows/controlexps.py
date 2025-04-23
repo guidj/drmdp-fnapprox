@@ -188,7 +188,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         },
         "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 4}}],
         "problem_specs": COMMON_PROBLEM_SPECS
-        + least_specs(50_000, feats_spec={"name": "scale", "args": None}),
+        + least_specs(10_000, feats_spec={"name": "scale", "args": None}),
         "epochs": 1,
     },
     {
@@ -201,7 +201,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         },
         "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 4}}],
         "problem_specs": COMMON_PROBLEM_SPECS
-        + least_specs(50_000, {"name": "scale", "args": None}),
+        + least_specs(10_000, {"name": "scale", "args": None}),
         "epochs": 1,
     },
     {
@@ -214,7 +214,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         },
         "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 3}}],
         "problem_specs": COMMON_PROBLEM_SPECS
-        + least_specs(50_000, {"name": "scale", "args": None}),
+        + least_specs(10_000, {"name": "scale", "args": None}),
         "epochs": 1,
     },
     {
@@ -227,7 +227,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         },
         "feats_specs": [{"name": "scale", "args": None}],
         "problem_specs": COMMON_PROBLEM_SPECS
-        + least_specs(50_000, {"name": "scale", "args": None}),
+        + least_specs(10_000, {"name": "scale", "args": None}),
         "epochs": 1,
     },
     {
@@ -240,7 +240,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         },
         "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
         "problem_specs": COMMON_PROBLEM_SPECS
-        + least_specs(50_000, {"name": "scale", "args": None}),
+        + least_specs(10_000, {"name": "scale", "args": None}),
         "epochs": 1,
     },
     {
@@ -253,7 +253,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         },
         "feats_specs": [{"name": "scale", "args": None}],
         "problem_specs": COMMON_PROBLEM_SPECS
-        + least_specs(50_000, {"name": "scale", "args": None}),
+        + least_specs(10_000, {"name": "scale", "args": None}),
         "epochs": 1,
     },
     {
@@ -263,7 +263,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
             {"name": "tiles", "args": {"tiling_dim": 6}},
         ],
         "problem_specs": COMMON_PROBLEM_SPECS
-        + least_specs(50_000, {"name": "tiles", "args": {"tiling_dim": 6}}),
+        + least_specs(1000, {"name": "tiles", "args": {"tiling_dim": 6}}),
         "epochs": 100,
     },
     {
@@ -273,7 +273,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
             {"name": "tiles", "args": {"tiling_dim": 6}},
         ],
         "problem_specs": COMMON_PROBLEM_SPECS
-        + least_specs(50_000, {"name": "tiles", "args": {"tiling_dim": 6}}),
+        + least_specs(1000, {"name": "tiles", "args": {"tiling_dim": 6}}),
         "epochs": 100,
     },
     {
@@ -285,7 +285,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
             {"name": "tiles", "args": {"tiling_dim": 6}},
         ],
         "problem_specs": COMMON_PROBLEM_SPECS
-        + least_specs(50_000, {"name": "tiles", "args": {"tiling_dim": 6}}),
+        + least_specs(5000, {"name": "tiles", "args": {"tiling_dim": 6}}),
         "epochs": 10,
     },
     {
@@ -295,7 +295,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
             {"name": "tiles", "args": {"tiling_dim": 8}},
         ],
         "problem_specs": COMMON_PROBLEM_SPECS
-        + least_specs(50_000, {"name": "tiles", "args": {"tiling_dim": 8}}),
+        + least_specs(5000, {"name": "tiles", "args": {"tiling_dim": 8}}),
         "epochs": 10,
     },
 )

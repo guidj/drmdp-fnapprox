@@ -105,7 +105,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "feats_specs": [{"name": "scale", "args": None}],
         "least_spec": {
             "feats_spec": {"name": "scale", "args": None},
-            "sample_sizes": (8_000, 16000, 32_000, 64_000),
+            "sample_sizes": (8_000, 16_000, 32_000, 64_000),
         },
         "epochs": 1,
     },
