@@ -148,7 +148,7 @@ def run_experiments(
     ids: List[str] = []
     for experiment_task in experiments_batch:
         task_id = f"{experiment_task.exp_id}/{experiment_task.instance_id}"
-        logging.debug(
+        logging.info(
             "Experiment %s starting: %s",
             task_id,
             experiment_task,
@@ -159,7 +159,7 @@ def run_experiments(
             logging.error("Experiment %s failed", experiment_task)
             raise err
         ids.append(task_id)
-        logging.debug("Experiment %s finished", task_id)
+        logging.info("Experiment %s finished", task_id)
     return ids
 
 
