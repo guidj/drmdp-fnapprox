@@ -157,7 +157,7 @@ class LeastLfaMissingWrapper(gym.Wrapper):
         env: gym.Env,
         obs_encoding_wrapper: gym.ObservationWrapper,
         estimation_sample_size: int,
-        use_bias: bool = True,
+        use_bias: bool = False,
     ):
         super().__init__(env)
         if not isinstance(obs_encoding_wrapper.observation_space, gym.spaces.Box):
