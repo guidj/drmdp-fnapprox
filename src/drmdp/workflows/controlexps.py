@@ -257,26 +257,14 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "epochs": 1,
     },
     {
-        "name": "MountainCar-v0",
-        "args": {
-            "max_episode_steps": 2500,
-        },
-        "feats_specs": [
-            {"name": "tiles", "args": {"tiling_dim": 6}},
-        ],
-        "problem_specs": COMMON_PROBLEM_SPECS
-        + least_specs(50_000, {"name": "tiles", "args": {"tiling_dim": 6}}),
-        "epochs": 5,
-    },
-    {
         "name": "RedGreen-v0",
         "args": None,
         "feats_specs": [
             {"name": "tiles", "args": {"tiling_dim": 6}},
         ],
         "problem_specs": COMMON_PROBLEM_SPECS
-        + least_specs(20_000, {"name": "tiles", "args": {"tiling_dim": 6}}),
-        "epochs": 5,
+        + least_specs(50_000, {"name": "tiles", "args": {"tiling_dim": 6}}),
+        "epochs": 100,
     },
     {
         "name": "IceWorld-v0",
@@ -286,7 +274,19 @@ SPECS: Sequence[Mapping[str, Any]] = (
         ],
         "problem_specs": COMMON_PROBLEM_SPECS
         + least_specs(50_000, {"name": "tiles", "args": {"tiling_dim": 6}}),
-        "epochs": 5,
+        "epochs": 100,
+    },
+    {
+        "name": "MountainCar-v0",
+        "args": {
+            "max_episode_steps": 2500,
+        },
+        "feats_specs": [
+            {"name": "tiles", "args": {"tiling_dim": 6}},
+        ],
+        "problem_specs": COMMON_PROBLEM_SPECS
+        + least_specs(50_000, {"name": "tiles", "args": {"tiling_dim": 6}}),
+        "epochs": 10,
     },
     {
         "name": "GridWorld-v0",
@@ -296,6 +296,6 @@ SPECS: Sequence[Mapping[str, Any]] = (
         ],
         "problem_specs": COMMON_PROBLEM_SPECS
         + least_specs(50_000, {"name": "tiles", "args": {"tiling_dim": 8}}),
-        "epochs": 5,
+        "epochs": 10,
     },
 )
