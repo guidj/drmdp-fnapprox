@@ -290,7 +290,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
     },
     {
         "name": "GridWorld-v0",
-        "args": {"max_episode_steps": 2500},
+        "args": {"max_episode_steps": 200},
         "feats_specs": [
             {"name": "tiles", "args": {"tiling_dim": 8}},
         ],
