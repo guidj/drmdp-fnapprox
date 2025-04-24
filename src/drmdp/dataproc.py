@@ -5,11 +5,13 @@ from typing import Any, Mapping
 import gymnasium as gym
 import pandas as pd
 import ray
+import ray.data
 
 MAPPERS_NAMES = {
     "identity": "FR",
     "zero-impute": "IMR",
     "least-lfa": "LEAST-LFA",
+    "least-bayes-lfa": "LEAST-BAYES-LFA",
 }
 
 POLICY_TYPES = {"options": "OP-A", "markovian": "PP", "single-action-options": "OP-S"}
@@ -60,9 +62,19 @@ def process_data(df_raw):
     return df_proc
 
 
-def read_data(files):
-    ds_metrics = ray.data.read_parquet(files)
-    df_metrics = ds_metrics.to_pandas()
+def read_data(files, reader: str = "pd"):
+    if reader == "ray":
+        with ray.init():
+            ds_metrics = ray.data.read_parquet(files)
+            df_metrics = ds_metrics.to_pandas()
+    elif reader == "pd":
+        dfs = []
+        for file in files:
+            dfs.append(pd.read_parquet(file))
+        df_metrics = pd.concat(dfs)
+    else:
+        raise ValueError(reader)
+
     return process_data(df_metrics)
 
 
