@@ -197,7 +197,7 @@ class LeastLfaMissingWrapper(gym.Wrapper):
             # estimate
             feats = self._segment_features
             if self.use_bias:
-                feats = np.concatenate([self._segment_features, np.array([1.0])])
+                feats = np.concatenate([feats, np.array([1.0])])
             reward = np.dot(feats, self.weights)
             # reset for the next example
             self._segment_features = np.zeros(shape=(self.mdim))
@@ -300,42 +300,45 @@ class LeastBayesLfaMissingWrapper(gym.Wrapper):
         self._obs_feats = None
         self._segment_features = None
         self.estimation_meta = {"use_bias": self.use_bias}
+        self.episodes = 0
 
     def step(self, action):
         next_obs, reward, term, trunc, info = super().step(action)
         next_obs_feats = self.obs_wrapper.observation(next_obs)
         # Add s to action-specific columns
         # and s' to the last columns.
+        step_features = np.zeros(shape=(self.mdim))
         start_index = action * self.obs_dim
-        self._segment_features[start_index : start_index + self.obs_dim] += (
-            self._obs_feats
-        )
-        self._segment_features[-self.obs_dim :] += next_obs_feats
+        step_features[start_index : start_index + self.obs_dim] += self._obs_feats
+        step_features[-self.obs_dim :] += next_obs_feats
+        self._segment_features += step_features
+
+        # Add example to buffer and
+        # use aggregate reward.
+        if info["segment_step"] == info["delay"] - 1:
+            self.obs_buffer.append(self._segment_features)
+            # aggregate reward
+            self.rew_buffer.append(reward)
+            # reset for the next segment
+            self._segment_features = np.zeros(shape=(self.mdim))
 
         if self.mv_lst is not None:
             # estimate
-            feats = self._segment_features
+            feats = step_features
             if self.use_bias:
-                feats = np.concatenate([self._segment_features, np.array([1.0])])
+                feats = np.concatenate([feats, np.array([1.0])])
             reward = np.dot(feats, self.mv_lst.mean)
-            # reset for the next example
-            self._segment_features = np.zeros(shape=(self.mdim))
         else:
-            # Add example to buffer and
-            # use aggregate reward.
-            if info["segment_step"] == info["delay"] - 1:
-                self.obs_buffer.append(self._segment_features)
-                # aggregate reward
-                self.rew_buffer.append(reward)
-                # reset for the next segment
-                self._segment_features = np.zeros(shape=(self.mdim))
-            else:
-                # zero impute until rewards are estimated
+            # zero impute until rewards are estimated
+            if info["segment_step"] != info["delay"] - 1:
                 reward = 0.0
+            # else, use aggregate reward
 
         if term or trunc:
             # Update estimate
-            self.estimate_posterior()
+            self.episodes += 1
+            if self.episodes % 10 == 0:
+                self.estimate_posterior()
 
         # For the next step
         self._obs_feats = next_obs_feats
@@ -369,17 +372,15 @@ class LeastBayesLfaMissingWrapper(gym.Wrapper):
 
         try:
             if self.mv_lst is None:
-                # Uniform prior
-                prior = optsol.MultivariateNormal(
-                    mean=np.zeros(self.mdim, dtype=np.float64),
-                    cov=np.eye(self.mdim, dtype=np.float64),
+                # Frequentist prior
+                self.mv_lst = optsol.MultivariateNormal.least_squares(
+                    matrix=matrix, rhs=rewards
                 )
             else:
-                prior = self.mv_lst
+                self.mv_lst = optsol.MultivariateNormal.bayes_linear_regression(
+                    matrix=matrix, rhs=rewards, prior=self.mv_lst
+                )
 
-            self.mv_lst = optsol.MultivariateNormal.bayes_linear_regression(
-                matrix=matrix, rhs=rewards, prior=prior
-            )
         except ValueError:
             logging.info(
                 "Failed estimation for %s",
