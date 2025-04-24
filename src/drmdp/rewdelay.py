@@ -278,6 +278,7 @@ class LeastBayesLfaMissingWrapper(gym.Wrapper):
         self,
         env: gym.Env,
         obs_encoding_wrapper: gym.ObservationWrapper,
+        init_update_episodes: int = 10,
         use_bias: bool = False,
     ):
         super().__init__(env)
@@ -291,6 +292,8 @@ class LeastBayesLfaMissingWrapper(gym.Wrapper):
             )
         self.obs_wrapper = obs_encoding_wrapper
         self.use_bias = use_bias
+        self.init_update_episodes = init_update_episodes
+        self.update_episodes = init_update_episodes
         self.obs_buffer: List[np.ndarray] = []
         self.rew_buffer: List[np.ndarray] = []
 
@@ -337,8 +340,9 @@ class LeastBayesLfaMissingWrapper(gym.Wrapper):
         if term or trunc:
             # Update estimate
             self.episodes += 1
-            if self.episodes % 10 == 0:
+            if self.episodes % self.update_episodes == 0:
                 self.estimate_posterior()
+                self.update_episodes *= 2
 
         # For the next step
         self._obs_feats = next_obs_feats
