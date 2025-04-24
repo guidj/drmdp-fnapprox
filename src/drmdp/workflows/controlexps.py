@@ -10,6 +10,7 @@ def least_specs(estimation_sample_size: int, feats_spec: Mapping[str, Any]):
                 "args": {
                     "estimation_sample_size": estimation_sample_size,
                     "feats_spec": feats_spec,
+                    "use_bias": False,
                 },
             },
             "delay_config": {"name": "fixed", "args": {"delay": 2}},
@@ -27,6 +28,7 @@ def least_specs(estimation_sample_size: int, feats_spec: Mapping[str, Any]):
                 "args": {
                     "estimation_sample_size": estimation_sample_size,
                     "feats_spec": feats_spec,
+                    "use_bias": False,
                 },
             },
             "delay_config": {"name": "fixed", "args": {"delay": 4}},
@@ -44,6 +46,7 @@ def least_specs(estimation_sample_size: int, feats_spec: Mapping[str, Any]):
                 "args": {
                     "estimation_sample_size": estimation_sample_size,
                     "feats_spec": feats_spec,
+                    "use_bias": False,
                 },
             },
             "delay_config": {"name": "fixed", "args": {"delay": 6}},
@@ -61,6 +64,7 @@ def least_specs(estimation_sample_size: int, feats_spec: Mapping[str, Any]):
                 "args": {
                     "estimation_sample_size": estimation_sample_size,
                     "feats_spec": feats_spec,
+                    "use_bias": False,
                 },
             },
             "delay_config": {"name": "fixed", "args": {"delay": 8}},
@@ -180,11 +184,11 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "reward_fn": "pos-enf",
             "penalty_gamma": 1.0,
             "constraint_violation_reward": 0.0,
-            "max_episode_steps": 2500,
+            "max_episode_steps": 200,
         },
         "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 4}}],
         "problem_specs": COMMON_PROBLEM_SPECS
-        + least_specs(50_000, feats_spec={"name": "scale", "args": None}),
+        + least_specs(10_000, feats_spec={"name": "scale", "args": None}),
         "epochs": 1,
     },
     {
@@ -193,11 +197,11 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "reward_fn": "pos-enf",
             "penalty_gamma": 1.0,
             "constraint_violation_reward": 0.0,
-            "max_episode_steps": 2500,
+            "max_episode_steps": 200,
         },
-        "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 4}}],
+        "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
         "problem_specs": COMMON_PROBLEM_SPECS
-        + least_specs(50_000, {"name": "scale", "args": None}),
+        + least_specs(10_000, {"name": "scale", "args": None}),
         "epochs": 1,
     },
     {
@@ -206,11 +210,11 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "reward_fn": "pos-enf",
             "penalty_gamma": 1.0,
             "constraint_violation_reward": 0.0,
-            "max_episode_steps": 2500,
+            "max_episode_steps": 200,
         },
         "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 3}}],
         "problem_specs": COMMON_PROBLEM_SPECS
-        + least_specs(50_000, {"name": "scale", "args": None}),
+        + least_specs(10_000, {"name": "scale", "args": None}),
         "epochs": 1,
     },
     {
@@ -219,11 +223,11 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "reward_fn": "pos-enf",
             "penalty_gamma": 1.0,
             "constraint_violation_reward": 0.0,
-            "max_episode_steps": 2500,
+            "max_episode_steps": 200,
         },
         "feats_specs": [{"name": "scale", "args": None}],
         "problem_specs": COMMON_PROBLEM_SPECS
-        + least_specs(50_000, {"name": "scale", "args": None}),
+        + least_specs(10_000, {"name": "scale", "args": None}),
         "epochs": 1,
     },
     {
@@ -232,11 +236,11 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "reward_fn": "pos-enf",
             "penalty_gamma": 1.0,
             "constraint_violation_reward": 0.0,
-            "max_episode_steps": 2500,
+            "max_episode_steps": 200,
         },
         "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
         "problem_specs": COMMON_PROBLEM_SPECS
-        + least_specs(50_000, {"name": "scale", "args": None}),
+        + least_specs(10_000, {"name": "scale", "args": None}),
         "epochs": 1,
     },
     {
@@ -245,12 +249,32 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "reward_fn": "pos-enf",
             "penalty_gamma": 1.0,
             "constraint_violation_reward": 0.0,
-            "max_episode_steps": 2500,
+            "max_episode_steps": 200,
         },
         "feats_specs": [{"name": "scale", "args": None}],
         "problem_specs": COMMON_PROBLEM_SPECS
-        + least_specs(50_000, {"name": "scale", "args": None}),
+        + least_specs(10_000, {"name": "scale", "args": None}),
         "epochs": 1,
+    },
+    {
+        "name": "RedGreen-v0",
+        "args": None,
+        "feats_specs": [
+            {"name": "tiles", "args": {"tiling_dim": 6}},
+        ],
+        "problem_specs": COMMON_PROBLEM_SPECS
+        + least_specs(1000, {"name": "tiles", "args": {"tiling_dim": 6}}),
+        "epochs": 100,
+    },
+    {
+        "name": "IceWorld-v0",
+        "args": None,
+        "feats_specs": [
+            {"name": "tiles", "args": {"tiling_dim": 6}},
+        ],
+        "problem_specs": COMMON_PROBLEM_SPECS
+        + least_specs(1000, {"name": "tiles", "args": {"tiling_dim": 6}}),
+        "epochs": 100,
     },
     {
         "name": "MountainCar-v0",
@@ -261,37 +285,17 @@ SPECS: Sequence[Mapping[str, Any]] = (
             {"name": "tiles", "args": {"tiling_dim": 6}},
         ],
         "problem_specs": COMMON_PROBLEM_SPECS
-        + least_specs(50_000, {"name": "tiles", "args": {"tiling_dim": 6}}),
-        "epochs": 5,
-    },
-    {
-        "name": "RedGreen-v0",
-        "args": None,
-        "feats_specs": [
-            {"name": "tiles", "args": {"tiling_dim": 6}},
-        ],
-        "problem_specs": COMMON_PROBLEM_SPECS
-        + least_specs(20_000, {"name": "tiles", "args": {"tiling_dim": 6}}),
-        "epochs": 5,
-    },
-    {
-        "name": "IceWorld-v0",
-        "args": None,
-        "feats_specs": [
-            {"name": "tiles", "args": {"tiling_dim": 6}},
-        ],
-        "problem_specs": COMMON_PROBLEM_SPECS
-        + least_specs(50_000, {"name": "tiles", "args": {"tiling_dim": 6}}),
-        "epochs": 5,
+        + least_specs(5000, {"name": "tiles", "args": {"tiling_dim": 6}}),
+        "epochs": 10,
     },
     {
         "name": "GridWorld-v0",
-        "args": {"max_episode_steps": 2500},
+        "args": {"max_episode_steps": 200},
         "feats_specs": [
             {"name": "tiles", "args": {"tiling_dim": 8}},
         ],
         "problem_specs": COMMON_PROBLEM_SPECS
-        + least_specs(50_000, {"name": "tiles", "args": {"tiling_dim": 8}}),
-        "epochs": 5,
+        + least_specs(5000, {"name": "tiles", "args": {"tiling_dim": 8}}),
+        "epochs": 10,
     },
 )

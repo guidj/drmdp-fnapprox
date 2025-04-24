@@ -28,7 +28,10 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "max_episode_steps": MAX_STEPS,
         },
         "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 4}}],
-        "least_spec": {"name": "scale", "args": None},
+        "least_spec": {
+            "feats_spec": {"name": "scale", "args": None},
+            "sample_sizes": (8_000, 16000, 32_000, 64_000),
+        },
         "epochs": 1,
     },
     {
@@ -40,7 +43,10 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "max_episode_steps": MAX_STEPS,
         },
         "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 4}}],
-        "least_spec": {"name": "scale", "args": None},
+        "least_spec": {
+            "feats_spec": {"name": "scale", "args": None},
+            "sample_sizes": (8_000, 16000, 32_000, 64_000),
+        },
         "epochs": 1,
     },
     {
@@ -52,7 +58,10 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "max_episode_steps": MAX_STEPS,
         },
         "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 3}}],
-        "least_spec": {"name": "scale", "args": None},
+        "least_spec": {
+            "feats_spec": {"name": "scale", "args": None},
+            "sample_sizes": (8_000, 16000, 32_000, 64_000),
+        },
         "epochs": 1,
     },
     {
@@ -64,7 +73,10 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "max_episode_steps": MAX_STEPS,
         },
         "feats_specs": [{"name": "scale", "args": None}],
-        "least_spec": {"name": "scale", "args": None},
+        "least_spec": {
+            "feats_spec": {"name": "scale", "args": None},
+            "sample_sizes": (8_000, 16000, 32_000, 64_000),
+        },
         "epochs": 1,
     },
     {
@@ -76,7 +88,10 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "max_episode_steps": MAX_STEPS,
         },
         "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
-        "least_spec": {"name": "scale", "args": None},
+        "least_spec": {
+            "feats_spec": {"name": "scale", "args": None},
+            "sample_sizes": (8_000, 16000, 32_000, 64_000),
+        },
         "epochs": 1,
     },
     {
@@ -88,8 +103,35 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "max_episode_steps": MAX_STEPS,
         },
         "feats_specs": [{"name": "scale", "args": None}],
-        "least_spec": {"name": "scale", "args": None},
+        "least_spec": {
+            "feats_spec": {"name": "scale", "args": None},
+            "sample_sizes": (8_000, 16_000, 32_000, 64_000),
+        },
         "epochs": 1,
+    },
+    {
+        "name": "RedGreen-v0",
+        "args": None,
+        "feats_specs": [
+            {"name": "tiles", "args": {"tiling_dim": 6}},
+        ],
+        "least_spec": {
+            "feats_spec": {"name": "tiles", "args": {"tiling_dim": 6}},
+            "sample_sizes": (100, 200, 400, 800),
+        },
+        "epochs": 100,
+    },
+    {
+        "name": "IceWorld-v0",
+        "args": None,
+        "feats_specs": [
+            {"name": "tiles", "args": {"tiling_dim": 6}},
+        ],
+        "least_spec": {
+            "feats_spec": {"name": "tiles", "args": {"tiling_dim": 6}},
+            "sample_sizes": (100, 200, 400, 800),
+        },
+        "epochs": 100,
     },
     {
         "name": "MountainCar-v0",
@@ -99,26 +141,11 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "feats_specs": [
             {"name": "tiles", "args": {"tiling_dim": 6}},
         ],
-        "least_spec": {"name": "tiles", "args": {"tiling_dim": 6}},
-        "epochs": 5,
-    },
-    {
-        "name": "RedGreen-v0",
-        "args": None,
-        "feats_specs": [
-            {"name": "tiles", "args": {"tiling_dim": 6}},
-        ],
-        "least_spec": {"name": "tiles", "args": {"tiling_dim": 6}},
-        "epochs": 5,
-    },
-    {
-        "name": "IceWorld-v0",
-        "args": None,
-        "feats_specs": [
-            {"name": "tiles", "args": {"tiling_dim": 6}},
-        ],
-        "least_spec": {"name": "tiles", "args": {"tiling_dim": 6}},
-        "epochs": 5,
+        "least_spec": {
+            "feats_spec": {"name": "tiles", "args": {"tiling_dim": 6}},
+            "sample_sizes": (1_000, 2_000, 4_000, 8_000),
+        },
+        "epochs": 10,
     },
     {
         "name": "GridWorld-v0",
@@ -126,8 +153,11 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "feats_specs": [
             {"name": "tiles", "args": {"tiling_dim": 8}},
         ],
-        "least_spec": {"name": "tiles", "args": {"tiling_dim": 8}},
-        "epochs": 5,
+        "least_spec": {
+            "feats_spec": {"name": "tiles", "args": {"tiling_dim": 8}},
+            "sample_sizes": (1_000, 2_000, 4_000, 8_000),
+        },
+        "epochs": 10,
     },
 )
 
@@ -143,11 +173,11 @@ class Args:
 class JobSpec:
     env_name: str
     env_args: Mapping[str, Any]
-    feats_spec: Mapping[str, Any]
-    rwest_sample_size: int
-    num_episodes: int
+    control_feats_spec: Mapping[str, Any]
+    rewest_sample_size: int
+    least_feats_spec: Mapping[str, Any]
     reward_delay: int
-    least_spec: Mapping[str, Any]
+    num_episodes: int
     use_bias: bool
     epochs: int
     turn: int
@@ -176,22 +206,20 @@ class ResultWriter:
             self.partition += 1
 
 
-def run_reward_estimation_study(
-    specs, sample_sizes: Sequence[int], turns: int, num_episodes: int, output_path: str
-):
-    configs = itertools.product(specs, sample_sizes, range(turns))
+def run_reward_estimation_study(specs, turns: int, num_episodes: int, output_path: str):
+    configs = itertools.product(specs, REWARD_DELAYS, range(turns))
     jobs = []
-    for spec, sample_size, turn in configs:
+    for spec, reward_delay, turn in configs:
         for feats_spec in spec["feats_specs"]:
-            for reward_delay in REWARD_DELAYS:
+            for sample_size in spec["least_spec"]["sample_sizes"]:
                 job_spec = JobSpec(
                     env_name=spec["name"],
                     env_args=spec["args"],
-                    feats_spec=feats_spec,
-                    rwest_sample_size=sample_size,
+                    control_feats_spec=feats_spec,
+                    rewest_sample_size=sample_size,
                     num_episodes=num_episodes,
                     reward_delay=reward_delay,
-                    least_spec=spec["least_spec"],
+                    least_feats_spec=spec["least_spec"]["feats_spec"],
                     use_bias=True,
                     epochs=spec["epochs"],
                     turn=turn,
@@ -285,16 +313,16 @@ def create_exp_instance(job_spec: JobSpec):
     env_spec = core.EnvSpec(
         job_spec.env_name,
         args=job_spec.env_args,
-        feats_spec=job_spec.feats_spec,
+        feats_spec=job_spec.control_feats_spec,
     )
     problem_spec = core.ProblemSpec(
         policy_type="markovian",
         reward_mapper={
             "name": "least-lfa",
             "args": {
-                "estimation_sample_size": job_spec.rwest_sample_size,
+                "estimation_sample_size": job_spec.rewest_sample_size,
                 "use_bias": job_spec.use_bias,
-                "feats_spec": job_spec.least_spec,
+                "feats_spec": job_spec.least_feats_spec,
             },
         },
         delay_config={"name": "fixed", "args": {"delay": job_spec.reward_delay}},
@@ -369,7 +397,6 @@ def main():
 
     run_reward_estimation_study(
         SPECS,
-        sample_sizes=EST_SAMPLE_SIZES,
         turns=args.num_runs,
         num_episodes=args.num_episodes,
         output_path=args.output_path,

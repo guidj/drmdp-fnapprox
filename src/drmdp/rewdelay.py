@@ -129,6 +129,7 @@ class DelayedRewardWrapper(gym.Wrapper):
         self.segment = 0
         self.segment_step = -1
         self.delay = self.reward_delay.sample()
+        self.rewards = []
         obs, info = super().reset(seed=seed, options=options)
         return obs, {
             **info,
@@ -157,7 +158,7 @@ class LeastLfaMissingWrapper(gym.Wrapper):
         env: gym.Env,
         obs_encoding_wrapper: gym.ObservationWrapper,
         estimation_sample_size: int,
-        use_bias: bool = True,
+        use_bias: bool = False,
     ):
         super().__init__(env)
         if not isinstance(obs_encoding_wrapper.observation_space, gym.spaces.Box):
@@ -227,20 +228,11 @@ class LeastLfaMissingWrapper(gym.Wrapper):
                         ],
                         axis=1,
                     )
-                mv = optsol.MultivariateNormal.least_squares(matrix=matrix, rhs=rewards)
-                if mv is not None:
-                    self.weights = mv.mean
-                    error = metrics.rmse(
-                        v_pred=np.dot(matrix, self.weights), v_true=rewards, axis=0
+                try:
+                    self.weights = optsol.solve_least_squares(
+                        matrix=matrix, rhs=rewards
                     )
-                    self.estimation_meta["sample"] = {"size": rewards.shape[0]}
-                    self.estimation_meta["error"] = {"rmse": error}
-                    self.estimation_meta["estimate"] = {
-                        "mean": self.weights.tolist(),
-                        "cov": np.real(mv.cov).flatten().tolist(),
-                    }
-                    logging.debug("Estimated rewards for %s. RMSE: %f", self.env, error)
-                else:
+                except ValueError:
                     # drop latest 5% of samples
                     rng = np.random.default_rng()
                     nsamples_drop = int(self.estimation_sample_size * 0.05)
@@ -251,11 +243,21 @@ class LeastLfaMissingWrapper(gym.Wrapper):
                     )
                     self.obs_buffer = np.asarray(self.obs_buffer)[indices].tolist()
                     self.rew_buffer = np.asarray(self.rew_buffer)[indices].tolist()
-                    logging.debug(
+                    logging.info(
                         "Failed estimation for %s. Dropping %d samples",
                         self.env,
                         nsamples_drop,
                     )
+                else:
+                    error = metrics.rmse(
+                        v_pred=np.dot(matrix, self.weights), v_true=rewards, axis=0
+                    )
+                    self.estimation_meta["sample"] = {"size": rewards.shape[0]}
+                    self.estimation_meta["error"] = {"rmse": error}
+                    self.estimation_meta["estimate"] = {
+                        "weights": self.weights.tolist(),
+                    }
+                    logging.info("Estimated rewards for %s. RMSE: %f", self.env, error)
 
         # For the next step
         self._obs_feats = next_obs_feats

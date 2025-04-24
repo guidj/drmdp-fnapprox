@@ -12,7 +12,7 @@ class RandomBinaryObsWrapper(gym.ObservationWrapper):
     def __init__(self, env: gym.Env, enc_size: int):
         super().__init__(env)
         self.observation_space = gym.spaces.Box(
-            low=np.zeros(enc_size), high=np.ones(enc_size)
+            low=np.zeros(enc_size), high=np.ones(enc_size), dtype=np.int64
         )
         self.enc_size = enc_size
         self._representations: Dict[Hashable, Any] = {}
@@ -64,8 +64,8 @@ class GaussianMixObsWrapper(gym.ObservationWrapper):
         self.obs_dim = self.grid_search.best_estimator_.n_components
 
         self.observation_space = gym.spaces.Box(
-            low=np.zeros(shape=self.obs_dim, dtype=np.float32),
-            high=np.ones(shape=self.obs_dim, dtype=np.float32),
+            low=np.zeros(shape=self.obs_dim, dtype=np.float64),
+            high=np.ones(shape=self.obs_dim, dtype=np.float64),
         )
 
     def gm_proj(self, buffer, param_grid):
@@ -110,6 +110,7 @@ class TilesObsWrapper(gym.ObservationWrapper):
         self.observation_space = gym.spaces.Box(
             low=np.zeros(shape=self.hash_dim or self.tiles.max_size),
             high=np.ones(shape=self.hash_dim or self.tiles.max_size),
+            dtype=np.int64,
         )
 
     def observation(self, observation: ObsType):
