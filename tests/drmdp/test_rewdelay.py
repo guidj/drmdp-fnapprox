@@ -124,13 +124,14 @@ def test_delayed_reward_wrapper_init():
     env = DummyObsWrapper(DummyEnv())
     wrapped = rewdelay.DelayedRewardWrapper(env, reward_delay=rewdelay.FixedDelay(2))
 
-    assert wrapped.reward_delay == 2
+    assert isinstance(wrapped.reward_delay, rewdelay.FixedDelay)
+    assert wrapped.reward_delay.delay == 2
     assert wrapped.observation_space == env.observation_space
     assert wrapped.action_space == env.action_space
     assert wrapped.segment is None
     assert wrapped.segment_step is None
     assert wrapped.delay is None
-    assert wrapped.op == sum
+    assert wrapped.op(range(10)) == sum(range(10))
 
 
 def test_delayed_reward_wrapper_step():
