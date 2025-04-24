@@ -271,3 +271,131 @@ class LeastLfaMissingWrapper(gym.Wrapper):
                 "weights": self.weights.tolist(),
             }
             logging.info("Estimated rewards for %s. RMSE: %f", self.env, error)
+
+
+class LeastBayesLfaMissingWrapper(gym.Wrapper):
+    def __init__(
+        self,
+        env: gym.Env,
+        obs_encoding_wrapper: gym.ObservationWrapper,
+        use_bias: bool = False,
+    ):
+        super().__init__(env)
+        if not isinstance(obs_encoding_wrapper.observation_space, gym.spaces.Box):
+            raise ValueError(
+                f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper)}"
+            )
+        if not isinstance(obs_encoding_wrapper.action_space, gym.spaces.Discrete):
+            raise ValueError(
+                f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper)}"
+            )
+        self.obs_wrapper = obs_encoding_wrapper
+        self.use_bias = use_bias
+        self.obs_buffer: List[np.ndarray] = []
+        self.rew_buffer: List[np.ndarray] = []
+
+        self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
+        self.mdim = self.obs_dim * obs_encoding_wrapper.action_space.n + self.obs_dim
+        self.mv_lst = None
+        self._obs_feats = None
+        self._segment_features = None
+        self.estimation_meta = {"use_bias": self.use_bias}
+
+    def step(self, action):
+        next_obs, reward, term, trunc, info = super().step(action)
+        next_obs_feats = self.obs_wrapper.observation(next_obs)
+        # Add s to action-specific columns
+        # and s' to the last columns.
+        start_index = action * self.obs_dim
+        self._segment_features[start_index : start_index + self.obs_dim] += (
+            self._obs_feats
+        )
+        self._segment_features[-self.obs_dim :] += next_obs_feats
+
+        if self.mv_lst is not None:
+            # estimate
+            feats = self._segment_features
+            if self.use_bias:
+                feats = np.concatenate([self._segment_features, np.array([1.0])])
+            reward = np.dot(feats, self.mv_lst.mean)
+            # reset for the next example
+            self._segment_features = np.zeros(shape=(self.mdim))
+        else:
+            # Add example to buffer and
+            # use aggregate reward.
+            if info["segment_step"] == info["delay"] - 1:
+                self.obs_buffer.append(self._segment_features)
+                # aggregate reward
+                self.rew_buffer.append(reward)
+                # reset for the next segment
+                self._segment_features = np.zeros(shape=(self.mdim))
+            else:
+                # zero impute until rewards are estimated
+                reward = 0.0
+
+        if term or trunc:
+            # Update estimate
+            self.estimate_posterior()
+
+        # For the next step
+        self._obs_feats = next_obs_feats
+        return next_obs, reward, term, trunc, info
+
+    def reset(self, *, seed=None, options=None):
+        obs, info = super().reset(seed=seed, options=options)
+        self._obs_feats = self.obs_wrapper.observation(obs)
+        # Init segment and step features array
+        self._segment_features = np.zeros(shape=(self.mdim))
+        return obs, info
+
+    def estimate_posterior(self):
+        """
+        Estimate new posterior.
+        """
+        if len(self.obs_buffer) == 0:
+            return
+
+        # estimate rewards
+        matrix = np.stack(self.obs_buffer, dtype=np.float64)
+        rewards = np.array(self.rew_buffer, dtype=np.float64)
+        if self.use_bias:
+            matrix = np.concatenate(
+                [
+                    matrix,
+                    np.expand_dims(np.ones(shape=len(self.obs_buffer)), axis=-1),
+                ],
+                axis=1,
+            )
+
+        try:
+            if self.mv_lst is None:
+                # Uniform prior
+                prior = optsol.MultivariateNormal(
+                    mean=np.zeros(self.mdim, dtype=np.float64),
+                    cov=np.eye(self.mdim, dtype=np.float64),
+                )
+            else:
+                prior = self.mv_lst
+
+            self.mv_lst = optsol.MultivariateNormal.bayes_linear_regression(
+                matrix=matrix, rhs=rewards, prior=prior
+            )
+        except ValueError:
+            logging.info(
+                "Failed estimation for %s",
+                self.env,
+            )
+        else:
+            error = metrics.rmse(
+                v_pred=np.dot(matrix, self.mv_lst.mean), v_true=rewards, axis=0
+            )
+            self.estimation_meta["sample"] = {"size": rewards.shape[0]}
+            self.estimation_meta["error"] = {"rmse": error}
+            self.estimation_meta["estimate"] = {
+                "weights": self.mv_lst.mean.tolist(),
+            }
+            logging.info("Estimated rewards for %s. RMSE: %f", self.env, error)
+
+            # Clear buffers for next data
+            self.obs_buffer = []
+            self.rew_buffer = []
