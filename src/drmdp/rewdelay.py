@@ -216,48 +216,7 @@ class LeastLfaMissingWrapper(gym.Wrapper):
 
             if len(self.obs_buffer) >= self.estimation_sample_size:
                 # estimate rewards
-                matrix = np.stack(self.obs_buffer)
-                rewards = np.array(self.rew_buffer)
-                if self.use_bias:
-                    matrix = np.concatenate(
-                        [
-                            matrix,
-                            np.expand_dims(
-                                np.ones(shape=len(self.obs_buffer)), axis=-1
-                            ),
-                        ],
-                        axis=1,
-                    )
-                try:
-                    self.weights = optsol.solve_least_squares(
-                        matrix=matrix, rhs=rewards
-                    )
-                except ValueError:
-                    # drop latest 5% of samples
-                    rng = np.random.default_rng()
-                    nsamples_drop = int(self.estimation_sample_size * 0.05)
-                    indices = rng.choice(
-                        np.arange(self.estimation_sample_size),
-                        self.estimation_sample_size - nsamples_drop,
-                        replace=False,
-                    )
-                    self.obs_buffer = np.asarray(self.obs_buffer)[indices].tolist()
-                    self.rew_buffer = np.asarray(self.rew_buffer)[indices].tolist()
-                    logging.info(
-                        "Failed estimation for %s. Dropping %d samples",
-                        self.env,
-                        nsamples_drop,
-                    )
-                else:
-                    error = metrics.rmse(
-                        v_pred=np.dot(matrix, self.weights), v_true=rewards, axis=0
-                    )
-                    self.estimation_meta["sample"] = {"size": rewards.shape[0]}
-                    self.estimation_meta["error"] = {"rmse": error}
-                    self.estimation_meta["estimate"] = {
-                        "weights": self.weights.tolist(),
-                    }
-                    logging.info("Estimated rewards for %s. RMSE: %f", self.env, error)
+                self.estimate_rewards()
 
         # For the next step
         self._obs_feats = next_obs_feats
@@ -269,3 +228,46 @@ class LeastLfaMissingWrapper(gym.Wrapper):
         # Init segment and step features array
         self._segment_features = np.zeros(shape=(self.mdim))
         return obs, info
+
+    def estimate_rewards(self):
+        """
+        Estimate rewards with lstsq.
+        """
+        matrix = np.stack(self.obs_buffer)
+        rewards = np.array(self.rew_buffer)
+        if self.use_bias:
+            matrix = np.concatenate(
+                [
+                    matrix,
+                    np.expand_dims(np.ones(shape=len(self.obs_buffer)), axis=-1),
+                ],
+                axis=1,
+            )
+        try:
+            self.weights = optsol.solve_least_squares(matrix=matrix, rhs=rewards)
+        except ValueError:
+            # drop latest 5% of samples
+            rng = np.random.default_rng()
+            nsamples_drop = int(self.estimation_sample_size * 0.05)
+            indices = rng.choice(
+                np.arange(self.estimation_sample_size),
+                self.estimation_sample_size - nsamples_drop,
+                replace=False,
+            )
+            self.obs_buffer = np.asarray(self.obs_buffer)[indices].tolist()
+            self.rew_buffer = np.asarray(self.rew_buffer)[indices].tolist()
+            logging.info(
+                "Failed estimation for %s. Dropping %d samples",
+                self.env,
+                nsamples_drop,
+            )
+        else:
+            error = metrics.rmse(
+                v_pred=np.dot(matrix, self.weights), v_true=rewards, axis=0
+            )
+            self.estimation_meta["sample"] = {"size": rewards.shape[0]}
+            self.estimation_meta["error"] = {"rmse": error}
+            self.estimation_meta["estimate"] = {
+                "weights": self.weights.tolist(),
+            }
+            logging.info("Estimated rewards for %s. RMSE: %f", self.env, error)
