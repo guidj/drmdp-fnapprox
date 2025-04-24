@@ -62,7 +62,7 @@ def process_data(df_raw):
     return df_proc
 
 
-def read_data(files, reader: str = "pd"):
+def read_data(files, reader: str = "ray"):
     if reader == "ray":
         with ray.init():
             ds_metrics = ray.data.read_parquet(files)
