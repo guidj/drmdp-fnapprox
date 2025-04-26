@@ -258,6 +258,16 @@ def create_algorithm(
             ),
             base_seed=base_seed,
         )
+    elif policy_type == "drop-missing":
+        return algorithms.DropMissingSemigradientSARSAFnApprox(
+            lr=lr,
+            gamma=gamma,
+            epsilon=epsilon,
+            policy=algorithms.LinearFnApproxPolicy(
+                feat_transform=feats_transform, action_space=env.action_space
+            ),
+            base_seed=base_seed,
+        )
     elif policy_type == "options":
         if delay_reward is None:
             raise ValueError("`delay_reward` must be provided")

@@ -522,3 +522,86 @@ class SingleActionOptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
     @property
     def model(self):
         return self.weights
+
+
+class DropMissingSemigradientSARSAFnApprox(FnApproxAlgorithm):
+    def __init__(
+        self,
+        lr: optsol.LearningRateSchedule,
+        gamma: float,
+        epsilon: float,
+        policy: core.PyValueFnPolicy,
+        base_seed: Optional[int] = None,
+        verbose: bool = True,
+    ):
+        super().__init__(base_seed)
+        self.lr = lr
+        self.gamma = gamma
+        self.epsilon = epsilon
+        self.policy = policy
+        self.verbose = verbose
+
+    def train(
+        self,
+        env: gym.Env,
+        num_episodes: int,
+        monitor: core.EnvMonitor,
+    ) -> Iterator[PolicyControlSnapshot]:
+        for episode in range(num_episodes):
+            obs, _ = env.reset(seed=self.seeder.get_seed(episode=episode))
+            policy_step = self.policy.action(obs, epsilon=self.epsilon)
+            state_qvalues, gradients = (
+                policy_step.info["values"],
+                policy_step.info["gradients"],
+            )
+            while True:
+                (
+                    next_obs,
+                    reward,
+                    term,
+                    trunc,
+                    _,
+                ) = env.step(policy_step.action)
+
+                if term or trunc:
+                    if reward is not None:
+                        scaled_gradients = (
+                            self.lr(episode, monitor.step)
+                            * (reward - state_qvalues[policy_step.action])
+                            * gradients[policy_step.action]
+                        )
+                        self.policy.update(scaled_gradients)
+                    break
+
+                next_policy_step = self.policy.action(next_obs, epsilon=self.epsilon)
+                next_state_qvalues, next_gradients = (
+                    next_policy_step.info["values"],
+                    next_policy_step.info["gradients"],
+                )
+                if reward is not None:
+                    scaled_gradients = (
+                        self.lr(episode, monitor.step)
+                        * (
+                            reward
+                            + self.gamma * next_state_qvalues[next_policy_step.action]
+                            - state_qvalues[policy_step.action]
+                        )
+                        * gradients[policy_step.action]
+                    )
+                    self.policy.update(scaled_gradients)
+                obs = next_obs
+                policy_step = next_policy_step
+                state_qvalues = next_state_qvalues
+                gradients = next_gradients
+            if self.verbose and (episode + 1) % max((num_episodes // 5), 1) == 0:
+                logging.info(
+                    "Episode %d mean returns: %f",
+                    episode + 1,
+                    np.mean(monitor.returns + [monitor.rewards]),
+                )
+            yield PolicyControlSnapshot(
+                steps=monitor.step,
+                returns=monitor.rewards,
+                weights=copy.copy(self.policy.model),
+            )
+        env.close()
