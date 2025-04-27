@@ -14,7 +14,7 @@ MAPPERS_NAMES = {
     "least-bayes-lfa": "LEAST-BAYES-LFA",
 }
 
-POLICY_TYPES = {"options": "OP-A", "markovian": "PP", "single-action-options": "OP-S"}
+POLICY_TYPES = {"drop-missing": "DMR", "markovian": "PP", "options": "OP-A", "single-action-options": "OP-S"}
 
 
 def collection_traj_data(env: gym.Env, steps: int):
@@ -53,7 +53,10 @@ def process_data(df_raw):
         return new_meta
 
     def get_method(meta: Mapping[str, Any]):
-        return "/".join([meta["policy_type"], meta["reward_mapper"]])
+        method = "/".join([meta["policy_type"], meta["reward_mapper"]])
+        if method == "DMR/FR":
+            return "PP/DMR"
+        return method
 
     df_proc = copy.deepcopy(df_raw)
     df_proc = df_proc[df_proc["meta"].apply(filter_experiment_configs)]
