@@ -45,8 +45,7 @@ def collection_traj_data(env: gym.Env, steps: int):
 
 def process_data(df_raw):
     def filter_experiment_configs(meta: Mapping[str, Any]):
-        del meta
-        return True
+        return "IceWorld" not in meta["env_spec"]["name"]
 
     def simplify_meta(meta):
         new_meta = dict(**meta, **meta["experiment"])
