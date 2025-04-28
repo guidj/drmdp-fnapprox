@@ -14,7 +14,12 @@ MAPPERS_NAMES = {
     "least-bayes-lfa": "LEAST-BAYES-LFA",
 }
 
-POLICY_TYPES = {"drop-missing": "DMR", "markovian": "PP", "options": "OP-A", "single-action-options": "OP-S"}
+POLICY_TYPES = {
+    "drop-missing": "DMR",
+    "markovian": "PP",
+    "options": "OP-A",
+    "single-action-options": "OP-S",
+}
 
 
 def collection_traj_data(env: gym.Env, steps: int):
