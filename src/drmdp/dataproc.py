@@ -44,9 +44,6 @@ def collection_traj_data(env: gym.Env, steps: int):
 
 
 def process_data(df_raw):
-    def filter_experiment_configs(meta: Mapping[str, Any]):
-        return "IceWorld" not in meta["env_spec"]["name"]
-
     def simplify_meta(meta):
         new_meta = dict(**meta, **meta["experiment"])
         new_meta["reward_mapper"] = MAPPERS_NAMES[
@@ -57,13 +54,12 @@ def process_data(df_raw):
         return new_meta
 
     def get_method(meta: Mapping[str, Any]):
-        method = "/".join([meta["policy_type"], meta["reward_mapper"]])
-        if method == "DMR/FR":
-            return "PP/DMR"
-        return method
+        if meta["policy_type"] != "PP":
+            return meta["policy_type"]
+        else:
+            return meta["reward_mapper"]
 
     df_proc = copy.deepcopy(df_raw)
-    df_proc = df_proc[df_proc["meta"].apply(filter_experiment_configs)]
     df_proc["meta"] = df_proc["meta"].apply(simplify_meta)
     df_proc["method"] = df_proc["meta"].apply(get_method)
     return df_proc
