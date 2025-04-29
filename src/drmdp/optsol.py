@@ -46,7 +46,6 @@ class MultivariateNormal:
             # Sigma^2 is the variance of the error term
             # Here, we assume sigma^2 = 1
             cov = inverse_op(np.matmul(matrix.T, matrix))
-            cov = cls.perturb_covariance_matrix(cov)
         except linalg.LinAlgError as err:
             if "Singular matrix" in err.args[0]:
                 return None
@@ -69,10 +68,10 @@ class MultivariateNormal:
             # Here, we assume sigma^2 = 1
             inv_prior_sigma = linalg.pinv(prior.cov)
             cov = linalg.pinv(inv_prior_sigma + np.matmul(matrix.T, matrix))
-            mean = np.matmul(
+            coeff = np.matmul(
                 cov, (np.matmul(inv_prior_sigma, prior.mean) + np.matmul(matrix.T, rhs))
             )
-            return MultivariateNormal(mean, cov)
+            return MultivariateNormal(coeff, cov)
         except linalg.LinAlgError as err:
             raise ValueError("Failed Bayesian estimation") from err
 

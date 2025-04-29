@@ -214,6 +214,17 @@ def reward_mapper(env: gym.Env, mapping_spec: Mapping[str, Any]):
             ),
             **m_args,
         )
+    elif name == "least-bayes-lfa":
+        m_args = dict(**args)
+        feats_spec = m_args.pop("feats_spec")
+        # local copy before pop
+        return rewdelay.LeastBayesLfaMissingWrapper(
+            env=env,
+            obs_encoding_wrapper=wrappers.wrap(
+                env, wrapper=feats_spec["name"], **(feats_spec["args"] or {})
+            ),
+            **m_args,
+        )
     raise ValueError(f"Unknown mapping_method: {mapping_spec}")
 
 
@@ -243,6 +254,16 @@ def create_algorithm(
             gamma=gamma,
             epsilon=epsilon,
             policy=algorithms.RandomFnApproxPolicy(
+                feat_transform=feats_transform, action_space=env.action_space
+            ),
+            base_seed=base_seed,
+        )
+    elif policy_type == "drop-missing":
+        return algorithms.DropMissingSemigradientSARSAFnApprox(
+            lr=lr,
+            gamma=gamma,
+            epsilon=epsilon,
+            policy=algorithms.LinearFnApproxPolicy(
                 feat_transform=feats_transform, action_space=env.action_space
             ),
             base_seed=base_seed,

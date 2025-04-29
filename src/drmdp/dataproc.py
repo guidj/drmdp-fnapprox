@@ -5,14 +5,21 @@ from typing import Any, Mapping
 import gymnasium as gym
 import pandas as pd
 import ray
+import ray.data
 
 MAPPERS_NAMES = {
     "identity": "FR",
     "zero-impute": "IMR",
     "least-lfa": "LEAST-LFA",
+    "least-bayes-lfa": "LEAST-BAYES-LFA",
 }
 
-POLICY_TYPES = {"options": "OP-A", "markovian": "PP", "single-action-options": "OP-S"}
+POLICY_TYPES = {
+    "drop-missing": "DMR",
+    "markovian": "PP",
+    "options": "OP-A",
+    "single-action-options": "OP-S",
+}
 
 
 def collection_traj_data(env: gym.Env, steps: int):
@@ -37,10 +44,6 @@ def collection_traj_data(env: gym.Env, steps: int):
 
 
 def process_data(df_raw):
-    def filter_experiment_configs(meta: Mapping[str, Any]):
-        del meta
-        return True
-
     def simplify_meta(meta):
         new_meta = dict(**meta, **meta["experiment"])
         new_meta["reward_mapper"] = MAPPERS_NAMES[
@@ -51,18 +54,30 @@ def process_data(df_raw):
         return new_meta
 
     def get_method(meta: Mapping[str, Any]):
-        return "/".join([meta["policy_type"], meta["reward_mapper"]])
+        if meta["policy_type"] != "PP":
+            return meta["policy_type"]
+        else:
+            return meta["reward_mapper"]
 
     df_proc = copy.deepcopy(df_raw)
-    df_proc = df_proc[df_proc["meta"].apply(filter_experiment_configs)]
     df_proc["meta"] = df_proc["meta"].apply(simplify_meta)
     df_proc["method"] = df_proc["meta"].apply(get_method)
     return df_proc
 
 
-def read_data(files):
-    ds_metrics = ray.data.read_parquet(files)
-    df_metrics = ds_metrics.to_pandas()
+def read_data(files, reader: str = "ray"):
+    if reader == "ray":
+        with ray.init():
+            ds_metrics = ray.data.read_parquet(files)
+            df_metrics = ds_metrics.to_pandas()
+    elif reader == "pd":
+        dfs = []
+        for file in files:
+            dfs.append(pd.read_parquet(file))
+        df_metrics = pd.concat(dfs)
+    else:
+        raise ValueError(reader)
+
     return process_data(df_metrics)
 
 
