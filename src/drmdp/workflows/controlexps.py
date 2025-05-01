@@ -75,6 +75,78 @@ def least_specs(estimation_sample_size: int, feats_spec: Mapping[str, Any]):
                 "args": {"initial_lr": 0.01},
             },
         },
+        {
+            "policy_type": "markovian",
+            "reward_mapper": {
+                "name": "least-lfa",
+                "args": {
+                    "estimation_sample_size": estimation_sample_size,
+                    "feats_spec": feats_spec,
+                    "use_bias": False,
+                },
+            },
+            "delay_config": {"name": "fixed", "args": {"delay": 2}},
+            "epsilon": 0.2,
+            "gamma": 0.99,
+            "learning_rate_config": {
+                "name": "constant",
+                "args": {"initial_lr": 0.01},
+            },
+        },
+        {
+            "policy_type": "markovian",
+            "reward_mapper": {
+                "name": "least-lfa",
+                "args": {
+                    "estimation_sample_size": estimation_sample_size,
+                    "feats_spec": feats_spec,
+                    "use_bias": False,
+                },
+            },
+            "delay_config": {"name": "fixed", "args": {"delay": 4}},
+            "epsilon": 0.2,
+            "gamma": 0.99,
+            "learning_rate_config": {
+                "name": "constant",
+                "args": {"initial_lr": 0.01},
+            },
+        },
+        {
+            "policy_type": "markovian",
+            "reward_mapper": {
+                "name": "least-lfa",
+                "args": {
+                    "estimation_sample_size": estimation_sample_size,
+                    "feats_spec": feats_spec,
+                    "use_bias": False,
+                },
+            },
+            "delay_config": {"name": "fixed", "args": {"delay": 6}},
+            "epsilon": 0.2,
+            "gamma": 0.99,
+            "learning_rate_config": {
+                "name": "constant",
+                "args": {"initial_lr": 0.01},
+            },
+        },
+        {
+            "policy_type": "markovian",
+            "reward_mapper": {
+                "name": "least-lfa",
+                "args": {
+                    "estimation_sample_size": estimation_sample_size,
+                    "feats_spec": feats_spec,
+                    "use_bias": False,
+                },
+            },
+            "delay_config": {"name": "fixed", "args": {"delay": 8}},
+            "epsilon": 0.2,
+            "gamma": 0.99,
+            "learning_rate_config": {
+                "name": "constant",
+                "args": {"initial_lr": 0.01},
+            },
+        },
     )
 
 
@@ -152,6 +224,78 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
                 "args": {"initial_lr": 0.01},
             },
         },
+        {
+            "policy_type": "markovian",
+            "reward_mapper": {
+                "name": "least-bayes-lfa",
+                "args": {
+                    "init_update_episodes": 10,
+                    "feats_spec": feats_spec,
+                    "use_bias": False,
+                },
+            },
+            "delay_config": {"name": "fixed", "args": {"delay": 2}},
+            "epsilon": 0.2,
+            "gamma": 0.99,
+            "learning_rate_config": {
+                "name": "constant",
+                "args": {"initial_lr": 0.01},
+            },
+        },
+        {
+            "policy_type": "markovian",
+            "reward_mapper": {
+                "name": "least-bayes-lfa",
+                "args": {
+                    "init_update_episodes": 10,
+                    "feats_spec": feats_spec,
+                    "use_bias": False,
+                },
+            },
+            "delay_config": {"name": "fixed", "args": {"delay": 4}},
+            "epsilon": 0.2,
+            "gamma": 0.99,
+            "learning_rate_config": {
+                "name": "constant",
+                "args": {"initial_lr": 0.01},
+            },
+        },
+        {
+            "policy_type": "markovian",
+            "reward_mapper": {
+                "name": "least-bayes-lfa",
+                "args": {
+                    "init_update_episodes": 10,
+                    "feats_spec": feats_spec,
+                    "use_bias": False,
+                },
+            },
+            "delay_config": {"name": "fixed", "args": {"delay": 6}},
+            "epsilon": 0.2,
+            "gamma": 0.99,
+            "learning_rate_config": {
+                "name": "constant",
+                "args": {"initial_lr": 0.01},
+            },
+        },
+        {
+            "policy_type": "markovian",
+            "reward_mapper": {
+                "name": "least-bayes-lfa",
+                "args": {
+                    "init_update_episodes": 10,
+                    "feats_spec": feats_spec,
+                    "use_bias": False,
+                },
+            },
+            "delay_config": {"name": "fixed", "args": {"delay": 8}},
+            "epsilon": 0.2,
+            "gamma": 0.99,
+            "learning_rate_config": {
+                "name": "constant",
+                "args": {"initial_lr": 0.01},
+            },
+        },
     )
 
 
@@ -165,6 +309,14 @@ COMMON_PROBLEM_SPECS = (
         "learning_rate_config": {"name": "constant", "args": {"initial_lr": 0.01}},
     },
     {
+        "policy_type": "markovian",
+        "reward_mapper": {"name": "identity", "args": None},
+        "delay_config": None,
+        "epsilon": 0.2,
+        "gamma": 0.99,
+        "learning_rate_config": {"name": "constant", "args": {"initial_lr": 0.01}},
+    },
+    {
         "policy_type": "drop-missing",
         "reward_mapper": {"name": "identity", "args": None},
         "delay_config": {"name": "fixed", "args": {"delay": 2}},
@@ -197,6 +349,38 @@ COMMON_PROBLEM_SPECS = (
         "learning_rate_config": {"name": "constant", "args": {"initial_lr": 0.01}},
     },
     {
+        "policy_type": "drop-missing",
+        "reward_mapper": {"name": "identity", "args": None},
+        "delay_config": {"name": "fixed", "args": {"delay": 2}},
+        "epsilon": 0.2,
+        "gamma": 0.99,
+        "learning_rate_config": {"name": "constant", "args": {"initial_lr": 0.01}},
+    },
+    {
+        "policy_type": "drop-missing",
+        "reward_mapper": {"name": "identity", "args": None},
+        "delay_config": {"name": "fixed", "args": {"delay": 4}},
+        "epsilon": 0.2,
+        "gamma": 0.99,
+        "learning_rate_config": {"name": "constant", "args": {"initial_lr": 0.01}},
+    },
+    {
+        "policy_type": "drop-missing",
+        "reward_mapper": {"name": "identity", "args": None},
+        "delay_config": {"name": "fixed", "args": {"delay": 6}},
+        "epsilon": 0.2,
+        "gamma": 0.99,
+        "learning_rate_config": {"name": "constant", "args": {"initial_lr": 0.01}},
+    },
+    {
+        "policy_type": "drop-missing",
+        "reward_mapper": {"name": "identity", "args": None},
+        "delay_config": {"name": "fixed", "args": {"delay": 8}},
+        "epsilon": 0.2,
+        "gamma": 0.99,
+        "learning_rate_config": {"name": "constant", "args": {"initial_lr": 0.01}},
+    },
+    {
         "policy_type": "markovian",
         "reward_mapper": {"name": "zero-impute", "args": None},
         "delay_config": {"name": "fixed", "args": {"delay": 2}},
@@ -229,6 +413,38 @@ COMMON_PROBLEM_SPECS = (
         "learning_rate_config": {"name": "constant", "args": {"initial_lr": 0.01}},
     },
     {
+        "policy_type": "markovian",
+        "reward_mapper": {"name": "zero-impute", "args": None},
+        "delay_config": {"name": "fixed", "args": {"delay": 2}},
+        "epsilon": 0.2,
+        "gamma": 0.99,
+        "learning_rate_config": {"name": "constant", "args": {"initial_lr": 0.01}},
+    },
+    {
+        "policy_type": "markovian",
+        "reward_mapper": {"name": "zero-impute", "args": None},
+        "delay_config": {"name": "fixed", "args": {"delay": 4}},
+        "epsilon": 0.2,
+        "gamma": 0.99,
+        "learning_rate_config": {"name": "constant", "args": {"initial_lr": 0.01}},
+    },
+    {
+        "policy_type": "markovian",
+        "reward_mapper": {"name": "zero-impute", "args": None},
+        "delay_config": {"name": "fixed", "args": {"delay": 6}},
+        "epsilon": 0.2,
+        "gamma": 0.99,
+        "learning_rate_config": {"name": "constant", "args": {"initial_lr": 0.01}},
+    },
+    {
+        "policy_type": "markovian",
+        "reward_mapper": {"name": "zero-impute", "args": None},
+        "delay_config": {"name": "fixed", "args": {"delay": 8}},
+        "epsilon": 0.2,
+        "gamma": 0.99,
+        "learning_rate_config": {"name": "constant", "args": {"initial_lr": 0.01}},
+    },
+    {
         "policy_type": "options",
         "reward_mapper": {"name": "identity", "args": None},
         "delay_config": {"name": "fixed", "args": {"delay": 2}},
@@ -250,6 +466,30 @@ COMMON_PROBLEM_SPECS = (
         "delay_config": {"name": "fixed", "args": {"delay": 6}},
         "epsilon": 0.2,
         "gamma": 1.0,
+        "learning_rate_config": {"name": "constant", "args": {"initial_lr": 0.01}},
+    },
+    {
+        "policy_type": "options",
+        "reward_mapper": {"name": "identity", "args": None},
+        "delay_config": {"name": "fixed", "args": {"delay": 2}},
+        "epsilon": 0.2,
+        "gamma": 0.99,
+        "learning_rate_config": {"name": "constant", "args": {"initial_lr": 0.01}},
+    },
+    {
+        "policy_type": "options",
+        "reward_mapper": {"name": "identity", "args": None},
+        "delay_config": {"name": "fixed", "args": {"delay": 4}},
+        "epsilon": 0.2,
+        "gamma": 0.99,
+        "learning_rate_config": {"name": "constant", "args": {"initial_lr": 0.01}},
+    },
+    {
+        "policy_type": "options",
+        "reward_mapper": {"name": "identity", "args": None},
+        "delay_config": {"name": "fixed", "args": {"delay": 6}},
+        "epsilon": 0.2,
+        "gamma": 0.99,
         "learning_rate_config": {"name": "constant", "args": {"initial_lr": 0.01}},
     },
     {
@@ -282,6 +522,38 @@ COMMON_PROBLEM_SPECS = (
         "delay_config": {"name": "fixed", "args": {"delay": 8}},
         "epsilon": 0.2,
         "gamma": 1.0,
+        "learning_rate_config": {"name": "constant", "args": {"initial_lr": 0.01}},
+    },
+    {
+        "policy_type": "single-action-options",
+        "reward_mapper": {"name": "identity", "args": None},
+        "delay_config": {"name": "fixed", "args": {"delay": 2}},
+        "epsilon": 0.2,
+        "gamma": 0.99,
+        "learning_rate_config": {"name": "constant", "args": {"initial_lr": 0.01}},
+    },
+    {
+        "policy_type": "single-action-options",
+        "reward_mapper": {"name": "identity", "args": None},
+        "delay_config": {"name": "fixed", "args": {"delay": 4}},
+        "epsilon": 0.2,
+        "gamma": 0.99,
+        "learning_rate_config": {"name": "constant", "args": {"initial_lr": 0.01}},
+    },
+    {
+        "policy_type": "single-action-options",
+        "reward_mapper": {"name": "identity", "args": None},
+        "delay_config": {"name": "fixed", "args": {"delay": 6}},
+        "epsilon": 0.2,
+        "gamma": 0.99,
+        "learning_rate_config": {"name": "constant", "args": {"initial_lr": 0.01}},
+    },
+    {
+        "policy_type": "single-action-options",
+        "reward_mapper": {"name": "identity", "args": None},
+        "delay_config": {"name": "fixed", "args": {"delay": 8}},
+        "epsilon": 0.2,
+        "gamma": 0.99,
         "learning_rate_config": {"name": "constant", "args": {"initial_lr": 0.01}},
     },
 )
@@ -352,20 +624,6 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "max_episode_steps": 200,
         },
         "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
-        "problem_specs": COMMON_PROBLEM_SPECS
-        + least_specs(10_000, {"name": "scale", "args": None})
-        + bayes_least_specs(feats_spec={"name": "scale", "args": None}),
-        "epochs": 1,
-    },
-    {
-        "name": "Finite-TC-ShuntDc-v0",
-        "args": {
-            "reward_fn": "pos-enf",
-            "penalty_gamma": 1.0,
-            "constraint_violation_reward": 0.0,
-            "max_episode_steps": 200,
-        },
-        "feats_specs": [{"name": "scale", "args": None}],
         "problem_specs": COMMON_PROBLEM_SPECS
         + least_specs(10_000, {"name": "scale", "args": None})
         + bayes_least_specs(feats_spec={"name": "scale", "args": None}),
