@@ -11,7 +11,7 @@ MAPPERS_NAMES = {
     "identity": "FR",
     "zero-impute": "IMR",
     "least-lfa": "LEAST-LFA",
-    "least-bayes-lfa": "LEAST-BAYES-LFA",
+    "least-bayes-lfa": "LEAST-BFA",
 }
 
 POLICY_TYPES = {
