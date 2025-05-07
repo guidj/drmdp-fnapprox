@@ -11,7 +11,7 @@ MAPPERS_NAMES = {
     "identity": "FR",
     "zero-impute": "IMR",
     "least-lfa": "LEAST-LFA",
-    "least-bayes-lfa": "LEAST-BAYES-LFA",
+    "least-bayes-lfa": "LEAST-BFA",
 }
 
 POLICY_TYPES = {
@@ -44,6 +44,11 @@ def collection_traj_data(env: gym.Env, steps: int):
 
 
 def process_data(df_raw):
+    def filter(meta):
+        return meta["experiment"]["env_spec"]["name"] not in set(
+            ["Finite-TC-ShuntDc-v0"]
+        )
+
     def simplify_meta(meta):
         new_meta = dict(**meta, **meta["experiment"])
         new_meta["reward_mapper"] = MAPPERS_NAMES[
@@ -60,6 +65,7 @@ def process_data(df_raw):
             return meta["reward_mapper"]
 
     df_proc = copy.deepcopy(df_raw)
+    df_proc = df_proc[df_proc["meta"].apply(filter)]
     df_proc["meta"] = df_proc["meta"].apply(simplify_meta)
     df_proc["method"] = df_proc["meta"].apply(get_method)
     return df_proc

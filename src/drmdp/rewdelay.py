@@ -274,10 +274,14 @@ class LeastLfaMissingWrapper(gym.Wrapper):
 
 
 class LeastBayesLfaMissingWrapper(gym.Wrapper):
+    INTERVAL = "interval"
+    DOUBLE = "double"
+
     def __init__(
         self,
         env: gym.Env,
         obs_encoding_wrapper: gym.ObservationWrapper,
+        mode: str = DOUBLE,
         init_update_episodes: int = 10,
         use_bias: bool = False,
     ):
@@ -290,8 +294,11 @@ class LeastBayesLfaMissingWrapper(gym.Wrapper):
             raise ValueError(
                 f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper)}"
             )
+        if mode not in (self.INTERVAL, self.DOUBLE):
+            pass
         self.obs_wrapper = obs_encoding_wrapper
         self.use_bias = use_bias
+        self.mode = mode
         self.init_update_episodes = init_update_episodes
         self.update_episodes = init_update_episodes
         self.obs_buffer: List[np.ndarray] = []
@@ -342,7 +349,10 @@ class LeastBayesLfaMissingWrapper(gym.Wrapper):
             self.episodes += 1
             if self.episodes % self.update_episodes == 0:
                 self.estimate_posterior()
-                self.update_episodes *= 2
+                if self.mode == self.DOUBLE:
+                    self.update_episodes *= 2
+                elif self.mode == self.INTERVAL:
+                    pass
 
         # For the next step
         self._obs_feats = next_obs_feats
