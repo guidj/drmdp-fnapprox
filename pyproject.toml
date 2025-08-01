@@ -70,7 +70,7 @@ push = "True"
     '^current_version = "{version}"$',
 
 ]
-"src/daaf/__init__.py" = [
+"src/drmdp/__init__.py" = [
     '^__version__ = "{version}"$',
 ]
 
