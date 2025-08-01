@@ -14,3 +14,6 @@ check: format
 
 test-coverage:
 	uv run pytest --cov-report=html --cov=src tests
+
+bumpver-minor:
+	uv run bumpver update --patch

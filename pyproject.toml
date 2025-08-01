@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "drmdp-fnapprox"
-version = "0.16.5"
+version = "0.16.6"
 authors = [{name = "guilherme", email = "guilherme@dsv.su.se"}]
 maintainers = [{name = "guilherme", email = "guilherme@dsv.su.se"}]
 description = "Reinforcement learning with delayed, aggregate, and anonymous feedback"
@@ -53,7 +53,7 @@ where = ["src"]
 namespaces = false
 
 [tool.bumpver]
-current_version = "0.16.5"
+current_version = "0.16.6"
 version_pattern = "MAJOR.MINOR.PATCH[PYTAGNUM]"
 commit_message = "bump version {old_version} -> {new_version}"
 tag_message = "{new_version}"
