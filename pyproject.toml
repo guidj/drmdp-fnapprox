@@ -70,9 +70,6 @@ push = "True"
     '^current_version = "{version}"$',
 
 ]
-"src/drmdp/__init__.py" = [
-    '^__version__ = "{version}"$',
-]
 
 
 [tool.tox]
