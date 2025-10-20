@@ -181,6 +181,7 @@ class LeastLfaMissingWrapper(gym.Wrapper):
         self._obs_feats = None
         self._segment_features = None
         self.estimation_meta = {"use_bias": self.use_bias}
+        self.rng = np.random.default_rng()
 
     def step(self, action):
         next_obs, reward, term, trunc, info = super().step(action)
@@ -247,9 +248,8 @@ class LeastLfaMissingWrapper(gym.Wrapper):
             self.weights = optsol.solve_least_squares(matrix=matrix, rhs=rewards)
         except ValueError:
             # drop latest 5% of samples
-            rng = np.random.default_rng()
             nsamples_drop = int(self.estimation_sample_size * 0.05)
-            indices = rng.choice(
+            indices = self.rng.choice(
                 np.arange(self.estimation_sample_size),
                 self.estimation_sample_size - nsamples_drop,
                 replace=False,
@@ -446,6 +446,7 @@ class ConvexSolverMissingWrapper(gym.Wrapper):
         self._obs_feats = None
         self._segment_features = None
         self.estimation_meta = {"use_bias": self.use_bias}
+        self.rng = np.random.default_rng()
 
     def step(self, action):
         next_obs, reward, term, trunc, info = super().step(action)
@@ -480,15 +481,15 @@ class ConvexSolverMissingWrapper(gym.Wrapper):
                 reward = 0.0
 
             if term:
-                term_state = np.zeros(shape=(self.mdim))
                 # The action is not relevant here,
                 # since every action leads to the same
                 # transition.
-                ts_action = random.randint(0, self.obs_wrapper.action_space.n - 1)
-                ts_idx = ts_action * self.obs_dim
-                term_state[ts_idx : ts_idx + self.obs_dim] += next_obs_feats
-                term_state[-self.obs_dim :] += next_obs_feats
-                self.terminal_states.append(term_state)
+                for ts_action in range(self.obs_wrapper.action_space.n):
+                    term_state = np.zeros(shape=(self.mdim))
+                    ts_idx = ts_action * self.obs_dim
+                    term_state[ts_idx : ts_idx + self.obs_dim] += next_obs_feats
+                    term_state[-self.obs_dim :] += next_obs_feats
+                    self.terminal_states.append(term_state)
 
             if len(self.obs_buffer) >= self.estimation_sample_size:
                 # estimate rewards
@@ -538,9 +539,8 @@ class ConvexSolverMissingWrapper(gym.Wrapper):
             )
         except ValueError:
             # drop latest 5% of samples
-            rng = np.random.default_rng()
             nsamples_drop = int(self.estimation_sample_size * 0.05)
-            indices = rng.choice(
+            indices = self.rng.choice(
                 np.arange(self.estimation_sample_size),
                 self.estimation_sample_size - nsamples_drop,
                 replace=False,
