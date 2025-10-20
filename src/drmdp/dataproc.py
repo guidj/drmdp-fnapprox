@@ -10,8 +10,8 @@ import ray.data
 MAPPERS_NAMES = {
     "identity": "FR",
     "zero-impute": "IMR",
-    "least-lfa": "LEAST-LFA",
-    "least-bayes-lfa": "LEAST-BFA",
+    "least-lfa": "L-TRACE",
+    "least-bayes-lfa": "L-TRACE-Bayes",
 }
 
 POLICY_TYPES = {
