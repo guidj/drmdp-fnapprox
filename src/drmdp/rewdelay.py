@@ -3,6 +3,7 @@ import logging
 import random
 from typing import Callable, List, Optional, Sequence, Tuple
 
+import cvxpy as cp
 import gymnasium as gym
 import numpy as np
 
@@ -414,3 +415,152 @@ class LeastBayesLfaMissingWrapper(gym.Wrapper):
             # Clear buffers for next data
             self.obs_buffer = []
             self.rew_buffer = []
+
+
+class ConvexSolverMissingWrapper(gym.Wrapper):
+    def __init__(
+        self,
+        env: gym.Env,
+        obs_encoding_wrapper: gym.ObservationWrapper,
+        estimation_sample_size: int,
+        use_bias: bool = False,
+    ):
+        super().__init__(env)
+        if not isinstance(obs_encoding_wrapper.observation_space, gym.spaces.Box):
+            raise ValueError(
+                f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper)}"
+            )
+        if not isinstance(obs_encoding_wrapper.action_space, gym.spaces.Discrete):
+            raise ValueError(
+                f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper)}"
+            )
+        self.obs_wrapper = obs_encoding_wrapper
+        self.estimation_sample_size = estimation_sample_size
+        self.use_bias = use_bias
+        self.obs_buffer: List[np.ndarray] = []
+        self.rew_buffer: List[np.ndarray] = []
+        self.terminal_states: List[np.ndarray] = []
+
+        self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
+        self.mdim = self.obs_dim * self.obs_wrapper.action_space.n + self.obs_dim
+        self.weights = None
+        self._obs_feats = None
+        self._segment_features = None
+        self.estimation_meta = {"use_bias": self.use_bias}
+
+    def step(self, action):
+        next_obs, reward, term, trunc, info = super().step(action)
+        next_obs_feats = self.obs_wrapper.observation(next_obs)
+        # Add s to action-specific columns
+        # and s' to the last columns.
+        start_index = action * self.obs_dim
+        self._segment_features[start_index : start_index + self.obs_dim] += (
+            self._obs_feats
+        )
+        self._segment_features[-self.obs_dim :] += next_obs_feats
+
+        if self.weights is not None:
+            # estimate
+            feats = self._segment_features
+            if self.use_bias:
+                feats = np.concatenate([feats, np.array([1.0])])
+            reward = np.dot(feats, self.weights)
+            # reset for the next example
+            self._segment_features = np.zeros(shape=(self.mdim))
+        else:
+            # Add example to buffer and
+            # use aggregate reward.
+            if info["segment_step"] == info["delay"] - 1:
+                self.obs_buffer.append(self._segment_features)
+                # aggregate reward
+                self.rew_buffer.append(reward)
+                # reset for the next segment
+                self._segment_features = np.zeros(shape=(self.mdim))
+            else:
+                # zero impute until rewards are estimated
+                reward = 0.0
+
+            if term:
+                term_state = np.zeros(shape=(self.mdim))
+                # The action is not relevant here,
+                # since every action leads to the same
+                # transition.
+                ts_action = random.randint(0, self.obs_wrapper.action_space.n - 1)
+                ts_idx = ts_action * self.obs_dim
+                term_state[ts_idx : ts_idx + self.obs_dim] += next_obs_feats
+                term_state[-self.obs_dim :] += next_obs_feats
+                self.terminal_states.append(term_state)
+
+            if len(self.obs_buffer) >= self.estimation_sample_size:
+                # estimate rewards
+                self.estimate_rewards()
+
+        # For the next step
+        self._obs_feats = next_obs_feats
+        return next_obs, reward, term, trunc, info
+
+    def reset(self, *, seed=None, options=None):
+        obs, info = super().reset(seed=seed, options=options)
+        self._obs_feats = self.obs_wrapper.observation(obs)
+        # Init segment and step features array
+        self._segment_features = np.zeros(shape=(self.mdim))
+        return obs, info
+
+    def estimate_rewards(self):
+        """
+        Estimate rewards with lstsq.
+        """
+        matrix = np.stack(self.obs_buffer)
+        rewards = np.array(self.rew_buffer)
+        term_states = np.array(self.terminal_states)
+        if self.use_bias:
+            matrix = np.concatenate(
+                [
+                    matrix,
+                    np.expand_dims(np.ones(shape=len(matrix)), axis=-1),
+                ],
+                axis=1,
+            )
+            term_states = np.concatenate(
+                [
+                    term_states,
+                    np.expand_dims(np.ones(shape=len(term_states)), axis=-1),
+                ],
+                axis=1,
+            )
+
+        try:
+            # Construct the problem.
+            solution = cp.Variable(self.mdim)
+            objective = cp.Minimize(cp.sum_squares(matrix @ solution - rewards))
+            constraints = [term_state @ solution == 0 for term_state in term_states]
+            prob = cp.Problem(objective, constraints)
+
+            _ = prob.solve()
+            self.weights = solution.value
+        except ValueError:
+            # drop latest 5% of samples
+            rng = np.random.default_rng()
+            nsamples_drop = int(self.estimation_sample_size * 0.05)
+            indices = rng.choice(
+                np.arange(self.estimation_sample_size),
+                self.estimation_sample_size - nsamples_drop,
+                replace=False,
+            )
+            self.obs_buffer = np.asarray(self.obs_buffer)[indices].tolist()
+            self.rew_buffer = np.asarray(self.rew_buffer)[indices].tolist()
+            logging.info(
+                "Failed estimation for %s. Dropping %d samples",
+                self.env,
+                nsamples_drop,
+            )
+        else:
+            error = metrics.rmse(
+                v_pred=np.dot(matrix, self.weights), v_true=rewards, axis=0
+            )
+            self.estimation_meta["sample"] = {"size": rewards.shape[0]}
+            self.estimation_meta["error"] = {"rmse": error}
+            self.estimation_meta["estimate"] = {
+                "weights": self.weights.tolist(),
+            }
+            logging.info("Estimated rewards for %s. RMSE: %f", self.env, error)
