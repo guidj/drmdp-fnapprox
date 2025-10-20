@@ -1,7 +1,9 @@
 import abc
 import dataclasses
-from typing import Optional
+from typing import Callable, Optional, Sequence
 
+import cvxpy as cp
+import cvxpy.error
 import gymnasium as gym
 import numpy as np
 from scipy import linalg
@@ -202,3 +204,25 @@ def solve_rwe(env: gym.Env, num_steps: int, sample_size: int, delay: int):
     buffer = dataproc.collection_traj_data(env, steps=num_steps)
     Xd, yd = delay_reward_data(buffer, delay=delay, sample_size=sample_size)
     return buffer, solve_least_squares(Xd, yd)
+
+
+def solve_cvp(
+    matrix: np.ndarray,
+    rhs: np.ndarray,
+    constraint_fn: Callable[[cp.Variable], Sequence],
+) -> np.ndarray:
+    """
+    Solves Least Squares with convex optimisation,
+    with added constraints.
+    """
+    solution = cp.Variable(matrix.shape[-1])
+    objective = cp.Minimize(cp.sum_squares(matrix @ solution - rhs))
+    prob = cp.Problem(objective, constraint_fn(solution))
+
+    try:
+        _ = prob.solve()
+        if solution.value is None:
+            raise ValueError("No Solution")
+        return solution.value
+    except cvxpy.error.SolverError as err:
+        raise ValueError("No Solution") from err

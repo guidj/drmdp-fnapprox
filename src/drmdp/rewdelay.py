@@ -3,7 +3,6 @@ import logging
 import random
 from typing import Callable, List, Optional, Sequence, Tuple
 
-import cvxpy as cp
 import gymnasium as gym
 import numpy as np
 
@@ -531,15 +530,12 @@ class ConvexSolverMissingWrapper(gym.Wrapper):
 
         try:
             # Construct the problem.
-            solution = cp.Variable(self.mdim)
-            objective = cp.Minimize(cp.sum_squares(matrix @ solution - rewards))
-            constraints = [term_state @ solution == 0 for term_state in term_states]
-            prob = cp.Problem(objective, constraints)
+            def constraint_fn(solution):
+                return [term_state @ solution == 0 for term_state in term_states]
 
-            _ = prob.solve()
-            if solution.value is None:
-                raise ValueError("No Solution")
-            self.weights = solution.value
+            self.weights = optsol.solve_cvp(
+                matrix=matrix, rhs=rewards, constraint_fn=constraint_fn
+            )
         except ValueError:
             # drop latest 5% of samples
             rng = np.random.default_rng()
