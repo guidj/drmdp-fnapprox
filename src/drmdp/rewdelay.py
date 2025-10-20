@@ -537,6 +537,8 @@ class ConvexSolverMissingWrapper(gym.Wrapper):
             prob = cp.Problem(objective, constraints)
 
             _ = prob.solve()
+            if solution.value is None:
+                raise ValueError("No Solution")
             self.weights = solution.value
         except ValueError:
             # drop latest 5% of samples
