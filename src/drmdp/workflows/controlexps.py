@@ -299,12 +299,12 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
     )
 
 
-def cvs_specs(estimation_sample_size: int, feats_spec: Mapping[str, Any]):
+def cvlps_specs(estimation_sample_size: int, feats_spec: Mapping[str, Any]):
     return (
         {
             "policy_type": "markovian",
             "reward_mapper": {
-                "name": "cvs",
+                "name": "cvlps",
                 "args": {
                     "estimation_sample_size": estimation_sample_size,
                     "feats_spec": feats_spec,
@@ -322,7 +322,7 @@ def cvs_specs(estimation_sample_size: int, feats_spec: Mapping[str, Any]):
         {
             "policy_type": "markovian",
             "reward_mapper": {
-                "name": "cvs",
+                "name": "cvlps",
                 "args": {
                     "estimation_sample_size": estimation_sample_size,
                     "feats_spec": feats_spec,
@@ -340,7 +340,7 @@ def cvs_specs(estimation_sample_size: int, feats_spec: Mapping[str, Any]):
         {
             "policy_type": "markovian",
             "reward_mapper": {
-                "name": "cvs",
+                "name": "cvlps",
                 "args": {
                     "estimation_sample_size": estimation_sample_size,
                     "feats_spec": feats_spec,
@@ -358,7 +358,7 @@ def cvs_specs(estimation_sample_size: int, feats_spec: Mapping[str, Any]):
         {
             "policy_type": "markovian",
             "reward_mapper": {
-                "name": "cvs",
+                "name": "cvlps",
                 "args": {
                     "estimation_sample_size": estimation_sample_size,
                     "feats_spec": feats_spec,
@@ -376,7 +376,7 @@ def cvs_specs(estimation_sample_size: int, feats_spec: Mapping[str, Any]):
         {
             "policy_type": "markovian",
             "reward_mapper": {
-                "name": "cvs",
+                "name": "cvlps",
                 "args": {
                     "estimation_sample_size": estimation_sample_size,
                     "feats_spec": feats_spec,
@@ -394,7 +394,7 @@ def cvs_specs(estimation_sample_size: int, feats_spec: Mapping[str, Any]):
         {
             "policy_type": "markovian",
             "reward_mapper": {
-                "name": "cvs",
+                "name": "cvlps",
                 "args": {
                     "estimation_sample_size": estimation_sample_size,
                     "feats_spec": feats_spec,
@@ -412,7 +412,7 @@ def cvs_specs(estimation_sample_size: int, feats_spec: Mapping[str, Any]):
         {
             "policy_type": "markovian",
             "reward_mapper": {
-                "name": "cvs",
+                "name": "cvlps",
                 "args": {
                     "estimation_sample_size": estimation_sample_size,
                     "feats_spec": feats_spec,
@@ -430,7 +430,7 @@ def cvs_specs(estimation_sample_size: int, feats_spec: Mapping[str, Any]):
         {
             "policy_type": "markovian",
             "reward_mapper": {
-                "name": "cvs",
+                "name": "cvlps",
                 "args": {
                     "estimation_sample_size": estimation_sample_size,
                     "feats_spec": feats_spec,
@@ -720,7 +720,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "problem_specs": COMMON_PROBLEM_SPECS
         + least_specs(10_000, feats_spec={"name": "scale", "args": None})
         + bayes_least_specs(feats_spec={"name": "scale", "args": None})
-        + cvs_specs(10_000, feats_spec={"name": "scale", "args": None}),
+        + cvlps_specs(10_000, feats_spec={"name": "scale", "args": None}),
         "epochs": 1,
     },
     {
@@ -735,7 +735,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "problem_specs": COMMON_PROBLEM_SPECS
         + least_specs(10_000, {"name": "scale", "args": None})
         + bayes_least_specs(feats_spec={"name": "scale", "args": None})
-        + cvs_specs(10_000, {"name": "scale", "args": None}),
+        + cvlps_specs(10_000, {"name": "scale", "args": None}),
         "epochs": 1,
     },
     {
@@ -750,7 +750,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "problem_specs": COMMON_PROBLEM_SPECS
         + least_specs(10_000, {"name": "scale", "args": None})
         + bayes_least_specs(feats_spec={"name": "scale", "args": None})
-        + cvs_specs(10_000, {"name": "scale", "args": None}),
+        + cvlps_specs(10_000, {"name": "scale", "args": None}),
         "epochs": 1,
     },
     {
@@ -765,7 +765,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "problem_specs": COMMON_PROBLEM_SPECS
         + least_specs(10_000, {"name": "scale", "args": None})
         + bayes_least_specs(feats_spec={"name": "scale", "args": None})
-        + cvs_specs(10_000, {"name": "scale", "args": None}),
+        + cvlps_specs(10_000, {"name": "scale", "args": None}),
         "epochs": 1,
     },
     {
@@ -780,7 +780,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "problem_specs": COMMON_PROBLEM_SPECS
         + least_specs(10_000, {"name": "scale", "args": None})
         + bayes_least_specs(feats_spec={"name": "scale", "args": None})
-        + cvs_specs(10_000, {"name": "scale", "args": None}),
+        + cvlps_specs(10_000, {"name": "scale", "args": None}),
         "epochs": 1,
     },
     {
@@ -792,7 +792,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "problem_specs": COMMON_PROBLEM_SPECS
         + least_specs(1000, {"name": "tiles", "args": {"tiling_dim": 6}})
         + bayes_least_specs(feats_spec={"name": "tiles", "args": {"tiling_dim": 6}})
-        + cvs_specs(1000, {"name": "tiles", "args": {"tiling_dim": 6}}),
+        + cvlps_specs(1000, {"name": "tiles", "args": {"tiling_dim": 6}}),
         "epochs": 100,
     },
     {
@@ -804,7 +804,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "problem_specs": COMMON_PROBLEM_SPECS
         + least_specs(1000, {"name": "tiles", "args": {"tiling_dim": 6}})
         + bayes_least_specs(feats_spec={"name": "tiles", "args": {"tiling_dim": 6}})
-        + cvs_specs(1000, {"name": "tiles", "args": {"tiling_dim": 6}}),
+        + cvlps_specs(1000, {"name": "tiles", "args": {"tiling_dim": 6}}),
         "epochs": 100,
     },
     {
@@ -818,7 +818,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "problem_specs": COMMON_PROBLEM_SPECS
         + least_specs(5000, {"name": "tiles", "args": {"tiling_dim": 6}})
         + bayes_least_specs(feats_spec={"name": "tiles", "args": {"tiling_dim": 6}})
-        + cvs_specs(5000, {"name": "tiles", "args": {"tiling_dim": 6}}),
+        + cvlps_specs(5000, {"name": "tiles", "args": {"tiling_dim": 6}}),
         "epochs": 10,
     },
     {
@@ -830,7 +830,7 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "problem_specs": COMMON_PROBLEM_SPECS
         + least_specs(5000, {"name": "tiles", "args": {"tiling_dim": 8}})
         + bayes_least_specs(feats_spec={"name": "tiles", "args": {"tiling_dim": 8}})
-        + cvs_specs(5000, {"name": "tiles", "args": {"tiling_dim": 8}}),
+        + cvlps_specs(5000, {"name": "tiles", "args": {"tiling_dim": 8}}),
         "epochs": 10,
     },
 )

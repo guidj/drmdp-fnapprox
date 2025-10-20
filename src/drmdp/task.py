@@ -225,7 +225,7 @@ def reward_mapper(env: gym.Env, mapping_spec: Mapping[str, Any]):
             ),
             **m_args,
         )
-    elif name == "cvs":
+    elif name == "cvlps":
         m_args = dict(**args)
         feats_spec = m_args.pop("feats_spec")
         # local copy before pop
