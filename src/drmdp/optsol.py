@@ -220,9 +220,9 @@ def solve_cvp(
     prob = cp.Problem(objective, constraint_fn(solution))
 
     try:
-        _ = prob.solve()
-        if solution.value is None:
-            raise ValueError("No Solution")
-        return solution.value
+        prob.solve()
+        if prob.status == cp.OPTIMAL:
+            return solution.value
+        raise ValueError(f"No Solution. Status: {prob.status}; Sol: {solution.value}")
     except cvxpy.error.SolverError as err:
-        raise ValueError("No Solution") from err
+        raise ValueError(f"No Solution. Status {prob.status}") from err
