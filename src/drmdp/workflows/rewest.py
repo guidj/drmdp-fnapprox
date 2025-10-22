@@ -15,7 +15,6 @@ import tensorflow as tf
 from drmdp import core, envs, feats, logger, task
 
 MAX_STEPS = 2000
-EST_SAMPLE_SIZES = (5000, 10_000, 15_000, 20_000, 50_000)
 REWARD_DELAYS = (2, 4, 6)
 
 SPECS: Sequence[Mapping[str, Any]] = (
@@ -28,8 +27,15 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "max_episode_steps": MAX_STEPS,
         },
         "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 4}}],
-        "least_spec": {
-            "feats_spec": {"name": "scale", "args": None},
+        "rewest": {
+            "specs": {
+                "least-lfa": {
+                    "feats_spec": {"name": "scale", "args": None},
+                },
+                "cvlps": {
+                    "feats_spec": {"name": "scale", "args": None},
+                },
+            },
             "sample_sizes": (8_000, 16000, 32_000, 64_000),
         },
         "epochs": 1,
@@ -43,8 +49,15 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "max_episode_steps": MAX_STEPS,
         },
         "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 4}}],
-        "least_spec": {
-            "feats_spec": {"name": "scale", "args": None},
+        "rewest": {
+            "specs": {
+                "least-lfa": {
+                    "feats_spec": {"name": "scale", "args": None},
+                },
+                "cvlps": {
+                    "feats_spec": {"name": "scale", "args": None},
+                },
+            },
             "sample_sizes": (8_000, 16000, 32_000, 64_000),
         },
         "epochs": 1,
@@ -58,8 +71,15 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "max_episode_steps": MAX_STEPS,
         },
         "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 3}}],
-        "least_spec": {
-            "feats_spec": {"name": "scale", "args": None},
+        "rewest": {
+            "specs": {
+                "least-lfa": {
+                    "feats_spec": {"name": "scale", "args": None},
+                },
+                "cvlps": {
+                    "feats_spec": {"name": "scale", "args": None},
+                },
+            },
             "sample_sizes": (8_000, 16000, 32_000, 64_000),
         },
         "epochs": 1,
@@ -73,8 +93,15 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "max_episode_steps": MAX_STEPS,
         },
         "feats_specs": [{"name": "scale", "args": None}],
-        "least_spec": {
-            "feats_spec": {"name": "scale", "args": None},
+        "rewest": {
+            "specs": {
+                "least-lfa": {
+                    "feats_spec": {"name": "scale", "args": None},
+                },
+                "cvlps": {
+                    "feats_spec": {"name": "scale", "args": None},
+                },
+            },
             "sample_sizes": (8_000, 16000, 32_000, 64_000),
         },
         "epochs": 1,
@@ -88,8 +115,15 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "max_episode_steps": MAX_STEPS,
         },
         "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
-        "least_spec": {
-            "feats_spec": {"name": "scale", "args": None},
+        "rewest": {
+            "specs": {
+                "least-lfa": {
+                    "feats_spec": {"name": "scale", "args": None},
+                },
+                "cvlps": {
+                    "feats_spec": {"name": "scale", "args": None},
+                },
+            },
             "sample_sizes": (8_000, 16000, 32_000, 64_000),
         },
         "epochs": 1,
@@ -103,8 +137,15 @@ SPECS: Sequence[Mapping[str, Any]] = (
             "max_episode_steps": MAX_STEPS,
         },
         "feats_specs": [{"name": "scale", "args": None}],
-        "least_spec": {
-            "feats_spec": {"name": "scale", "args": None},
+        "rewest": {
+            "specs": {
+                "least-lfa": {
+                    "feats_spec": {"name": "scale", "args": None},
+                },
+                "cvlps": {
+                    "feats_spec": {"name": "scale", "args": None},
+                },
+            },
             "sample_sizes": (8_000, 16_000, 32_000, 64_000),
         },
         "epochs": 1,
@@ -115,8 +156,15 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "feats_specs": [
             {"name": "tiles", "args": {"tiling_dim": 6}},
         ],
-        "least_spec": {
-            "feats_spec": {"name": "tiles", "args": {"tiling_dim": 6}},
+        "rewest": {
+            "specs": {
+                "least-lfa": {
+                    "feats_spec": {"name": "tiles", "args": {"tiling_dim": 6}},
+                },
+                "cvlps": {
+                    "feats_spec": {"name": "tiles", "args": {"tiling_dim": 6}},
+                },
+            },
             "sample_sizes": (100, 200, 400, 800),
         },
         "epochs": 100,
@@ -127,8 +175,15 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "feats_specs": [
             {"name": "tiles", "args": {"tiling_dim": 6}},
         ],
-        "least_spec": {
-            "feats_spec": {"name": "tiles", "args": {"tiling_dim": 6}},
+        "rewest": {
+            "specs": {
+                "least-lfa": {
+                    "feats_spec": {"name": "tiles", "args": {"tiling_dim": 6}},
+                },
+                "cvlps": {
+                    "feats_spec": {"name": "tiles", "args": {"tiling_dim": 6}},
+                },
+            },
             "sample_sizes": (100, 200, 400, 800),
         },
         "epochs": 100,
@@ -141,8 +196,15 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "feats_specs": [
             {"name": "tiles", "args": {"tiling_dim": 6}},
         ],
-        "least_spec": {
-            "feats_spec": {"name": "tiles", "args": {"tiling_dim": 6}},
+        "rewest": {
+            "specs": {
+                "least-lfa": {
+                    "feats_spec": {"name": "tiles", "args": {"tiling_dim": 6}},
+                },
+                "cvlps": {
+                    "feats_spec": {"name": "tiles", "args": {"tiling_dim": 6}},
+                },
+            },
             "sample_sizes": (1_000, 2_000, 4_000, 8_000),
         },
         "epochs": 10,
@@ -153,8 +215,15 @@ SPECS: Sequence[Mapping[str, Any]] = (
         "feats_specs": [
             {"name": "tiles", "args": {"tiling_dim": 8}},
         ],
-        "least_spec": {
-            "feats_spec": {"name": "tiles", "args": {"tiling_dim": 8}},
+        "rewest": {
+            "specs": {
+                "least-lfa": {
+                    "feats_spec": {"name": "tiles", "args": {"tiling_dim": 8}},
+                },
+                "cvlps": {
+                    "feats_spec": {"name": "tiles", "args": {"tiling_dim": 8}},
+                },
+            },
             "sample_sizes": (1_000, 2_000, 4_000, 8_000),
         },
         "epochs": 10,
@@ -164,6 +233,10 @@ SPECS: Sequence[Mapping[str, Any]] = (
 
 @dataclasses.dataclass(frozen=True)
 class Args:
+    """
+    Task arguments.
+    """
+
     num_runs: int
     num_episodes: int
     output_path: str
@@ -171,11 +244,16 @@ class Args:
 
 @dataclasses.dataclass(frozen=True)
 class JobSpec:
+    """
+    Spec for a job config.
+    """
+
     env_name: str
     env_args: Mapping[str, Any]
     control_feats_spec: Mapping[str, Any]
+    rewest_feats_spec: Mapping[str, Any]
+    rewest_method: str
     rewest_sample_size: int
-    least_feats_spec: Mapping[str, Any]
     reward_delay: int
     num_episodes: int
     use_bias: bool
@@ -185,6 +263,10 @@ class JobSpec:
 
 @ray.remote
 class ResultWriter:
+    """
+    Remote task to export results.
+    """
+
     def __init__(self, output_path: str, partition_size: int = 100):
         self.output_path = output_path
         self.partition_size = partition_size
@@ -192,11 +274,20 @@ class ResultWriter:
         self.partition = 0
 
     def write(self, result):
+        """
+        Adds data to the write buffer.
+        Can sync output file if `partition_size`
+        is reached.
+        """
         self.results.append(result)
         if len(self.results) >= self.partition_size:
             self.sync()
 
     def sync(self):
+        """
+        Writes data to a file and cleans
+        the buffer.
+        """
         if self.results:
             write_records(
                 os.path.join(self.output_path, f"result-{self.partition}.jsonl"),
@@ -207,24 +298,32 @@ class ResultWriter:
 
 
 def run_reward_estimation_study(specs, turns: int, num_episodes: int, output_path: str):
+    """
+    Runs a reward estimation study.
+    """
     configs = itertools.product(specs, REWARD_DELAYS, range(turns))
     jobs = []
     for spec, reward_delay, turn in configs:
-        for feats_spec in spec["feats_specs"]:
-            for sample_size in spec["least_spec"]["sample_sizes"]:
-                job_spec = JobSpec(
-                    env_name=spec["name"],
-                    env_args=spec["args"],
-                    control_feats_spec=feats_spec,
-                    rewest_sample_size=sample_size,
-                    num_episodes=num_episodes,
-                    reward_delay=reward_delay,
-                    least_feats_spec=spec["least_spec"]["feats_spec"],
-                    use_bias=True,
-                    epochs=spec["epochs"],
-                    turn=turn,
-                )
-                jobs.extend([job_spec, dataclasses.replace(job_spec, use_bias=False)])
+        for feats_spec, (rewest_method, rew_spec), sample_size in itertools.product(
+            spec["feats_specs"],
+            spec["rewest"]["specs"].items(),
+            spec["rewest"]["sample_sizes"],
+        ):
+            job_spec = JobSpec(
+                env_name=spec["name"],
+                env_args=spec["args"],
+                control_feats_spec=feats_spec,
+                rewest_sample_size=sample_size,
+                num_episodes=num_episodes,
+                reward_delay=reward_delay,
+                rewest_method=rewest_method,
+                rewest_feats_spec=rew_spec["feats_spec"],
+                use_bias=False,
+                epochs=spec["epochs"],
+                turn=turn,
+            )
+            jobs.append(job_spec)
+            print(job_spec)
     np.random.shuffle(jobs)  # type: ignore
 
     with ray.init() as context:
@@ -236,6 +335,10 @@ def run_reward_estimation_study(specs, turns: int, num_episodes: int, output_pat
 
 @ray.remote
 def run_fn(job_spec: JobSpec):
+    """
+    Remote task to execute reward estimation
+    experiment.
+    """
     task_id = str(uuid.uuid4())
     logging.info("Starting task %s, %s", task_id, job_spec)
     try:
@@ -270,6 +373,9 @@ def wait_till_completion(tasks_refs, result_writer: ResultWriter):
 
 
 def reward_estimation(job_spec: JobSpec):
+    """
+    Runs a reward estimation experiment.
+    """
     exp_instance = create_exp_instance(job_spec)
     env, algorithm, monitor = setup_experiment(exp_instance)
 
@@ -310,6 +416,9 @@ def reward_estimation(job_spec: JobSpec):
 
 
 def create_exp_instance(job_spec: JobSpec):
+    """
+    Creates an experiment instance given a spec.
+    """
     env_spec = core.EnvSpec(
         job_spec.env_name,
         args=job_spec.env_args,
@@ -318,11 +427,11 @@ def create_exp_instance(job_spec: JobSpec):
     problem_spec = core.ProblemSpec(
         policy_type="markovian",
         reward_mapper={
-            "name": "least-lfa",
+            "name": job_spec.rewest_method,
             "args": {
                 "estimation_sample_size": job_spec.rewest_sample_size,
                 "use_bias": job_spec.use_bias,
-                "feats_spec": job_spec.least_feats_spec,
+                "feats_spec": job_spec.rewest_feats_spec,
             },
         },
         delay_config={"name": "fixed", "args": {"delay": job_spec.reward_delay}},
@@ -352,6 +461,9 @@ def create_exp_instance(job_spec: JobSpec):
 
 
 def setup_experiment(exp_instance: core.ExperimentInstance):
+    """
+    Sets up an experiment run given an instance.
+    """
     env_spec = exp_instance.experiment.env_spec
     problem_spec = exp_instance.experiment.problem_spec
     env = envs.make(
@@ -385,6 +497,9 @@ def setup_experiment(exp_instance: core.ExperimentInstance):
 
 
 def write_records(output_path: str, records):
+    """
+    Exports records into JSON files.
+    """
     with tf.io.gfile.GFile(output_path, "w") as writable:
         for record in records:
             json.dump(record, writable)
@@ -392,6 +507,9 @@ def write_records(output_path: str, records):
 
 
 def main():
+    """
+    Entry point for running experiments.
+    """
     args = parse_args()
     os.path.join(args.output_path)
 
@@ -406,10 +524,18 @@ def main():
 
 
 def parse_args() -> Args:
+    """
+    Parse task arguments.
+    """
     arg_parser = argparse.ArgumentParser()
-    arg_parser.add_argument("--num-runs", type=int, required=True)
-    arg_parser.add_argument("--num-episodes", type=int, required=True)
-    arg_parser.add_argument("--output-path", required=True)
+    import uuid
+
+    arg_parser.add_argument("--num-runs", type=int, default=1)
+    arg_parser.add_argument("--num-episodes", type=int, default=1)
+    arg_parser.add_argument("--output-path", default=f"/tmp/runs/{str(uuid.uuid4())}")
+    # arg_parser.add_argument("--num-runs", type=int, required=True)
+    # arg_parser.add_argument("--num-episodes", type=int, required=True)
+    # arg_parser.add_argument("--output-path", required=True)
     known_args, _ = arg_parser.parse_known_args()
     return Args(**vars(known_args))
 
