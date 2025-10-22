@@ -14,7 +14,7 @@ import tensorflow as tf
 
 from drmdp import core, envs, feats, logger, task
 
-MAX_STEPS = 2000
+MAX_STEPS = 200
 REWARD_DELAYS = (2, 4, 6)
 
 SPECS: Sequence[Mapping[str, Any]] = (
@@ -323,7 +323,6 @@ def run_reward_estimation_study(specs, turns: int, num_episodes: int, output_pat
                 turn=turn,
             )
             jobs.append(job_spec)
-            print(job_spec)
     np.random.shuffle(jobs)  # type: ignore
 
     with ray.init() as context:
