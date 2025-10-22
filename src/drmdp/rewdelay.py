@@ -10,6 +10,10 @@ from drmdp import mathutils, metrics, optsol
 
 
 class RewardDelay(abc.ABC):
+    """
+    Abstract class for delayed reward config.
+    """
+
     @abc.abstractmethod
     def sample(self) -> int: ...
 
@@ -22,6 +26,10 @@ class RewardDelay(abc.ABC):
 
 
 class FixedDelay(RewardDelay):
+    """
+    Fixed window delays.
+    """
+
     def __init__(self, delay: int):
         super().__init__()
         self.delay = delay
@@ -38,6 +46,11 @@ class FixedDelay(RewardDelay):
 
 
 class UniformDelay(RewardDelay):
+    """
+    Delays are sampled uniformly at random
+    from a range of values.
+    """
+
     def __init__(self, min_delay: int, max_delay: int):
         super().__init__()
         self.min_delay = min_delay
@@ -55,6 +68,10 @@ class UniformDelay(RewardDelay):
 
 
 class ClippedPoissonDelay(RewardDelay):
+    """
+    Delays are sampled from a clipped Poisson distribution
+    """
+
     def __init__(
         self, lam: int, min_delay: Optional[int] = None, max_delay: Optional[int] = None
     ):
@@ -80,6 +97,13 @@ class ClippedPoissonDelay(RewardDelay):
 
 
 class DelayedRewardWrapper(gym.Wrapper):
+    """
+    Emits rewards following a delayed aggregation scheduled.
+    Rewards at the end of the reward window correspond
+    to the sum of rewards in the window.
+    In the remaining steps, no reward is emitted (`None`).
+    """
+
     def __init__(
         self,
         env: gym.Env,
@@ -140,6 +164,10 @@ class DelayedRewardWrapper(gym.Wrapper):
 
 
 class ZeroImputeMissingWrapper(gym.RewardWrapper):
+    """
+    Missing rewards (`None`) are replaced with zero.
+    """
+
     def __init__(
         self,
         env: gym.Env,
@@ -153,6 +181,17 @@ class ZeroImputeMissingWrapper(gym.RewardWrapper):
 
 
 class LeastLfaMissingWrapper(gym.Wrapper):
+    """
+    The aggregate reward windows are used to
+    estimate the underlying MDP rewards.
+
+    Once estimated, the approximate rewards are used.
+    Until then, the aggregate rewards are emitted when
+    presented, and zero is used otherwise.
+
+    Rewards are estimated with Least-Squares.
+    """
+
     def __init__(
         self,
         env: gym.Env,
@@ -257,7 +296,8 @@ class LeastLfaMissingWrapper(gym.Wrapper):
             self.obs_buffer = np.asarray(self.obs_buffer)[indices].tolist()
             self.rew_buffer = np.asarray(self.rew_buffer)[indices].tolist()
             logging.info(
-                "Failed estimation for %s. Dropping %d samples",
+                "%s - Failed estimation for %s. Dropping %d samples",
+                type(self).__name__,
                 self.env,
                 nsamples_drop,
             )
@@ -270,10 +310,30 @@ class LeastLfaMissingWrapper(gym.Wrapper):
             self.estimation_meta["estimate"] = {
                 "weights": self.weights.tolist(),
             }
-            logging.info("Estimated rewards for %s. RMSE: %f", self.env, error)
+            logging.info(
+                "%s - Estimated rewards for %s. RMSE: %f; # Samples: %d",
+                type(self).__name__,
+                self.env,
+                error,
+                rewards.shape[0],
+            )
 
 
 class LeastBayesLfaMissingWrapper(gym.Wrapper):
+    """
+    The aggregate reward windows are used to
+    estimate the underlying MDP rewards.
+
+    Once estimated, the approximate rewards are used.
+    Until then, the aggregate rewards are emitted when
+    presented, and zero is used otherwise.
+
+    Rewards are estimated with Bayesian Least-Squares.
+    Rewards are first estimated after `init_update_episodes`.
+    After that, they are either updated following a doubling
+    schedule or at fixed intervals.
+    """
+
     INTERVAL = "interval"
     DOUBLE = "double"
 
@@ -397,7 +457,8 @@ class LeastBayesLfaMissingWrapper(gym.Wrapper):
 
         except ValueError:
             logging.info(
-                "Failed estimation for %s",
+                "%s - Failed estimation for %s",
+                type(self).__name__,
                 self.env,
             )
         else:
@@ -409,7 +470,13 @@ class LeastBayesLfaMissingWrapper(gym.Wrapper):
             self.estimation_meta["estimate"] = {
                 "weights": self.mv_lst.mean.tolist(),
             }
-            logging.info("Estimated rewards for %s. RMSE: %f", self.env, error)
+            logging.info(
+                "%s - Estimated rewards for %s. RMSE: %f; # Samples: %d",
+                type(self).__name__,
+                self.env,
+                error,
+                rewards.shape[0],
+            )
 
             # Clear buffers for next data
             self.obs_buffer = []
@@ -417,6 +484,21 @@ class LeastBayesLfaMissingWrapper(gym.Wrapper):
 
 
 class ConvexSolverMissingWrapper(gym.Wrapper):
+    """
+    The aggregate reward windows are used to
+    estimate the underlying MDP rewards.
+
+    Once estimated, the approximate rewards are used.
+    Until then, the aggregate rewards are emitted when
+    presented, and zero is used otherwise.
+
+    Rewards are estimated with Convex Optimisation,
+    with constraints.
+    The constraints are defined by using encoutered
+    terminal states - the rewards for which are
+    constrained to zero.
+    """
+
     def __init__(
         self,
         env: gym.Env,
@@ -484,11 +566,13 @@ class ConvexSolverMissingWrapper(gym.Wrapper):
                 # The action is not relevant here,
                 # since every action leads to the same
                 # transition.
+                # But we represent every action for completeness.
                 for ts_action in range(self.obs_wrapper.action_space.n):
                     term_state = np.zeros(shape=(self.mdim))
                     ts_idx = ts_action * self.obs_dim
+                    # To simplify the problem for the convex solver
+                    # we encode the (S,A) - not S'
                     term_state[ts_idx : ts_idx + self.obs_dim] += next_obs_feats
-                    term_state[-self.obs_dim :] += next_obs_feats
                     self.terminal_states.append(term_state)
 
             if len(self.obs_buffer) >= self.estimation_sample_size:
@@ -548,7 +632,8 @@ class ConvexSolverMissingWrapper(gym.Wrapper):
             self.obs_buffer = np.asarray(self.obs_buffer)[indices].tolist()
             self.rew_buffer = np.asarray(self.rew_buffer)[indices].tolist()
             logging.info(
-                "Failed estimation for %s. Dropping %d samples",
+                "%s - Failed estimation for %s. Dropping %d samples",
+                type(self).__name__,
                 self.env,
                 nsamples_drop,
             )
@@ -560,5 +645,13 @@ class ConvexSolverMissingWrapper(gym.Wrapper):
             self.estimation_meta["error"] = {"rmse": error}
             self.estimation_meta["estimate"] = {
                 "weights": self.weights.tolist(),
+                "constraints": len(term_states),
             }
-            logging.info("Estimated rewards for %s. RMSE: %f", self.env, error)
+            logging.info(
+                "%s - Estimated rewards for %s. RMSE: %f; # Samples: %d, # Constraints: %d",
+                type(self).__name__,
+                self.env,
+                error,
+                rewards.shape[0],
+                len(term_states),
+            )
