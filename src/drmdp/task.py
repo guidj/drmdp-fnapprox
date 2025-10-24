@@ -113,6 +113,10 @@ def generate_experiments_instances(
     output_dir: str,
     task_prefix: str,
 ) -> Iterator[core.ExperimentInstance]:
+    """
+    Parse experiments and creates experiment
+    instances from it.
+    """
     for experiment in experiments:
         exp_id = "-".join([create_task_id(task_prefix), experiment.env_spec.name])
         for idx in range(num_runs):
@@ -174,6 +178,11 @@ def learning_rate(name: str, args: Mapping[str, Any]) -> optsol.LearningRateSche
 def reward_delay_distribution(
     delay_config: Optional[Mapping[str, Any]],
 ) -> Optional[rewdelay.RewardDelay]:
+    """
+    Returns an instance of a delayed
+    reward distribution that can be used
+    to sample delays.
+    """
     if delay_config:
         name = delay_config["name"]
         args = delay_config["args"]
@@ -184,6 +193,10 @@ def reward_delay_distribution(
 
 
 def monitor_wrapper(env: gym.Env) -> Tuple[gym.Env, core.EnvMonitor]:
+    """
+    Wraps the environment in monitor that tracks returns
+    based on the underlying rewards.
+    """
     mon_env = core.EnvMonitorWrapper(env)
     return mon_env, mon_env.mon
 
@@ -191,12 +204,19 @@ def monitor_wrapper(env: gym.Env) -> Tuple[gym.Env, core.EnvMonitor]:
 def delay_wrapper(
     env: gym.Env, reward_delay: Optional[rewdelay.RewardDelay]
 ) -> gym.Env:
+    """
+    If a delayed reward config is given, wraps
+    `env` with the specified mapper.
+    """
     if reward_delay:
         return rewdelay.DelayedRewardWrapper(env, reward_delay=reward_delay)
     return env
 
 
 def reward_mapper(env: gym.Env, mapping_spec: Mapping[str, Any]):
+    """
+    Creates a mapper for handling missing rewards.
+    """
     name = mapping_spec["name"]
     args = mapping_spec["args"]
     if name == "identity":
@@ -249,6 +269,10 @@ def create_algorithm(
     epsilon: float,
     base_seed: Optional[int] = None,
 ):
+    """
+    Creates an algorithm instance based on the provided
+    arguments.
+    """
     if policy_type == "markovian":
         return algorithms.SemigradientSARSAFnApprox(
             lr=lr,
