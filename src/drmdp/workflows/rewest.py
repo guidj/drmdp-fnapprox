@@ -372,11 +372,6 @@ def run_reward_estimation_study(specs, turns: int, num_episodes: int, output_pat
         for feats_spec, rewest_spec in itertools.product(
             spec["feats_specs"], spec["rewest"]
         ):
-            # for feats_spec, (rewest_method, rew_spec), sample_size in itertools.product(
-            #     spec["feats_specs"],
-            #     spec["rewest"]["specs"].items(),
-            #     spec["rewest"]["sample_sizes"],
-            # ):
             job_spec = JobSpec(
                 env_name=spec["name"],
                 env_args=spec["args"],
@@ -476,9 +471,13 @@ def reward_estimation(job_spec: JobSpec):
                 f"Task {exp_instance.exp_id}, run {exp_instance.instance_id} failed"
             ) from err
 
-    meta = env.get_wrapper_attr("estimation_meta")
+    meta: Mapping[str, Any] = env.get_wrapper_attr("estimation_meta")
     env.close()
-    return meta
+
+    return {
+        "returns": np.mean(returns).item(),
+        **meta
+    }
 
 
 def create_exp_instance(job_spec: JobSpec):
