@@ -413,13 +413,11 @@ def run_reward_estimation_study(specs, turns: int, num_episodes: int, output_pat
             jobs.append(job_spec)
     np.random.shuffle(jobs)  # type: ignore
 
-    reward_estimation(jobs[0])
-
-    # with ray.init() as context:
-    #     logging.info("Starting ray task: %s", context)
-    #     result_writer = ResultWriter.remote(output_path)  # pylint: disable=no-member
-    #     results_refs = [run_fn.remote(job) for job in jobs[:1]]
-    #     wait_till_completion(results_refs, result_writer)
+    with ray.init() as context:
+        logging.info("Starting ray task: %s", context)
+        result_writer = ResultWriter.remote(output_path)  # pylint: disable=no-member
+        results_refs = [run_fn.remote(job) for job in jobs]
+        wait_till_completion(results_refs, result_writer)
 
 
 @ray.remote
@@ -626,12 +624,9 @@ def parse_args() -> Args:
     Parse task arguments.
     """
     arg_parser = argparse.ArgumentParser()
-    arg_parser.add_argument("--num-runs", type=int, default=1)
-    arg_parser.add_argument("--num-episodes", type=int, default=100)
-    arg_parser.add_argument("--output-path", default="/tmp")
-    # arg_parser.add_argument("--num-runs", type=int, required=True)
-    # arg_parser.add_argument("--num-episodes", type=int, required=True)
-    # arg_parser.add_argument("--output-path", required=True)
+    arg_parser.add_argument("--num-runs", type=int, required=True)
+    arg_parser.add_argument("--num-episodes", type=int, required=True)
+    arg_parser.add_argument("--output-path", required=True)
     known_args, _ = arg_parser.parse_known_args()
     return Args(**vars(known_args))
 
