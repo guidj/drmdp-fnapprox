@@ -1,12 +1,18 @@
 import abc
 import logging
 import random
+from enum import Enum
 from typing import Callable, List, Optional, Sequence, Tuple
 
 import gymnasium as gym
 import numpy as np
 
 from drmdp import mathutils, metrics, optsol
+
+
+class OptState(str, Enum):
+    UNSOLVED = "unsolved"
+    SOLVED = "solved"
 
 
 class RewardDelay(abc.ABC):
@@ -98,7 +104,7 @@ class ClippedPoissonDelay(RewardDelay):
 
 class DelayedRewardWrapper(gym.Wrapper):
     """
-    Emits rewards following a delayed aggregation scheduled.
+    Emits rewards following a delayed aggregation schedule.
     Rewards at the end of the reward window correspond
     to the sum of rewards in the window.
     In the remaining steps, no reward is emitted (`None`).
@@ -241,6 +247,7 @@ class LeastLfaMissingWrapper(gym.Wrapper):
             reward = np.dot(feats, self.weights)
             # reset for the next example
             self._segment_features = np.zeros(shape=(self.mdim))
+            est_state = OptState.SOLVED
         else:
             # Add example to buffer and
             # use aggregate reward.
@@ -253,6 +260,7 @@ class LeastLfaMissingWrapper(gym.Wrapper):
             else:
                 # zero impute until rewards are estimated
                 reward = 0.0
+            est_state = OptState.UNSOLVED
 
             if len(self.obs_buffer) >= self.estimation_sample_size:
                 # estimate rewards
@@ -260,7 +268,13 @@ class LeastLfaMissingWrapper(gym.Wrapper):
 
         # For the next step
         self._obs_feats = next_obs_feats
-        return next_obs, reward, term, trunc, info
+        return (
+            next_obs,
+            reward,
+            term,
+            trunc,
+            {"estimator": {"state": est_state}, **info},
+        )
 
     def reset(self, *, seed=None, options=None):
         obs, info = super().reset(seed=seed, options=options)
@@ -398,11 +412,13 @@ class LeastBayesLfaMissingWrapper(gym.Wrapper):
             if self.use_bias:
                 feats = np.concatenate([feats, np.array([1.0])])
             reward = np.dot(feats, self.mv_lst.mean)
+            est_state = OptState.SOLVED
         else:
             # zero impute until rewards are estimated
             if info["segment_step"] != info["delay"] - 1:
                 reward = 0.0
             # else, use aggregate reward
+            est_state = OptState.UNSOLVED
 
         if term or trunc:
             # Update estimate
@@ -416,7 +432,13 @@ class LeastBayesLfaMissingWrapper(gym.Wrapper):
 
         # For the next step
         self._obs_feats = next_obs_feats
-        return next_obs, reward, term, trunc, info
+        return (
+            next_obs,
+            reward,
+            term,
+            trunc,
+            {"estimator": {"state": est_state}, **info},
+        )
 
     def reset(self, *, seed=None, options=None):
         obs, info = super().reset(seed=seed, options=options)
@@ -549,6 +571,7 @@ class ConvexSolverMissingWrapper(gym.Wrapper):
             reward = np.dot(feats, self.weights)
             # reset for the next example
             self._segment_features = np.zeros(shape=(self.mdim))
+            est_state = OptState.SOLVED
         else:
             # Add example to buffer and
             # use aggregate reward.
@@ -562,6 +585,7 @@ class ConvexSolverMissingWrapper(gym.Wrapper):
                 # zero impute until rewards are estimated
                 reward = 0.0
 
+            est_state = OptState.UNSOLVED
             if term:
                 # The action is not relevant here,
                 # since every action leads to the same
@@ -581,7 +605,13 @@ class ConvexSolverMissingWrapper(gym.Wrapper):
 
         # For the next step
         self._obs_feats = next_obs_feats
-        return next_obs, reward, term, trunc, info
+        return (
+            next_obs,
+            reward,
+            term,
+            trunc,
+            {"estimator": {"state": est_state}, **info},
+        )
 
     def reset(self, *, seed=None, options=None):
         obs, info = super().reset(seed=seed, options=options)
