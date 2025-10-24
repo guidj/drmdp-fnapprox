@@ -8,14 +8,16 @@ import tempfile
 import uuid
 from typing import Any, List, Mapping, Sequence
 
+import gymnasium as gym
 import numpy as np
 import ray
 import tensorflow as tf
 
-from drmdp import core, envs, feats, logger, task
+from drmdp import core, envs, feats, logger, rewdelay, task
 
 MAX_STEPS = 200
 REWARD_DELAYS = (2, 4, 6, 8)
+REWARD_EVAL_SAMPLES = 250_000
 
 
 @dataclasses.dataclass(frozen=True)
@@ -81,6 +83,30 @@ class ResultWriter:
             )
             self.results = []
             self.partition += 1
+
+
+class RewardStoreWrapper(gym.Wrapper):
+    """
+    Keeps track of rewards.
+    """
+
+    def __init__(self, env, buffer_size: int):
+        super().__init__(env)
+        self.buffer_size = buffer_size
+        self.buffer = []
+        self.solver_state = {"solution_found_step": None}
+
+    def step(self, action):
+        obs, reward, term, trunc, info = super().step(action)
+        if len(self.buffer) < self.buffer_size:
+            self.buffer.append(reward)
+            if (
+                self.solver_state["solution_found_step"] is None
+                and "estimator" in info
+                and info["estimator"]["state"] == rewdelay.OptState.SOLVED
+            ):
+                self.solver_state["solution_found_step"] = len(self.buffer) - 1
+        return obs, reward, term, trunc, info
 
 
 def least_specs(sample_sizes: Sequence[int], feat_spec: Mapping[str, Any]):
@@ -387,11 +413,13 @@ def run_reward_estimation_study(specs, turns: int, num_episodes: int, output_pat
             jobs.append(job_spec)
     np.random.shuffle(jobs)  # type: ignore
 
-    with ray.init() as context:
-        logging.info("Starting ray task: %s", context)
-        result_writer = ResultWriter.remote(output_path)  # type: ignore
-        results_refs = [run_fn.remote(job) for job in jobs]
-        wait_till_completion(results_refs, result_writer)
+    reward_estimation(jobs[0])
+
+    # with ray.init() as context:
+    #     logging.info("Starting ray task: %s", context)
+    #     result_writer = ResultWriter.remote(output_path)  # pylint: disable=no-member
+    #     results_refs = [run_fn.remote(job) for job in jobs[:1]]
+    #     wait_till_completion(results_refs, result_writer)
 
 
 @ray.remote
@@ -438,7 +466,7 @@ def reward_estimation(job_spec: JobSpec):
     Runs a reward estimation experiment.
     """
     exp_instance = create_exp_instance(job_spec)
-    env, algorithm, monitor = setup_experiment(exp_instance)
+    env, algorithm, monitor, opt_logs = setup_experiment(exp_instance)
 
     logging.debug("Starting DRMDP Control Experiments: %s", exp_instance)
     results = algorithm.train(
@@ -476,7 +504,8 @@ def reward_estimation(job_spec: JobSpec):
 
     return {
         "returns": np.mean(returns).item(),
-        **meta
+        **opt_logs,
+        **meta,
     }
 
 
@@ -525,6 +554,7 @@ def setup_experiment(exp_instance: core.ExperimentInstance):
     """
     Sets up an experiment run given an instance.
     """
+    opt_logs = {}
     env_spec = exp_instance.experiment.env_spec
     problem_spec = exp_instance.experiment.problem_spec
     env = envs.make(
@@ -532,12 +562,19 @@ def setup_experiment(exp_instance: core.ExperimentInstance):
         **env_spec.args if env_spec.args else {},
     )
     env, monitor = task.monitor_wrapper(env)
+    # Save true reward, prior to any change.
+    env = RewardStoreWrapper(env, buffer_size=REWARD_EVAL_SAMPLES)
+    opt_logs["true_reward_buffer"] = env.buffer
     rew_delay = task.reward_delay_distribution(problem_spec.delay_config)
     env = task.delay_wrapper(env, rew_delay)
     env = task.reward_mapper(
         env,
         mapping_spec=problem_spec.reward_mapper,
     )
+    # Save rewards post transformation
+    env = RewardStoreWrapper(env, buffer_size=REWARD_EVAL_SAMPLES)
+    opt_logs["pred_reward_buffer"] = env.buffer
+    opt_logs["solver_state"] = env.solver_state
 
     # measure samples required to estimate rewards
     # random policy vs control
@@ -554,7 +591,7 @@ def setup_experiment(exp_instance: core.ExperimentInstance):
         policy_type=problem_spec.policy_type,
         base_seed=exp_instance.instance_id,
     )
-    return env, algorithm, monitor
+    return (env, algorithm, monitor, opt_logs)
 
 
 def write_records(output_path: str, records):
@@ -589,9 +626,12 @@ def parse_args() -> Args:
     Parse task arguments.
     """
     arg_parser = argparse.ArgumentParser()
-    arg_parser.add_argument("--num-runs", type=int, required=True)
-    arg_parser.add_argument("--num-episodes", type=int, required=True)
-    arg_parser.add_argument("--output-path", required=True)
+    arg_parser.add_argument("--num-runs", type=int, default=1)
+    arg_parser.add_argument("--num-episodes", type=int, default=100)
+    arg_parser.add_argument("--output-path", default="/tmp")
+    # arg_parser.add_argument("--num-runs", type=int, required=True)
+    # arg_parser.add_argument("--num-episodes", type=int, required=True)
+    # arg_parser.add_argument("--output-path", required=True)
     known_args, _ = arg_parser.parse_known_args()
     return Args(**vars(known_args))
 
