@@ -15,220 +15,7 @@ import tensorflow as tf
 from drmdp import core, envs, feats, logger, task
 
 MAX_STEPS = 200
-REWARD_DELAYS = (2, 4, 6)
-
-SPECS: Sequence[Mapping[str, Any]] = (
-    {
-        "name": "Finite-CC-PermExDc-v0",
-        "args": {
-            "reward_fn": "pos-enf",
-            "penalty_gamma": 1.0,
-            "constraint_violation_reward": 0.0,
-            "max_episode_steps": MAX_STEPS,
-        },
-        "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 4}}],
-        "rewest": {
-            "specs": {
-                "least-lfa": {
-                    "feats_spec": {"name": "scale", "args": None},
-                },
-                "cvlps": {
-                    "feats_spec": {"name": "scale", "args": None},
-                },
-            },
-            "sample_sizes": (8_000, 16000, 32_000, 64_000),
-        },
-        "epochs": 1,
-    },
-    {
-        "name": "Finite-CC-ShuntDc-v0",
-        "args": {
-            "reward_fn": "pos-enf",
-            "penalty_gamma": 1.0,
-            "constraint_violation_reward": 0.0,
-            "max_episode_steps": MAX_STEPS,
-        },
-        "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 4}}],
-        "rewest": {
-            "specs": {
-                "least-lfa": {
-                    "feats_spec": {"name": "scale", "args": None},
-                },
-                "cvlps": {
-                    "feats_spec": {"name": "scale", "args": None},
-                },
-            },
-            "sample_sizes": (8_000, 16000, 32_000, 64_000),
-        },
-        "epochs": 1,
-    },
-    {
-        "name": "Finite-SC-PermExDc-v0",
-        "args": {
-            "reward_fn": "pos-enf",
-            "penalty_gamma": 1.0,
-            "constraint_violation_reward": 0.0,
-            "max_episode_steps": MAX_STEPS,
-        },
-        "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 3}}],
-        "rewest": {
-            "specs": {
-                "least-lfa": {
-                    "feats_spec": {"name": "scale", "args": None},
-                },
-                "cvlps": {
-                    "feats_spec": {"name": "scale", "args": None},
-                },
-            },
-            "sample_sizes": (8_000, 16000, 32_000, 64_000),
-        },
-        "epochs": 1,
-    },
-    {
-        "name": "Finite-SC-ShuntDc-v0",
-        "args": {
-            "reward_fn": "pos-enf",
-            "penalty_gamma": 1.0,
-            "constraint_violation_reward": 0.0,
-            "max_episode_steps": MAX_STEPS,
-        },
-        "feats_specs": [{"name": "scale", "args": None}],
-        "rewest": {
-            "specs": {
-                "least-lfa": {
-                    "feats_spec": {"name": "scale", "args": None},
-                },
-                "cvlps": {
-                    "feats_spec": {"name": "scale", "args": None},
-                },
-            },
-            "sample_sizes": (8_000, 16000, 32_000, 64_000),
-        },
-        "epochs": 1,
-    },
-    {
-        "name": "Finite-TC-PermExDc-v0",
-        "args": {
-            "reward_fn": "pos-enf",
-            "penalty_gamma": 1.0,
-            "constraint_violation_reward": 0.0,
-            "max_episode_steps": MAX_STEPS,
-        },
-        "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
-        "rewest": {
-            "specs": {
-                "least-lfa": {
-                    "feats_spec": {"name": "scale", "args": None},
-                },
-                "cvlps": {
-                    "feats_spec": {"name": "scale", "args": None},
-                },
-            },
-            "sample_sizes": (8_000, 16000, 32_000, 64_000),
-        },
-        "epochs": 1,
-    },
-    {
-        "name": "Finite-TC-ShuntDc-v0",
-        "args": {
-            "reward_fn": "pos-enf",
-            "penalty_gamma": 1.0,
-            "constraint_violation_reward": 0.0,
-            "max_episode_steps": MAX_STEPS,
-        },
-        "feats_specs": [{"name": "scale", "args": None}],
-        "rewest": {
-            "specs": {
-                "least-lfa": {
-                    "feats_spec": {"name": "scale", "args": None},
-                },
-                "cvlps": {
-                    "feats_spec": {"name": "scale", "args": None},
-                },
-            },
-            "sample_sizes": (8_000, 16_000, 32_000, 64_000),
-        },
-        "epochs": 1,
-    },
-    {
-        "name": "RedGreen-v0",
-        "args": None,
-        "feats_specs": [
-            {"name": "tiles", "args": {"tiling_dim": 6}},
-        ],
-        "rewest": {
-            "specs": {
-                "least-lfa": {
-                    "feats_spec": {"name": "tiles", "args": {"tiling_dim": 6}},
-                },
-                "cvlps": {
-                    "feats_spec": {"name": "tiles", "args": {"tiling_dim": 6}},
-                },
-            },
-            "sample_sizes": (100, 200, 400, 800),
-        },
-        "epochs": 100,
-    },
-    {
-        "name": "IceWorld-v0",
-        "args": None,
-        "feats_specs": [
-            {"name": "tiles", "args": {"tiling_dim": 6}},
-        ],
-        "rewest": {
-            "specs": {
-                "least-lfa": {
-                    "feats_spec": {"name": "tiles", "args": {"tiling_dim": 6}},
-                },
-                "cvlps": {
-                    "feats_spec": {"name": "tiles", "args": {"tiling_dim": 6}},
-                },
-            },
-            "sample_sizes": (100, 200, 400, 800),
-        },
-        "epochs": 100,
-    },
-    {
-        "name": "MountainCar-v0",
-        "args": {
-            "max_episode_steps": MAX_STEPS,
-        },
-        "feats_specs": [
-            {"name": "tiles", "args": {"tiling_dim": 6}},
-        ],
-        "rewest": {
-            "specs": {
-                "least-lfa": {
-                    "feats_spec": {"name": "tiles", "args": {"tiling_dim": 6}},
-                },
-                "cvlps": {
-                    "feats_spec": {"name": "tiles", "args": {"tiling_dim": 6}},
-                },
-            },
-            "sample_sizes": (1_000, 2_000, 4_000, 8_000),
-        },
-        "epochs": 10,
-    },
-    {
-        "name": "GridWorld-v0",
-        "args": {"max_episode_steps": 2500},
-        "feats_specs": [
-            {"name": "tiles", "args": {"tiling_dim": 8}},
-        ],
-        "rewest": {
-            "specs": {
-                "least-lfa": {
-                    "feats_spec": {"name": "tiles", "args": {"tiling_dim": 8}},
-                },
-                "cvlps": {
-                    "feats_spec": {"name": "tiles", "args": {"tiling_dim": 8}},
-                },
-            },
-            "sample_sizes": (1_000, 2_000, 4_000, 8_000),
-        },
-        "epochs": 10,
-    },
-)
+REWARD_DELAYS = (2, 4, 6, 8)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -251,9 +38,8 @@ class JobSpec:
     env_name: str
     env_args: Mapping[str, Any]
     control_feats_spec: Mapping[str, Any]
-    rewest_feats_spec: Mapping[str, Any]
     rewest_method: str
-    rewest_sample_size: int
+    rewest_args: Mapping[str, Any]
     reward_delay: int
     num_episodes: int
     use_bias: bool
@@ -297,6 +83,285 @@ class ResultWriter:
             self.partition += 1
 
 
+def least_specs(sample_sizes: Sequence[int], feat_spec: Mapping[str, Any]):
+    """
+    Least squares estimatation specs.
+    """
+    return [
+        {
+            "name": "least-lfa",
+            "args": {
+                "estimation_sample_size": sample_size,
+                "feats_spec": feat_spec,
+            },
+        }
+        for sample_size in sample_sizes
+    ]
+
+
+def least_bayes_specs(
+    init_update_episodes: Sequence[int], feat_spec: Mapping[str, Any]
+):
+    """
+    Least squares estimatation specs.
+    """
+    return [
+        {
+            "name": "least-bayes-lfa",
+            "args": {
+                "init_update_episodes": init_update_episode,
+                "mode": "double",
+                "feats_spec": feat_spec,
+            },
+        }
+        for init_update_episode in init_update_episodes
+    ]
+
+
+def cvlps_specs(sample_sizes: Sequence[int], feat_spec: Mapping[str, Any]):
+    """
+    Least squares estimatation specs.
+    """
+    return [
+        {
+            "name": "cvlps",
+            "args": {
+                "estimation_sample_size": sample_size,
+                "feats_spec": feat_spec,
+            },
+        }
+        for sample_size in sample_sizes
+    ]
+
+
+def experiment_specs() -> Sequence[Mapping[str, Any]]:
+    """
+    Returns experiments configurations.
+    """
+    return (
+        {
+            "name": "Finite-CC-PermExDc-v0",
+            "args": {
+                "reward_fn": "pos-enf",
+                "penalty_gamma": 1.0,
+                "constraint_violation_reward": 0.0,
+                "max_episode_steps": MAX_STEPS,
+            },
+            "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 4}}],
+            "rewest": least_specs(
+                sample_sizes=(100, 200, 400, 800),
+                feat_spec={"name": "scale", "args": None},
+            )
+            + cvlps_specs(
+                sample_sizes=(100, 200, 400, 800),
+                feat_spec={"name": "scale", "args": None},
+            )
+            + least_bayes_specs(
+                init_update_episodes=(10, 25, 50, 100),
+                feat_spec={"name": "scale", "args": None},
+            ),
+            "epochs": 1,
+        },
+        {
+            "name": "Finite-CC-ShuntDc-v0",
+            "args": {
+                "reward_fn": "pos-enf",
+                "penalty_gamma": 1.0,
+                "constraint_violation_reward": 0.0,
+                "max_episode_steps": MAX_STEPS,
+            },
+            "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 4}}],
+            "rewest": least_specs(
+                sample_sizes=(100, 200, 400, 800),
+                feat_spec={"name": "scale", "args": None},
+            )
+            + cvlps_specs(
+                sample_sizes=(100, 200, 400, 800),
+                feat_spec={"name": "scale", "args": None},
+            )
+            + least_bayes_specs(
+                init_update_episodes=(10, 25, 50, 100),
+                feat_spec={"name": "scale", "args": None},
+            ),
+            "epochs": 1,
+        },
+        {
+            "name": "Finite-SC-PermExDc-v0",
+            "args": {
+                "reward_fn": "pos-enf",
+                "penalty_gamma": 1.0,
+                "constraint_violation_reward": 0.0,
+                "max_episode_steps": MAX_STEPS,
+            },
+            "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 3}}],
+            "rewest": least_specs(
+                sample_sizes=(100, 200, 400, 800),
+                feat_spec={"name": "scale", "args": None},
+            )
+            + cvlps_specs(
+                sample_sizes=(100, 200, 400, 800),
+                feat_spec={"name": "scale", "args": None},
+            )
+            + least_bayes_specs(
+                init_update_episodes=(10, 25, 50, 100),
+                feat_spec={"name": "scale", "args": None},
+            ),
+            "epochs": 1,
+        },
+        {
+            "name": "Finite-SC-ShuntDc-v0",
+            "args": {
+                "reward_fn": "pos-enf",
+                "penalty_gamma": 1.0,
+                "constraint_violation_reward": 0.0,
+                "max_episode_steps": MAX_STEPS,
+            },
+            "feats_specs": [{"name": "scale", "args": None}],
+            "rewest": least_specs(
+                sample_sizes=(100, 200, 400, 800),
+                feat_spec={"name": "scale", "args": None},
+            )
+            + cvlps_specs(
+                sample_sizes=(100, 200, 400, 800),
+                feat_spec={"name": "scale", "args": None},
+            )
+            + least_bayes_specs(
+                init_update_episodes=(10, 25, 50, 100),
+                feat_spec={"name": "scale", "args": None},
+            ),
+            "epochs": 1,
+        },
+        {
+            "name": "Finite-TC-PermExDc-v0",
+            "args": {
+                "reward_fn": "pos-enf",
+                "penalty_gamma": 1.0,
+                "constraint_violation_reward": 0.0,
+                "max_episode_steps": MAX_STEPS,
+            },
+            "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
+            "rewest": least_specs(
+                sample_sizes=(100, 200, 400, 800),
+                feat_spec={"name": "scale", "args": None},
+            )
+            + cvlps_specs(
+                sample_sizes=(100, 200, 400, 800),
+                feat_spec={"name": "scale", "args": None},
+            )
+            + least_bayes_specs(
+                init_update_episodes=(10, 25, 50, 100),
+                feat_spec={"name": "scale", "args": None},
+            ),
+            "epochs": 1,
+        },
+        {
+            "name": "Finite-TC-ShuntDc-v0",
+            "args": {
+                "reward_fn": "pos-enf",
+                "penalty_gamma": 1.0,
+                "constraint_violation_reward": 0.0,
+                "max_episode_steps": MAX_STEPS,
+            },
+            "feats_specs": [{"name": "scale", "args": None}],
+            "rewest": least_specs(
+                sample_sizes=(100, 200, 400, 800),
+                feat_spec={"name": "scale", "args": None},
+            )
+            + cvlps_specs(
+                sample_sizes=(100, 200, 400, 800),
+                feat_spec={"name": "scale", "args": None},
+            )
+            + least_bayes_specs(
+                init_update_episodes=(10, 25, 50, 100),
+                feat_spec={"name": "scale", "args": None},
+            ),
+            "epochs": 1,
+        },
+        {
+            "name": "RedGreen-v0",
+            "args": None,
+            "feats_specs": [
+                {"name": "tiles", "args": {"tiling_dim": 6}},
+            ],
+            "rewest": least_specs(
+                sample_sizes=(100, 200, 400, 800),
+                feat_spec={"name": "tiles", "args": {"tiling_dim": 6}},
+            )
+            + cvlps_specs(
+                sample_sizes=(100, 200, 400, 800),
+                feat_spec={"name": "tiles", "args": {"tiling_dim": 6}},
+            )
+            + least_bayes_specs(
+                init_update_episodes=(10, 25, 50, 100),
+                feat_spec={"name": "tiles", "args": {"tiling_dim": 6}},
+            ),
+            "epochs": 100,
+        },
+        {
+            "name": "IceWorld-v0",
+            "args": None,
+            "feats_specs": [
+                {"name": "tiles", "args": {"tiling_dim": 6}},
+            ],
+            "rewest": least_specs(
+                sample_sizes=(100, 200, 400, 800),
+                feat_spec={"name": "tiles", "args": {"tiling_dim": 6}},
+            )
+            + cvlps_specs(
+                sample_sizes=(100, 200, 400, 800),
+                feat_spec={"name": "tiles", "args": {"tiling_dim": 6}},
+            )
+            + least_bayes_specs(
+                init_update_episodes=(10, 25, 50, 100),
+                feat_spec={"name": "tiles", "args": {"tiling_dim": 6}},
+            ),
+            "epochs": 100,
+        },
+        {
+            "name": "MountainCar-v0",
+            "args": {
+                "max_episode_steps": MAX_STEPS,
+            },
+            "feats_specs": [
+                {"name": "tiles", "args": {"tiling_dim": 6}},
+            ],
+            "rewest": least_specs(
+                sample_sizes=(1_000, 2_000, 4_000, 8_000),
+                feat_spec={"name": "tiles", "args": {"tiling_dim": 6}},
+            )
+            + cvlps_specs(
+                sample_sizes=(1_000, 2_000, 4_000, 8_000),
+                feat_spec={"name": "tiles", "args": {"tiling_dim": 6}},
+            )
+            + least_bayes_specs(
+                init_update_episodes=(10, 25, 50, 100),
+                feat_spec={"name": "tiles", "args": {"tiling_dim": 6}},
+            ),
+            "epochs": 10,
+        },
+        {
+            "name": "GridWorld-v0",
+            "args": {"max_episode_steps": 2500},
+            "feats_specs": [
+                {"name": "tiles", "args": {"tiling_dim": 8}},
+            ],
+            "rewest": least_specs(
+                sample_sizes=(1_000, 2_000, 4_000, 8_000),
+                feat_spec={"name": "tiles", "args": {"tiling_dim": 8}},
+            )
+            + cvlps_specs(
+                sample_sizes=(1_000, 2_000, 4_000, 8_000),
+                feat_spec={"name": "tiles", "args": {"tiling_dim": 8}},
+            )
+            + least_bayes_specs(
+                init_update_episodes=(10, 25, 50, 100),
+                feat_spec={"name": "tiles", "args": {"tiling_dim": 8}},
+            ),
+            "epochs": 10,
+        },
+    )
+
+
 def run_reward_estimation_study(specs, turns: int, num_episodes: int, output_path: str):
     """
     Runs a reward estimation study.
@@ -304,20 +369,22 @@ def run_reward_estimation_study(specs, turns: int, num_episodes: int, output_pat
     configs = itertools.product(specs, REWARD_DELAYS, range(turns))
     jobs = []
     for spec, reward_delay, turn in configs:
-        for feats_spec, (rewest_method, rew_spec), sample_size in itertools.product(
-            spec["feats_specs"],
-            spec["rewest"]["specs"].items(),
-            spec["rewest"]["sample_sizes"],
+        for feats_spec, rewest_spec in itertools.product(
+            spec["feats_specs"], spec["rewest"]
         ):
+            # for feats_spec, (rewest_method, rew_spec), sample_size in itertools.product(
+            #     spec["feats_specs"],
+            #     spec["rewest"]["specs"].items(),
+            #     spec["rewest"]["sample_sizes"],
+            # ):
             job_spec = JobSpec(
                 env_name=spec["name"],
                 env_args=spec["args"],
                 control_feats_spec=feats_spec,
-                rewest_sample_size=sample_size,
                 num_episodes=num_episodes,
                 reward_delay=reward_delay,
-                rewest_method=rewest_method,
-                rewest_feats_spec=rew_spec["feats_spec"],
+                rewest_method=rewest_spec["name"],
+                rewest_args=rewest_spec["args"],
                 use_bias=False,
                 epochs=spec["epochs"],
                 turn=turn,
@@ -427,11 +494,7 @@ def create_exp_instance(job_spec: JobSpec):
         policy_type="markovian",
         reward_mapper={
             "name": job_spec.rewest_method,
-            "args": {
-                "estimation_sample_size": job_spec.rewest_sample_size,
-                "use_bias": job_spec.use_bias,
-                "feats_spec": job_spec.rewest_feats_spec,
-            },
+            "args": job_spec.rewest_args,
         },
         delay_config={"name": "fixed", "args": {"delay": job_spec.reward_delay}},
         epsilon=0.2,
@@ -513,7 +576,7 @@ def main():
     os.path.join(args.output_path)
 
     run_reward_estimation_study(
-        SPECS,
+        experiment_specs(),
         turns=args.num_runs,
         num_episodes=args.num_episodes,
         output_path=args.output_path,
@@ -527,14 +590,9 @@ def parse_args() -> Args:
     Parse task arguments.
     """
     arg_parser = argparse.ArgumentParser()
-    import uuid
-
-    arg_parser.add_argument("--num-runs", type=int, default=1)
-    arg_parser.add_argument("--num-episodes", type=int, default=1)
-    arg_parser.add_argument("--output-path", default=f"/tmp/runs/{str(uuid.uuid4())}")
-    # arg_parser.add_argument("--num-runs", type=int, required=True)
-    # arg_parser.add_argument("--num-episodes", type=int, required=True)
-    # arg_parser.add_argument("--output-path", required=True)
+    arg_parser.add_argument("--num-runs", type=int, required=True)
+    arg_parser.add_argument("--num-episodes", type=int, required=True)
+    arg_parser.add_argument("--output-path", required=True)
     known_args, _ = arg_parser.parse_known_args()
     return Args(**vars(known_args))
 
