@@ -222,12 +222,12 @@ def reward_mapper(env: gym.Env, mapping_spec: Mapping[str, Any]):
     if name == "identity":
         return env
     elif name == "zero-impute":
-        return rewdelay.ZeroImputeMissingWrapper(env)
+        return rewdelay.ZeroImputeMissingRewardWrapper(env)
     elif name == "least-lfa":
         m_args = dict(**args)
         feats_spec = m_args.pop("feats_spec")
         # local copy before pop
-        return rewdelay.LeastLfaMissingWrapper(
+        return rewdelay.LeastLfaGenerativeRewardWrapper(
             env=env,
             obs_encoding_wrapper=wrappers.wrap(
                 env, wrapper=feats_spec["name"], **(feats_spec["args"] or {})
@@ -238,7 +238,7 @@ def reward_mapper(env: gym.Env, mapping_spec: Mapping[str, Any]):
         m_args = dict(**args)
         feats_spec = m_args.pop("feats_spec")
         # local copy before pop
-        return rewdelay.BayesLeastLfaMissingWrapper(
+        return rewdelay.BayesLeastLfaGenerativeRewardWrapper(
             env=env,
             obs_encoding_wrapper=wrappers.wrap(
                 env, wrapper=feats_spec["name"], **(feats_spec["args"] or {})
@@ -249,7 +249,7 @@ def reward_mapper(env: gym.Env, mapping_spec: Mapping[str, Any]):
         m_args = dict(**args)
         feats_spec = m_args.pop("feats_spec")
         # local copy before pop
-        return rewdelay.ConvexSolverMissingWrapper(
+        return rewdelay.ConvexSolverGenerativeRewardWrapper(
             env=env,
             obs_encoding_wrapper=wrappers.wrap(
                 env, wrapper=feats_spec["name"], **(feats_spec["args"] or {})

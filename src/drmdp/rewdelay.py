@@ -169,7 +169,7 @@ class DelayedRewardWrapper(gym.Wrapper):
         }
 
 
-class ZeroImputeMissingWrapper(gym.RewardWrapper):
+class ZeroImputeMissingRewardWrapper(gym.RewardWrapper):
     """
     Missing rewards (`None`) are replaced with zero.
     """
@@ -186,7 +186,7 @@ class ZeroImputeMissingWrapper(gym.RewardWrapper):
         return reward
 
 
-class LeastLfaMissingWrapper(gym.Wrapper):
+class LeastLfaGenerativeRewardWrapper(gym.Wrapper):
     """
     The aggregate reward windows are used to
     estimate the underlying MDP rewards.
@@ -333,7 +333,7 @@ class LeastLfaMissingWrapper(gym.Wrapper):
             )
 
 
-class BayesLeastLfaMissingWrapper(gym.Wrapper):
+class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper):
     """
     The aggregate reward windows are used to
     estimate the underlying MDP rewards.
@@ -509,7 +509,7 @@ class BayesLeastLfaMissingWrapper(gym.Wrapper):
             self.rew_buffer = []
 
 
-class ConvexSolverMissingWrapper(gym.Wrapper):
+class ConvexSolverGenerativeRewardWrapper(gym.Wrapper):
     """
     The aggregate reward windows are used to
     estimate the underlying MDP rewards.
@@ -691,7 +691,7 @@ class ConvexSolverMissingWrapper(gym.Wrapper):
             )
 
 
-class BayesConvexSolverMissingWrapper(gym.Wrapper):
+class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
     """
     The aggregate reward windows are used to
     estimate the underlying MDP rewards.
