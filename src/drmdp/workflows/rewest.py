@@ -112,9 +112,6 @@ class RewardStoreWrapper(gym.Wrapper):
 def discrete_least_specs(
     attempt_estimation_episodes: Sequence[int], feat_spec: Mapping[str, Any]
 ):
-    """
-    Least squares estimatation specs.
-    """
     return [
         {
             "name": "discrete-least-lfa",
@@ -130,9 +127,6 @@ def discrete_least_specs(
 def least_specs(
     attempt_estimation_episodes: Sequence[int], feat_spec: Mapping[str, Any]
 ):
-    """
-    Least squares estimatation specs.
-    """
     return [
         {
             "name": "least-lfa",
@@ -148,9 +142,6 @@ def least_specs(
 def bayes_least_specs(
     init_attempt_estimation_episodes: Sequence[int], feat_spec: Mapping[str, Any]
 ):
-    """
-    Least squares estimatation specs.
-    """
     return [
         {
             "name": "bayes-least-lfa",
@@ -167,9 +158,6 @@ def bayes_least_specs(
 def cvlps_specs(
     attempt_estimation_episodes: Sequence[int], feat_spec: Mapping[str, Any]
 ):
-    """
-    Least squares estimatation specs.
-    """
     return [
         {
             "name": "cvlps",
@@ -185,9 +173,6 @@ def cvlps_specs(
 def bayes_cvlps_specs(
     init_attempt_estimation_episodes: Sequence[int], feat_spec: Mapping[str, Any]
 ):
-    """
-    Least squares estimatation specs.
-    """
     return [
         {
             "name": "bayes-cvlps",
@@ -216,7 +201,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 4}}],
             "rewest": discrete_least_specs(
                 attempt_estimation_episodes=(10, 50, 100),
-                feat_spec={"name": "scale", "args": None},
+                feat_spec={"name": "cluster-c", "args": {"num_clusters": 100}},
             )
             + least_specs(
                 attempt_estimation_episodes=(10, 50, 100),
@@ -247,7 +232,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 4}}],
             "rewest": discrete_least_specs(
                 attempt_estimation_episodes=(10, 50, 100),
-                feat_spec={"name": "scale", "args": None},
+                feat_spec={"name": "cluster-c", "args": {"num_clusters": 100}},
             )
             + least_specs(
                 attempt_estimation_episodes=(10, 50, 100),
@@ -278,7 +263,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 3}}],
             "rewest": discrete_least_specs(
                 attempt_estimation_episodes=(10, 50, 100),
-                feat_spec={"name": "scale", "args": None},
+                feat_spec={"name": "cluster-c", "args": {"num_clusters": 100}},
             )
             + least_specs(
                 attempt_estimation_episodes=(10, 50, 100),
@@ -309,7 +294,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             "feats_specs": [{"name": "scale", "args": None}],
             "rewest": discrete_least_specs(
                 attempt_estimation_episodes=(10, 50, 100),
-                feat_spec={"name": "scale", "args": None},
+                feat_spec={"name": "cluster-c", "args": {"num_clusters": 100}},
             )
             + least_specs(
                 attempt_estimation_episodes=(10, 50, 100),
@@ -340,7 +325,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
             "rewest": discrete_least_specs(
                 attempt_estimation_episodes=(10, 50, 100),
-                feat_spec={"name": "scale", "args": None},
+                feat_spec={"name": "cluster-c", "args": {"num_clusters": 100}},
             )
             + least_specs(
                 attempt_estimation_episodes=(10, 50, 100),
@@ -371,7 +356,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             "feats_specs": [{"name": "scale", "args": None}],
             "rewest": discrete_least_specs(
                 attempt_estimation_episodes=(10, 50, 100),
-                feat_spec={"name": "scale", "args": None},
+                feat_spec={"name": "cluster-c", "args": {"num_clusters": 100}},
             )
             + least_specs(
                 attempt_estimation_episodes=(10, 50, 100),
@@ -399,7 +384,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             ],
             "rewest": discrete_least_specs(
                 attempt_estimation_episodes=(10, 50, 100),
-                feat_spec={"name": "tiles", "args": {"tiling_dim": 6}},
+                feat_spec={"name": "cluster-c", "args": {"num_clusters": 100}},
             )
             + least_specs(
                 attempt_estimation_episodes=(10, 50, 100),
@@ -427,7 +412,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             ],
             "rewest": discrete_least_specs(
                 attempt_estimation_episodes=(10, 50, 100),
-                feat_spec={"name": "tiles", "args": {"tiling_dim": 6}},
+                feat_spec={"name": "cluster-c", "args": {"num_clusters": 100}},
             )
             + least_specs(
                 attempt_estimation_episodes=(10, 50, 100),
@@ -457,7 +442,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             ],
             "rewest": discrete_least_specs(
                 attempt_estimation_episodes=(10, 50, 100),
-                feat_spec={"name": "tiles", "args": {"tiling_dim": 6}},
+                feat_spec={"name": "cluster-c", "args": {"num_clusters": 100}},
             )
             + least_specs(
                 attempt_estimation_episodes=(10, 50, 100),
@@ -485,7 +470,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             ],
             "rewest": discrete_least_specs(
                 attempt_estimation_episodes=(10, 50, 100),
-                feat_spec={"name": "tiles", "args": {"tiling_dim": 8}},
+                feat_spec={"name": "cluster-c", "args": {"num_clusters": 100}},
             )
             + least_specs(
                 attempt_estimation_episodes=(10, 50, 100),
