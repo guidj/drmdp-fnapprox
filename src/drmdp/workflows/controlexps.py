@@ -1,14 +1,14 @@
 from typing import Any, Mapping, Sequence
 
 
-def least_specs(estimation_sample_size: int, feats_spec: Mapping[str, Any]):
+def least_specs(attempt_estimation_episode: int, feats_spec: Mapping[str, Any]):
     return (
         {
             "policy_type": "markovian",
             "reward_mapper": {
                 "name": "least-lfa",
                 "args": {
-                    "estimation_sample_size": estimation_sample_size,
+                    "attempt_estimation_episode": attempt_estimation_episode,
                     "feats_spec": feats_spec,
                     "use_bias": False,
                 },
@@ -26,7 +26,7 @@ def least_specs(estimation_sample_size: int, feats_spec: Mapping[str, Any]):
             "reward_mapper": {
                 "name": "least-lfa",
                 "args": {
-                    "estimation_sample_size": estimation_sample_size,
+                    "attempt_estimation_episode": attempt_estimation_episode,
                     "feats_spec": feats_spec,
                     "use_bias": False,
                 },
@@ -44,7 +44,7 @@ def least_specs(estimation_sample_size: int, feats_spec: Mapping[str, Any]):
             "reward_mapper": {
                 "name": "least-lfa",
                 "args": {
-                    "estimation_sample_size": estimation_sample_size,
+                    "attempt_estimation_episode": attempt_estimation_episode,
                     "feats_spec": feats_spec,
                     "use_bias": False,
                 },
@@ -62,7 +62,7 @@ def least_specs(estimation_sample_size: int, feats_spec: Mapping[str, Any]):
             "reward_mapper": {
                 "name": "least-lfa",
                 "args": {
-                    "estimation_sample_size": estimation_sample_size,
+                    "attempt_estimation_episode": attempt_estimation_episode,
                     "feats_spec": feats_spec,
                     "use_bias": False,
                 },
@@ -80,7 +80,7 @@ def least_specs(estimation_sample_size: int, feats_spec: Mapping[str, Any]):
             "reward_mapper": {
                 "name": "least-lfa",
                 "args": {
-                    "estimation_sample_size": estimation_sample_size,
+                    "attempt_estimation_episode": attempt_estimation_episode,
                     "feats_spec": feats_spec,
                     "use_bias": False,
                 },
@@ -98,7 +98,7 @@ def least_specs(estimation_sample_size: int, feats_spec: Mapping[str, Any]):
             "reward_mapper": {
                 "name": "least-lfa",
                 "args": {
-                    "estimation_sample_size": estimation_sample_size,
+                    "attempt_estimation_episode": attempt_estimation_episode,
                     "feats_spec": feats_spec,
                     "use_bias": False,
                 },
@@ -116,7 +116,7 @@ def least_specs(estimation_sample_size: int, feats_spec: Mapping[str, Any]):
             "reward_mapper": {
                 "name": "least-lfa",
                 "args": {
-                    "estimation_sample_size": estimation_sample_size,
+                    "attempt_estimation_episode": attempt_estimation_episode,
                     "feats_spec": feats_spec,
                     "use_bias": False,
                 },
@@ -134,7 +134,7 @@ def least_specs(estimation_sample_size: int, feats_spec: Mapping[str, Any]):
             "reward_mapper": {
                 "name": "least-lfa",
                 "args": {
-                    "estimation_sample_size": estimation_sample_size,
+                    "attempt_estimation_episode": attempt_estimation_episode,
                     "feats_spec": feats_spec,
                     "use_bias": False,
                 },
@@ -155,9 +155,9 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
         {
             "policy_type": "markovian",
             "reward_mapper": {
-                "name": "least-bayes-lfa",
+                "name": "bayes-least-lfa",
                 "args": {
-                    "init_update_episodes": 10,
+                    "init_attempt_estimation_episode": 10,
                     "feats_spec": feats_spec,
                     "use_bias": False,
                 },
@@ -173,9 +173,9 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
         {
             "policy_type": "markovian",
             "reward_mapper": {
-                "name": "least-bayes-lfa",
+                "name": "bayes-least-lfa",
                 "args": {
-                    "init_update_episodes": 10,
+                    "init_attempt_estimation_episode": 10,
                     "feats_spec": feats_spec,
                     "use_bias": False,
                 },
@@ -191,9 +191,9 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
         {
             "policy_type": "markovian",
             "reward_mapper": {
-                "name": "least-bayes-lfa",
+                "name": "bayes-least-lfa",
                 "args": {
-                    "init_update_episodes": 10,
+                    "init_attempt_estimation_episode": 10,
                     "feats_spec": feats_spec,
                     "use_bias": False,
                 },
@@ -209,9 +209,9 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
         {
             "policy_type": "markovian",
             "reward_mapper": {
-                "name": "least-bayes-lfa",
+                "name": "bayes-least-lfa",
                 "args": {
-                    "init_update_episodes": 10,
+                    "init_attempt_estimation_episode": 10,
                     "feats_spec": feats_spec,
                     "use_bias": False,
                 },
@@ -227,9 +227,9 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
         {
             "policy_type": "markovian",
             "reward_mapper": {
-                "name": "least-bayes-lfa",
+                "name": "bayes-least-lfa",
                 "args": {
-                    "init_update_episodes": 10,
+                    "init_attempt_estimation_episode": 10,
                     "feats_spec": feats_spec,
                     "use_bias": False,
                 },
@@ -245,9 +245,9 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
         {
             "policy_type": "markovian",
             "reward_mapper": {
-                "name": "least-bayes-lfa",
+                "name": "bayes-least-lfa",
                 "args": {
-                    "init_update_episodes": 10,
+                    "init_attempt_estimation_episode": 10,
                     "feats_spec": feats_spec,
                     "use_bias": False,
                 },
@@ -263,9 +263,9 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
         {
             "policy_type": "markovian",
             "reward_mapper": {
-                "name": "least-bayes-lfa",
+                "name": "bayes-least-lfa",
                 "args": {
-                    "init_update_episodes": 10,
+                    "init_attempt_estimation_episode": 10,
                     "feats_spec": feats_spec,
                     "use_bias": False,
                 },
@@ -281,9 +281,9 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
         {
             "policy_type": "markovian",
             "reward_mapper": {
-                "name": "least-bayes-lfa",
+                "name": "bayes-least-lfa",
                 "args": {
-                    "init_update_episodes": 10,
+                    "init_attempt_estimation_episode": 10,
                     "feats_spec": feats_spec,
                     "use_bias": False,
                 },
@@ -299,14 +299,14 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
     )
 
 
-def cvlps_specs(estimation_sample_size: int, feats_spec: Mapping[str, Any]):
+def cvlps_specs(attempt_estimation_episode: int, feats_spec: Mapping[str, Any]):
     return (
         {
             "policy_type": "markovian",
             "reward_mapper": {
                 "name": "cvlps",
                 "args": {
-                    "estimation_sample_size": estimation_sample_size,
+                    "attempt_estimation_episode": attempt_estimation_episode,
                     "feats_spec": feats_spec,
                     "use_bias": False,
                 },
@@ -324,7 +324,7 @@ def cvlps_specs(estimation_sample_size: int, feats_spec: Mapping[str, Any]):
             "reward_mapper": {
                 "name": "cvlps",
                 "args": {
-                    "estimation_sample_size": estimation_sample_size,
+                    "attempt_estimation_episode": attempt_estimation_episode,
                     "feats_spec": feats_spec,
                     "use_bias": False,
                 },
@@ -342,7 +342,7 @@ def cvlps_specs(estimation_sample_size: int, feats_spec: Mapping[str, Any]):
             "reward_mapper": {
                 "name": "cvlps",
                 "args": {
-                    "estimation_sample_size": estimation_sample_size,
+                    "attempt_estimation_episode": attempt_estimation_episode,
                     "feats_spec": feats_spec,
                     "use_bias": False,
                 },
@@ -360,7 +360,7 @@ def cvlps_specs(estimation_sample_size: int, feats_spec: Mapping[str, Any]):
             "reward_mapper": {
                 "name": "cvlps",
                 "args": {
-                    "estimation_sample_size": estimation_sample_size,
+                    "attempt_estimation_episode": attempt_estimation_episode,
                     "feats_spec": feats_spec,
                     "use_bias": False,
                 },
@@ -378,7 +378,7 @@ def cvlps_specs(estimation_sample_size: int, feats_spec: Mapping[str, Any]):
             "reward_mapper": {
                 "name": "cvlps",
                 "args": {
-                    "estimation_sample_size": estimation_sample_size,
+                    "attempt_estimation_episode": attempt_estimation_episode,
                     "feats_spec": feats_spec,
                     "use_bias": False,
                 },
@@ -396,7 +396,7 @@ def cvlps_specs(estimation_sample_size: int, feats_spec: Mapping[str, Any]):
             "reward_mapper": {
                 "name": "cvlps",
                 "args": {
-                    "estimation_sample_size": estimation_sample_size,
+                    "attempt_estimation_episode": attempt_estimation_episode,
                     "feats_spec": feats_spec,
                     "use_bias": False,
                 },
@@ -414,7 +414,7 @@ def cvlps_specs(estimation_sample_size: int, feats_spec: Mapping[str, Any]):
             "reward_mapper": {
                 "name": "cvlps",
                 "args": {
-                    "estimation_sample_size": estimation_sample_size,
+                    "attempt_estimation_episode": attempt_estimation_episode,
                     "feats_spec": feats_spec,
                     "use_bias": False,
                 },
@@ -432,7 +432,7 @@ def cvlps_specs(estimation_sample_size: int, feats_spec: Mapping[str, Any]):
             "reward_mapper": {
                 "name": "cvlps",
                 "args": {
-                    "estimation_sample_size": estimation_sample_size,
+                    "attempt_estimation_episode": attempt_estimation_episode,
                     "feats_spec": feats_spec,
                     "use_bias": False,
                 },
@@ -718,9 +718,9 @@ SPECS: Sequence[Mapping[str, Any]] = (
         },
         "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 4}}],
         "problem_specs": COMMON_PROBLEM_SPECS
-        + least_specs(10_000, feats_spec={"name": "scale", "args": None})
+        + least_specs(2000, feats_spec={"name": "scale", "args": None})
         + bayes_least_specs(feats_spec={"name": "scale", "args": None})
-        + cvlps_specs(10_000, feats_spec={"name": "scale", "args": None}),
+        + cvlps_specs(2000, feats_spec={"name": "scale", "args": None}),
         "epochs": 1,
     },
     {
@@ -733,9 +733,9 @@ SPECS: Sequence[Mapping[str, Any]] = (
         },
         "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
         "problem_specs": COMMON_PROBLEM_SPECS
-        + least_specs(10_000, {"name": "scale", "args": None})
+        + least_specs(2000, {"name": "scale", "args": None})
         + bayes_least_specs(feats_spec={"name": "scale", "args": None})
-        + cvlps_specs(10_000, {"name": "scale", "args": None}),
+        + cvlps_specs(2000, {"name": "scale", "args": None}),
         "epochs": 1,
     },
     {
@@ -748,9 +748,9 @@ SPECS: Sequence[Mapping[str, Any]] = (
         },
         "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 3}}],
         "problem_specs": COMMON_PROBLEM_SPECS
-        + least_specs(10_000, {"name": "scale", "args": None})
+        + least_specs(2000, {"name": "scale", "args": None})
         + bayes_least_specs(feats_spec={"name": "scale", "args": None})
-        + cvlps_specs(10_000, {"name": "scale", "args": None}),
+        + cvlps_specs(2000, {"name": "scale", "args": None}),
         "epochs": 1,
     },
     {
@@ -763,9 +763,9 @@ SPECS: Sequence[Mapping[str, Any]] = (
         },
         "feats_specs": [{"name": "scale", "args": None}],
         "problem_specs": COMMON_PROBLEM_SPECS
-        + least_specs(10_000, {"name": "scale", "args": None})
+        + least_specs(2000, {"name": "scale", "args": None})
         + bayes_least_specs(feats_spec={"name": "scale", "args": None})
-        + cvlps_specs(10_000, {"name": "scale", "args": None}),
+        + cvlps_specs(2000, {"name": "scale", "args": None}),
         "epochs": 1,
     },
     {
@@ -778,9 +778,9 @@ SPECS: Sequence[Mapping[str, Any]] = (
         },
         "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
         "problem_specs": COMMON_PROBLEM_SPECS
-        + least_specs(10_000, {"name": "scale", "args": None})
+        + least_specs(2000, {"name": "scale", "args": None})
         + bayes_least_specs(feats_spec={"name": "scale", "args": None})
-        + cvlps_specs(10_000, {"name": "scale", "args": None}),
+        + cvlps_specs(2000, {"name": "scale", "args": None}),
         "epochs": 1,
     },
     {
