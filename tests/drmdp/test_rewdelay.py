@@ -77,7 +77,7 @@ def test_least_lfa_generative_reward_wrapper_step():
     np.testing.assert_array_equal(obs, np.array([-1, -1, -1]))
     assert info == {"delay": 2, "segment": 0, "segment_step": -1}
 
-    # First segment
+    # Ep 1, Ep Seg 1, Total Seg 1
     _, rew1, term, trunc, _ = wrapped.step(0)  # First step gets zero reward
     assert (rew1, term, trunc) == (0.0, False, False)
     _, rew2, term, trunc, _ = wrapped.step(1)  # Second step gets aggregated reward
@@ -85,13 +85,13 @@ def test_least_lfa_generative_reward_wrapper_step():
 
     wrapped.reset()
 
-    # Second segment
+    # Ep 2, Ep Seg 1, Total Seg 2
     _, rew3, term, trunc, _ = wrapped.step(0)
     assert (rew3, term, trunc) == (0.0, False, False)
     _, rew4, term, trunc, _ = wrapped.step(2)
     assert (rew4, term, trunc) == (2.0, True, False)
 
-    # After estimation_sample_size segments, should estimate rewards
+    # After `attempt_estimation_episode` segments, should estimate rewards
     obs_buffer = np.array(
         [
             [0.5, -0.5, 0.5, -0.5, 0.0, 0.0, 1.0, -1.0],
@@ -167,7 +167,7 @@ def test_convex_solver_generative_reward_wrapper_step():
     np.testing.assert_array_equal(obs, np.array([-1, -1, -1]))
     assert info == {"delay": 2, "segment": 0, "segment_step": -1}
 
-    # First segment
+    # Ep 1, Ep Seg 1, Total Seg 1
     _, rew1, term, trunc, _ = wrapped.step(0)  # First step gets zero reward
     assert (rew1, term, trunc) == (0.0, False, False)
     _, rew2, term, trunc, _ = wrapped.step(1)  # Second step gets aggregated reward
@@ -175,13 +175,13 @@ def test_convex_solver_generative_reward_wrapper_step():
 
     wrapped.reset()
 
-    # Second segment
+    # Ep 2, Ep Seg 1, Total Seg 2
     _, rew3, term, trunc, _ = wrapped.step(0)
     assert (rew3, term, trunc) == (0.0, False, False)
     _, rew4, term, trunc, _ = wrapped.step(2)
     assert (rew4, term, trunc) == (2.0, True, False)
 
-    # After estimation_sample_size segments, should estimate rewards
+    # After `attempt_estimation_episode` segments, should estimate rewards
     obs_buffer = np.array(
         [
             [0.5, -0.5, 0.5, -0.5, 0.0, 0.0, 1.0, -1.0],

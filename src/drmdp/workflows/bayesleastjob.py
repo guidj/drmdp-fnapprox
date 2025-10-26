@@ -12,14 +12,14 @@ MAX_STEPS = 200
 
 
 def bayes_least_specs(feats_spec: Mapping[str, Any]):
-    def specs(mode: str, init_update_episode: int):
+    def specs(mode: str, init_attempt_estimation_episodes: int):
         return (
             {
                 "policy_type": "markovian",
                 "reward_mapper": {
                     "name": "bayes-least-lfa",
                     "args": {
-                        "init_estimation_sample_size": init_update_episode,
+                        "init_attempt_estimation_episode": init_attempt_estimation_episodes,
                         "mode": mode,
                         "feats_spec": feats_spec,
                         "use_bias": False,
@@ -38,7 +38,7 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
                 "reward_mapper": {
                     "name": "bayes-least-lfa",
                     "args": {
-                        "init_estimation_sample_size": init_update_episode,
+                        "init_attempt_estimation_episode": init_attempt_estimation_episodes,
                         "mode": mode,
                         "feats_spec": feats_spec,
                         "use_bias": False,
@@ -57,7 +57,7 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
                 "reward_mapper": {
                     "name": "bayes-least-lfa",
                     "args": {
-                        "init_estimation_sample_size": init_update_episode,
+                        "init_attempt_estimation_episode": init_attempt_estimation_episodes,
                         "mode": mode,
                         "feats_spec": feats_spec,
                         "use_bias": False,
@@ -76,7 +76,7 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
                 "reward_mapper": {
                     "name": "bayes-least-lfa",
                     "args": {
-                        "init_estimation_sample_size": init_update_episode,
+                        "init_attempt_estimation_episode": init_attempt_estimation_episodes,
                         "mode": mode,
                         "feats_spec": feats_spec,
                         "use_bias": False,
@@ -95,7 +95,7 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
                 "reward_mapper": {
                     "name": "bayes-least-lfa",
                     "args": {
-                        "init_estimation_sample_size": init_update_episode,
+                        "init_attempt_estimation_episode": init_attempt_estimation_episodes,
                         "mode": mode,
                         "feats_spec": feats_spec,
                         "use_bias": False,
@@ -114,7 +114,7 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
                 "reward_mapper": {
                     "name": "bayes-least-lfa",
                     "args": {
-                        "init_estimation_sample_size": init_update_episode,
+                        "init_attempt_estimation_episode": init_attempt_estimation_episodes,
                         "mode": mode,
                         "feats_spec": feats_spec,
                         "use_bias": False,
@@ -133,7 +133,7 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
                 "reward_mapper": {
                     "name": "bayes-least-lfa",
                     "args": {
-                        "init_estimation_sample_size": init_update_episode,
+                        "init_attempt_estimation_episode": init_attempt_estimation_episodes,
                         "mode": mode,
                         "feats_spec": feats_spec,
                         "use_bias": False,
@@ -152,7 +152,7 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
                 "reward_mapper": {
                     "name": "bayes-least-lfa",
                     "args": {
-                        "init_estimation_sample_size": init_update_episode,
+                        "init_attempt_estimation_episode": init_attempt_estimation_episodes,
                         "mode": mode,
                         "feats_spec": feats_spec,
                         "use_bias": False,
@@ -169,9 +169,9 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
         )
 
     return (
-        specs(mode="double", init_update_episode=10)
-        + specs(mode="double", init_update_episode=50)
-        + specs(mode="double", init_update_episode=100)
+        specs(mode="double", init_attempt_estimation_episodes=10)
+        + specs(mode="double", init_attempt_estimation_episodes=50)
+        + specs(mode="double", init_attempt_estimation_episodes=100)
     )
 
 

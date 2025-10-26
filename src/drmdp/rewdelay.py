@@ -431,6 +431,7 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper):
             self.episodes += 1
             if self.episodes % self.update_episode == 0:
                 self.estimate_posterior()
+                # Schedule next update
                 if self.mode == self.DOUBLE:
                     self.update_episode *= 2
                 elif self.mode == self.INTERVAL:
@@ -599,24 +600,27 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper):
 
             est_state = OptState.UNSOLVED
 
+        # Add constraint for terminal state
+        # if there is no estimate.
+        if term and self.weights is None:
+            # The action is not relevant here,
+            # since every action leads to the same
+            # transition.
+            # But we represent every action for completeness.
+            for ts_action in range(self.obs_wrapper.action_space.n):
+                term_state = np.zeros(shape=(self.mdim))
+                ts_idx = ts_action * self.obs_dim
+                # To simplify the problem for the convex solver
+                # we encode the (S,A) - not S'
+                term_state[ts_idx : ts_idx + self.obs_dim] += next_obs_feats
+                self.terminal_states_buffer.append(term_state)
+
         if term or trunc:
             self.episodes += 1
             if (
                 self.weights is None
                 and self.episodes >= self.attempt_estimation_episode
             ):
-                # The action is not relevant here,
-                # since every action leads to the same
-                # transition.
-                # But we represent every action for completeness.
-                for ts_action in range(self.obs_wrapper.action_space.n):
-                    term_state = np.zeros(shape=(self.mdim))
-                    ts_idx = ts_action * self.obs_dim
-                    # To simplify the problem for the convex solver
-                    # we encode the (S,A) - not S'
-                    term_state[ts_idx : ts_idx + self.obs_dim] += next_obs_feats
-                    self.terminal_states_buffer.append(term_state)
-
                 # estimate rewards
                 self.estimate_rewards()
 
@@ -643,7 +647,11 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper):
         """
         matrix = np.stack(self.obs_buffer, dtype=np.float64)
         rewards = np.array(self.rew_buffer, dtype=np.float64)
-        term_states = np.stack(self.terminal_states_buffer, dtype=np.float64)
+        term_states = (
+            np.stack(self.terminal_states_buffer, dtype=np.float64)
+            if self.terminal_states_buffer
+            else []
+        )
         nexamples = rewards.shape[0]
         if self.use_bias:
             matrix = np.concatenate(
@@ -653,13 +661,14 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper):
                 ],
                 axis=1,
             )
-            term_states = np.concatenate(
-                [
-                    term_states,
-                    np.expand_dims(np.ones(shape=nexamples), axis=-1),
-                ],
-                axis=1,
-            )
+            if len(term_states) > 0:
+                term_states = np.concatenate(
+                    [
+                        term_states,
+                        np.expand_dims(np.ones(shape=len(term_states)), axis=-1),
+                    ],
+                    axis=1,
+                )
 
         try:
             # Construct the problem.
@@ -793,9 +802,9 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
             # else, use aggregate reward
             est_state = OptState.UNSOLVED
 
-        if term or trunc:
-            self.episodes += 1
-
+        # Add constraint for terminal state
+        # if there is no estimate (used for first estimate)
+        if term and self.mv_normal_rewards is None:
             # The action is not relevant here,
             # since every action leads to the same
             # transition.
@@ -807,6 +816,9 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
                 # we encode the (S,A) - not S'
                 term_state[ts_idx : ts_idx + self.obs_dim] += next_obs_feats
                 self.terminal_states_buffer.append(term_state)
+
+        if term or trunc:
+            self.episodes += 1
 
             if self.episodes % self.update_episode == 0:
                 self.estimate_posterior()
@@ -842,7 +854,11 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
         # estimate rewards
         matrix = np.stack(self.obs_buffer, np.float64)
         rewards = np.array(self.rew_buffer, np.float64)
-        term_states = np.array(self.terminal_states_buffer, np.float64)
+        term_states = (
+            np.stack(self.terminal_states_buffer, dtype=np.float64)
+            if self.terminal_states_buffer
+            else []
+        )
         nexamples = rewards.shape[0]
         if self.use_bias:
             matrix = np.concatenate(
@@ -852,13 +868,14 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
                 ],
                 axis=1,
             )
-            term_states = np.concatenate(
-                [
-                    term_states,
-                    np.expand_dims(np.ones(shape=nexamples), axis=-1),
-                ],
-                axis=1,
-            )
+            if len(term_states) > 0:
+                term_states = np.concatenate(
+                    [
+                        term_states,
+                        np.expand_dims(np.ones(shape=nexamples), axis=-1),
+                    ],
+                    axis=1,
+                )
 
         try:
             if self.mv_normal_rewards is None:
