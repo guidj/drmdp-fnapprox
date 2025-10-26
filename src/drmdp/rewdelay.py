@@ -11,6 +11,10 @@ from drmdp import mathutils, metrics, optsol
 
 
 class OptState(str, Enum):
+    """
+    Optimisation solver states.
+    """
+
     UNSOLVED = "unsolved"
     SOLVED = "solved"
 
@@ -184,6 +188,158 @@ class ZeroImputeMissingRewardWrapper(gym.RewardWrapper):
         if reward is None:
             return 0.0
         return reward
+
+
+class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper):
+    """
+    The aggregate reward windows are used to
+    estimate the underlying MDP rewards.
+
+    Once estimated, the approximate rewards are used.
+    Until then, the aggregate rewards are emitted when
+    presented, and zero is used otherwise.
+
+    Rewards are estimated with Least-Squares.
+    """
+
+    def __init__(
+        self,
+        env: gym.Env,
+        obs_encoding_wrapper: gym.ObservationWrapper,
+        attempt_estimation_episode: int,
+        use_bias: bool = False,
+    ):
+        super().__init__(env)
+        if not isinstance(obs_encoding_wrapper.observation_space, gym.spaces.Discrete):
+            raise ValueError(
+                f"obs_wrapper space must of type Discrete. Got: {type(obs_encoding_wrapper)}"
+            )
+        if not isinstance(obs_encoding_wrapper.action_space, gym.spaces.Discrete):
+            raise ValueError(
+                f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper)}"
+            )
+        self.obs_wrapper = obs_encoding_wrapper
+        self.attempt_estimation_episode = attempt_estimation_episode
+        self.episodes = 0
+        self.use_bias = use_bias
+        self.obs_buffer: List[np.ndarray] = []
+        self.rew_buffer: List[np.ndarray] = []
+
+        self.nstates = obs_encoding_wrapper.observation_space.n
+        self.nactions = obs_encoding_wrapper.action_space.n
+        # TODO: capture next state?
+        self.mdim = self.nstates * self.nactions
+        self.weights = None
+        self._obs_feats = None
+        self._segment_features = None
+        self.estimation_meta = {"use_bias": self.use_bias}
+        self.rng = np.random.default_rng()
+
+    def step(self, action):
+        next_obs, reward, term, trunc, info = super().step(action)
+        next_obs_feats = self.obs_wrapper.observation(next_obs)
+        # Add s to action-specific columns
+        # and s' to the last columns.
+        self._segment_features[self._obs_feats * self.nactions + action] += 1
+
+        if self.weights is not None:
+            # estimate
+            feats = self._segment_features
+            if self.use_bias:
+                feats = np.concatenate([feats, np.array([1.0])])
+            reward = np.dot(feats, self.weights)
+            # reset for the next example
+            self._segment_features = np.zeros(shape=(self.mdim))
+            est_state = OptState.SOLVED
+        else:
+            # Add example to buffer and
+            # use aggregate reward.
+            if info["segment_step"] == info["delay"] - 1:
+                self.obs_buffer.append(self._segment_features)
+                # aggregate reward
+                self.rew_buffer.append(reward)
+                # reset for the next segment
+                self._segment_features = np.zeros(shape=(self.mdim))
+            else:
+                # zero impute until rewards are estimated
+                reward = 0.0
+            est_state = OptState.UNSOLVED
+
+        if term or trunc:
+            self.episodes += 1
+            if (
+                self.weights is None
+                and self.episodes >= self.attempt_estimation_episode
+            ):
+                # estimate rewards
+                self.estimate_rewards()
+
+        # For the next step
+        self._obs_feats = next_obs_feats
+        return (
+            next_obs,
+            reward,
+            term,
+            trunc,
+            {"estimator": {"state": est_state}, **info},
+        )
+
+    def reset(self, *, seed=None, options=None):
+        obs, info = super().reset(seed=seed, options=options)
+        self._obs_feats = self.obs_wrapper.observation(obs)
+        # Init segment and step features array
+        self._segment_features = np.zeros(shape=(self.mdim))
+        return obs, info
+
+    def estimate_rewards(self):
+        """
+        Estimate rewards with lstsq.
+        """
+        matrix = np.stack(self.obs_buffer, dtype=np.float64)
+        rewards = np.array(self.rew_buffer, dtype=np.float64)
+        nexamples = rewards.shape[0]
+        if self.use_bias:
+            matrix = np.concatenate(
+                [
+                    matrix,
+                    np.expand_dims(np.ones(shape=nexamples), axis=-1),
+                ],
+                axis=1,
+            )
+        try:
+            self.weights = optsol.solve_least_squares(matrix=matrix, rhs=rewards)
+        except ValueError:
+            # drop latest 5% of samples
+            nexamples_drop = int(nexamples * 0.05)
+            indices = self.rng.choice(
+                np.arange(nexamples),
+                nexamples - nexamples_drop,
+                replace=False,
+            )
+            self.obs_buffer = np.asarray(self.obs_buffer)[indices].tolist()
+            self.rew_buffer = np.asarray(self.rew_buffer)[indices].tolist()
+            logging.info(
+                "%s - Failed estimation for %s. Dropping %d samples",
+                type(self).__name__,
+                self.env,
+                nexamples_drop,
+            )
+        else:
+            error = metrics.rmse(
+                v_pred=np.dot(matrix, self.weights), v_true=rewards, axis=0
+            )
+            self.estimation_meta["sample"] = {"size": nexamples}
+            self.estimation_meta["error"] = {"rmse": error}
+            self.estimation_meta["estimate"] = {
+                "weights": self.weights.tolist(),
+            }
+            logging.info(
+                "%s - Estimated rewards for %s. RMSE: %f; # Samples: %d",
+                type(self).__name__,
+                self.env,
+                error,
+                nexamples,
+            )
 
 
 class LeastLfaGenerativeRewardWrapper(gym.Wrapper):
@@ -884,7 +1040,7 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
                 # This is a posterior update,
                 # increment counter.
                 self.posterior_updates += 1
-            
+
             # Construct the problem.
             def constraint_fn(solution):
                 return [term_state @ solution == 0 for term_state in term_states]
@@ -903,7 +1059,7 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
                 "%s - Failed estimation for %s: \n%s",
                 type(self).__name__,
                 self.env,
-                err
+                err,
             )
         else:
             error = metrics.rmse(

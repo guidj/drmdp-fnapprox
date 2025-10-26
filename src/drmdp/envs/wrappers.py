@@ -3,7 +3,7 @@ from typing import Any, Dict, Hashable, Optional
 import gymnasium as gym
 import numpy as np
 from gymnasium.core import ObsType
-from sklearn import mixture, model_selection
+from sklearn import cluster, mixture, model_selection
 
 from drmdp import constants, dataproc, mathutils, tiles
 
@@ -58,6 +58,8 @@ class ScaleObsWrapper(gym.ObservationWrapper):
 class GaussianMixObsWrapper(gym.ObservationWrapper):
     def __init__(self, env, param_grid, sample_steps: int):
         super().__init__(env)
+        self.param_grid = param_grid
+        self.sample_steps = sample_steps
         buffer = dataproc.collection_traj_data(env, steps=sample_steps)
         self.grid_search = self.gm_proj(buffer, param_grid)
         self.estimator = self.grid_search.best_estimator_
@@ -85,6 +87,43 @@ class GaussianMixObsWrapper(gym.ObservationWrapper):
         # Apply to first N dimensions
         basis_probs_batch = self.estimator.predict_proba([observation])
         return basis_probs_batch[0]
+
+
+class ClusterCentroidObsWrapper(gym.ObservationWrapper):
+    """
+    Clusters the input space.
+    As such, maps each state into a centroid id.
+    Centroids are in the range [0, `num_clusters`).
+    """
+
+    def __init__(self, env: gym.Env, num_clusters: int, sample_steps: int):
+        super().__init__(env)
+        self.num_clusters = num_clusters
+        self.sample_steps = sample_steps
+        buffer = dataproc.collection_traj_data(env, steps=self.sample_steps)
+        env.observation_space.sample()
+        # To make centroids float64.
+        # Bypass KMeans issues with float32 centroids
+        # when calling `predict`
+        matrix = np.stack([tup[0] for tup in buffer], dtype=np.float64)
+        self.estimator = self.fit_clusters(matrix)
+        self.obs_dim = self.num_clusters
+        self.observation_space = gym.spaces.Discrete(self.num_clusters)
+
+    def fit_clusters(self, matrix):
+        """
+        Fit clusters.
+        """
+        clustering = cluster.KMeans(n_clusters=self.num_clusters, init="k-means++")
+        clustering.fit(matrix)
+        return clustering
+
+    def observation(self, observation: ObsType):
+        """
+        Returns cluster assignment.
+        """
+        clusters_batch = self.estimator.predict([observation])
+        return clusters_batch[0]
 
 
 class TilesObsWrapper(gym.ObservationWrapper):
@@ -125,7 +164,7 @@ def wrap(env: gym.Env, wrapper: Optional[str] = None, **kwargs):
     if wrapper is None:
         return env
     if wrapper == constants.RANDOM:
-        enc_size = kwargs.get("enc_size", constants.DEFAULT_PARAMS_GRID)
+        enc_size = kwargs["enc_size"]
         return RandomBinaryObsWrapper(env, enc_size=enc_size)
     if wrapper == constants.SCALE:
         return ScaleObsWrapper(env)
@@ -137,4 +176,10 @@ def wrap(env: gym.Env, wrapper: Optional[str] = None, **kwargs):
         tiling_dim = kwargs.get("tiling_dim", constants.DEFAULT_TILING_DIM)
         hash_dim = kwargs.get("hash_dim", constants.DEFAULT_HASH_DIM)
         return TilesObsWrapper(env, tiling_dim=tiling_dim, hash_dim=hash_dim)
+    if wrapper == constants.CLUSTER_CENTROID:
+        num_clusters = kwargs["num_clusters"]
+        steps = kwargs.get("steps", constants.DEFAULT_CLUSTER_STEPS)
+        return ClusterCentroidObsWrapper(
+            env, num_clusters=num_clusters, sample_steps=steps
+        )
     raise ValueError(f"Wrapper `{wrapper}` unknown")

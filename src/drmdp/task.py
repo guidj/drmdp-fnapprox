@@ -223,6 +223,16 @@ def reward_mapper(env: gym.Env, mapping_spec: Mapping[str, Any]):
         return env
     elif name == "zero-impute":
         return rewdelay.ZeroImputeMissingRewardWrapper(env)
+    elif name == "discrete-least-lfa":
+        m_args = dict(**args)
+        feats_spec = m_args.pop("feats_spec")
+        return rewdelay.DiscretisedLeastLfaGenerativeRewardWrapper(
+            env=env,
+            obs_encoding_wrapper=wrappers.wrap(
+                env, wrapper=feats_spec["name"], **(feats_spec["args"] or {})
+            ),
+            **m_args,
+        )
     elif name == "least-lfa":
         m_args = dict(**args)
         feats_spec = m_args.pop("feats_spec")
