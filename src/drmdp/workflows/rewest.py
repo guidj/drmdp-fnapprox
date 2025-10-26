@@ -215,15 +215,15 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             },
             "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 4}}],
             "rewest": discrete_least_specs(
-                attempt_estimation_episodes=(100, 200, 300),
+                attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "scale", "args": None},
             )
             + least_specs(
-                attempt_estimation_episodes=(100, 200, 300),
+                attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "scale", "args": None},
             )
             + cvlps_specs(
-                attempt_estimation_episodes=(100, 200, 300),
+                attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "scale", "args": None},
             )
             + bayes_least_specs(
@@ -246,15 +246,15 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             },
             "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 4}}],
             "rewest": discrete_least_specs(
-                attempt_estimation_episodes=(100, 200, 300),
+                attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "scale", "args": None},
             )
             + least_specs(
-                attempt_estimation_episodes=(100, 200, 300),
+                attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "scale", "args": None},
             )
             + cvlps_specs(
-                attempt_estimation_episodes=(100, 200, 300),
+                attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "scale", "args": None},
             )
             + bayes_least_specs(
@@ -277,15 +277,15 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             },
             "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 3}}],
             "rewest": discrete_least_specs(
-                attempt_estimation_episodes=(100, 200, 300),
+                attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "scale", "args": None},
             )
             + least_specs(
-                attempt_estimation_episodes=(100, 200, 300),
+                attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "scale", "args": None},
             )
             + cvlps_specs(
-                attempt_estimation_episodes=(100, 200, 300),
+                attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "scale", "args": None},
             )
             + bayes_least_specs(
@@ -308,15 +308,15 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             },
             "feats_specs": [{"name": "scale", "args": None}],
             "rewest": discrete_least_specs(
-                attempt_estimation_episodes=(100, 200, 300),
+                attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "scale", "args": None},
             )
             + least_specs(
-                attempt_estimation_episodes=(100, 200, 300),
+                attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "scale", "args": None},
             )
             + cvlps_specs(
-                attempt_estimation_episodes=(100, 200, 300),
+                attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "scale", "args": None},
             )
             + bayes_least_specs(
@@ -339,15 +339,15 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             },
             "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
             "rewest": discrete_least_specs(
-                attempt_estimation_episodes=(100, 200, 300),
+                attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "scale", "args": None},
             )
             + least_specs(
-                attempt_estimation_episodes=(100, 200, 300),
+                attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "scale", "args": None},
             )
             + cvlps_specs(
-                attempt_estimation_episodes=(100, 200, 300),
+                attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "scale", "args": None},
             )
             + bayes_least_specs(
@@ -370,15 +370,15 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             },
             "feats_specs": [{"name": "scale", "args": None}],
             "rewest": discrete_least_specs(
-                attempt_estimation_episodes=(100, 200, 300),
+                attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "scale", "args": None},
             )
             + least_specs(
-                attempt_estimation_episodes=(100, 200, 300),
+                attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "scale", "args": None},
             )
             + cvlps_specs(
-                attempt_estimation_episodes=(100, 200, 300),
+                attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "scale", "args": None},
             )
             + bayes_least_specs(
@@ -398,15 +398,15 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 {"name": "tiles", "args": {"tiling_dim": 6}},
             ],
             "rewest": discrete_least_specs(
-                attempt_estimation_episodes=(100, 200, 300),
+                attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "tiles", "args": {"tiling_dim": 6}},
             )
             + least_specs(
-                attempt_estimation_episodes=(100, 200, 300),
+                attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "tiles", "args": {"tiling_dim": 6}},
             )
             + cvlps_specs(
-                attempt_estimation_episodes=(100, 200, 300),
+                attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "tiles", "args": {"tiling_dim": 6}},
             )
             + bayes_least_specs(
@@ -426,15 +426,15 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 {"name": "tiles", "args": {"tiling_dim": 6}},
             ],
             "rewest": discrete_least_specs(
-                attempt_estimation_episodes=(100, 200, 300),
+                attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "tiles", "args": {"tiling_dim": 6}},
             )
             + least_specs(
-                attempt_estimation_episodes=(100, 200, 300),
+                attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "tiles", "args": {"tiling_dim": 6}},
             )
             + cvlps_specs(
-                attempt_estimation_episodes=(100, 200, 300),
+                attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "tiles", "args": {"tiling_dim": 6}},
             )
             + bayes_least_specs(
@@ -456,15 +456,15 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 {"name": "tiles", "args": {"tiling_dim": 6}},
             ],
             "rewest": discrete_least_specs(
-                attempt_estimation_episodes=(100, 200, 300),
+                attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "tiles", "args": {"tiling_dim": 6}},
             )
             + least_specs(
-                attempt_estimation_episodes=(100, 200, 300),
+                attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "tiles", "args": {"tiling_dim": 6}},
             )
             + cvlps_specs(
-                attempt_estimation_episodes=(100, 200, 300),
+                attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "tiles", "args": {"tiling_dim": 6}},
             )
             + bayes_least_specs(
@@ -484,15 +484,15 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 {"name": "tiles", "args": {"tiling_dim": 8}},
             ],
             "rewest": discrete_least_specs(
-                attempt_estimation_episodes=(100, 200, 300),
+                attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "tiles", "args": {"tiling_dim": 8}},
             )
             + least_specs(
-                attempt_estimation_episodes=(100, 200, 300),
+                attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "tiles", "args": {"tiling_dim": 8}},
             )
             + cvlps_specs(
-                attempt_estimation_episodes=(100, 200, 300),
+                attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "tiles", "args": {"tiling_dim": 8}},
             )
             + bayes_least_specs(
