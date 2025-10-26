@@ -234,7 +234,7 @@ def reward_mapper(env: gym.Env, mapping_spec: Mapping[str, Any]):
             ),
             **m_args,
         )
-    elif name == "least-bayes-lfa":
+    elif name == "bayes-least-lfa":
         m_args = dict(**args)
         feats_spec = m_args.pop("feats_spec")
         # local copy before pop
@@ -250,6 +250,17 @@ def reward_mapper(env: gym.Env, mapping_spec: Mapping[str, Any]):
         feats_spec = m_args.pop("feats_spec")
         # local copy before pop
         return rewdelay.ConvexSolverGenerativeRewardWrapper(
+            env=env,
+            obs_encoding_wrapper=wrappers.wrap(
+                env, wrapper=feats_spec["name"], **(feats_spec["args"] or {})
+            ),
+            **m_args,
+        )
+    elif name == "bayes-cvlps":
+        m_args = dict(**args)
+        feats_spec = m_args.pop("feats_spec")
+        # local copy before pop
+        return rewdelay.BayesConvexSolverGenerativeRewardWrapper(
             env=env,
             obs_encoding_wrapper=wrappers.wrap(
                 env, wrapper=feats_spec["name"], **(feats_spec["args"] or {})

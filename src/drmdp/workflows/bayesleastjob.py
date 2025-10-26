@@ -17,7 +17,7 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
             {
                 "policy_type": "markovian",
                 "reward_mapper": {
-                    "name": "least-bayes-lfa",
+                    "name": "bayes-least-lfa",
                     "args": {
                         "init_estimation_sample_size": init_update_episode,
                         "mode": mode,
@@ -36,7 +36,7 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
             {
                 "policy_type": "markovian",
                 "reward_mapper": {
-                    "name": "least-bayes-lfa",
+                    "name": "bayes-least-lfa",
                     "args": {
                         "init_estimation_sample_size": init_update_episode,
                         "mode": mode,
@@ -55,7 +55,7 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
             {
                 "policy_type": "markovian",
                 "reward_mapper": {
-                    "name": "least-bayes-lfa",
+                    "name": "bayes-least-lfa",
                     "args": {
                         "init_estimation_sample_size": init_update_episode,
                         "mode": mode,
@@ -74,7 +74,7 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
             {
                 "policy_type": "markovian",
                 "reward_mapper": {
-                    "name": "least-bayes-lfa",
+                    "name": "bayes-least-lfa",
                     "args": {
                         "init_estimation_sample_size": init_update_episode,
                         "mode": mode,
@@ -93,7 +93,7 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
             {
                 "policy_type": "markovian",
                 "reward_mapper": {
-                    "name": "least-bayes-lfa",
+                    "name": "bayes-least-lfa",
                     "args": {
                         "init_estimation_sample_size": init_update_episode,
                         "mode": mode,
@@ -112,7 +112,7 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
             {
                 "policy_type": "markovian",
                 "reward_mapper": {
-                    "name": "least-bayes-lfa",
+                    "name": "bayes-least-lfa",
                     "args": {
                         "init_estimation_sample_size": init_update_episode,
                         "mode": mode,
@@ -131,7 +131,7 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
             {
                 "policy_type": "markovian",
                 "reward_mapper": {
-                    "name": "least-bayes-lfa",
+                    "name": "bayes-least-lfa",
                     "args": {
                         "init_estimation_sample_size": init_update_episode,
                         "mode": mode,
@@ -150,7 +150,7 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
             {
                 "policy_type": "markovian",
                 "reward_mapper": {
-                    "name": "least-bayes-lfa",
+                    "name": "bayes-least-lfa",
                     "args": {
                         "init_estimation_sample_size": init_update_episode,
                         "mode": mode,
