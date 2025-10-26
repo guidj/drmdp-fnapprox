@@ -17,7 +17,7 @@ from drmdp import core, envs, feats, logger, rewdelay, task
 
 MAX_STEPS = 200
 REWARD_DELAYS = (2, 4, 6, 8)
-REWARD_EVAL_SAMPLES = 250_000
+REWARD_EVAL_SAMPLES = 25_000
 
 
 @dataclasses.dataclass(frozen=True)
@@ -589,7 +589,7 @@ def setup_experiment(exp_instance: core.ExperimentInstance):
         policy_type=problem_spec.policy_type,
         base_seed=exp_instance.instance_id,
     )
-    return (env, algorithm, monitor, opt_logs)
+    return env, algorithm, monitor, opt_logs
 
 
 def write_records(output_path: str, records):

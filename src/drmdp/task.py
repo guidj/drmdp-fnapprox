@@ -238,7 +238,7 @@ def reward_mapper(env: gym.Env, mapping_spec: Mapping[str, Any]):
         m_args = dict(**args)
         feats_spec = m_args.pop("feats_spec")
         # local copy before pop
-        return rewdelay.LeastBayesLfaMissingWrapper(
+        return rewdelay.BayesLeastLfaMissingWrapper(
             env=env,
             obs_encoding_wrapper=wrappers.wrap(
                 env, wrapper=feats_spec["name"], **(feats_spec["args"] or {})

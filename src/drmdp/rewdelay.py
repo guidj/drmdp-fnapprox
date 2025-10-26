@@ -333,7 +333,7 @@ class LeastLfaMissingWrapper(gym.Wrapper):
             )
 
 
-class LeastBayesLfaMissingWrapper(gym.Wrapper):
+class BayesLeastLfaMissingWrapper(gym.Wrapper):
     """
     The aggregate reward windows are used to
     estimate the underlying MDP rewards.
@@ -380,7 +380,7 @@ class LeastBayesLfaMissingWrapper(gym.Wrapper):
 
         self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
         self.mdim = self.obs_dim * obs_encoding_wrapper.action_space.n + self.obs_dim
-        self.mv_lst = None
+        self.mv_normal_rewards = None
         self._obs_feats = None
         self._segment_features = None
         self.estimation_meta = {"use_bias": self.use_bias}
@@ -406,12 +406,12 @@ class LeastBayesLfaMissingWrapper(gym.Wrapper):
             # reset for the next segment
             self._segment_features = np.zeros(shape=(self.mdim))
 
-        if self.mv_lst is not None:
+        if self.mv_normal_rewards is not None:
             # estimate
             feats = step_features
             if self.use_bias:
                 feats = np.concatenate([feats, np.array([1.0])])
-            reward = np.dot(feats, self.mv_lst.mean)
+            reward = np.dot(feats, self.mv_normal_rewards.mean)
             est_state = OptState.SOLVED
         else:
             # zero impute until rewards are estimated
@@ -467,14 +467,16 @@ class LeastBayesLfaMissingWrapper(gym.Wrapper):
             )
 
         try:
-            if self.mv_lst is None:
+            if self.mv_normal_rewards is None:
                 # Frequentist prior
-                self.mv_lst = optsol.MultivariateNormal.least_squares(
+                self.mv_normal_rewards = optsol.MultivariateNormal.least_squares(
                     matrix=matrix, rhs=rewards
                 )
             else:
-                self.mv_lst = optsol.MultivariateNormal.bayes_linear_regression(
-                    matrix=matrix, rhs=rewards, prior=self.mv_lst
+                self.mv_normal_rewards = (
+                    optsol.MultivariateNormal.bayes_linear_regression(
+                        matrix=matrix, rhs=rewards, prior=self.mv_normal_rewards
+                    )
                 )
 
         except ValueError:
@@ -485,12 +487,14 @@ class LeastBayesLfaMissingWrapper(gym.Wrapper):
             )
         else:
             error = metrics.rmse(
-                v_pred=np.dot(matrix, self.mv_lst.mean), v_true=rewards, axis=0
+                v_pred=np.dot(matrix, self.mv_normal_rewards.mean),
+                v_true=rewards,
+                axis=0,
             )
             self.estimation_meta["sample"] = {"size": rewards.shape[0]}
             self.estimation_meta["error"] = {"rmse": error}
             self.estimation_meta["estimate"] = {
-                "weights": self.mv_lst.mean.tolist(),
+                "weights": self.mv_normal_rewards.mean.tolist(),
             }
             logging.info(
                 "%s - Estimated rewards for %s. RMSE: %f; # Samples: %d",
@@ -542,7 +546,7 @@ class ConvexSolverMissingWrapper(gym.Wrapper):
         self.use_bias = use_bias
         self.obs_buffer: List[np.ndarray] = []
         self.rew_buffer: List[np.ndarray] = []
-        self.terminal_states: List[np.ndarray] = []
+        self.terminal_states_buffer: List[np.ndarray] = []
 
         self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
         self.mdim = self.obs_dim * self.obs_wrapper.action_space.n + self.obs_dim
@@ -597,7 +601,7 @@ class ConvexSolverMissingWrapper(gym.Wrapper):
                     # To simplify the problem for the convex solver
                     # we encode the (S,A) - not S'
                     term_state[ts_idx : ts_idx + self.obs_dim] += next_obs_feats
-                    self.terminal_states.append(term_state)
+                    self.terminal_states_buffer.append(term_state)
 
             if len(self.obs_buffer) >= self.estimation_sample_size:
                 # estimate rewards
@@ -624,9 +628,9 @@ class ConvexSolverMissingWrapper(gym.Wrapper):
         """
         Estimate rewards with lstsq.
         """
-        matrix = np.stack(self.obs_buffer)
-        rewards = np.array(self.rew_buffer)
-        term_states = np.array(self.terminal_states)
+        matrix = np.stack(self.obs_buffer, dtype=np.float64)
+        rewards = np.array(self.rew_buffer, dtype=np.float64)
+        term_states = np.stack(self.terminal_states_buffer, dtype=np.float64)
         if self.use_bias:
             matrix = np.concatenate(
                 [
@@ -648,7 +652,7 @@ class ConvexSolverMissingWrapper(gym.Wrapper):
             def constraint_fn(solution):
                 return [term_state @ solution == 0 for term_state in term_states]
 
-            self.weights = optsol.solve_cvp(
+            self.weights = optsol.solve_convex_least_squares(
                 matrix=matrix, rhs=rewards, constraint_fn=constraint_fn
             )
         except ValueError:
@@ -685,3 +689,214 @@ class ConvexSolverMissingWrapper(gym.Wrapper):
                 rewards.shape[0],
                 len(term_states),
             )
+
+
+class BayesConvexSolverMissingWrapper(gym.Wrapper):
+    """
+    The aggregate reward windows are used to
+    estimate the underlying MDP rewards.
+
+    Once estimated, the approximate rewards are used.
+    Until then, the aggregate rewards are emitted when
+    presented, and zero is used otherwise.
+
+    Rewards are estimated with Bayesian Least-Squares.
+    Rewards are first estimated after `init_update_episodes`.
+    After that, they are either updated following a doubling
+    schedule or at fixed intervals.
+    """
+
+    INTERVAL = "interval"
+    DOUBLE = "double"
+
+    def __init__(
+        self,
+        env: gym.Env,
+        obs_encoding_wrapper: gym.ObservationWrapper,
+        mode: str = DOUBLE,
+        init_update_episodes: int = 10,
+        use_bias: bool = False,
+    ):
+        super().__init__(env)
+        if not isinstance(obs_encoding_wrapper.observation_space, gym.spaces.Box):
+            raise ValueError(
+                f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper)}"
+            )
+        if not isinstance(obs_encoding_wrapper.action_space, gym.spaces.Discrete):
+            raise ValueError(
+                f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper)}"
+            )
+        if mode not in (self.INTERVAL, self.DOUBLE):
+            pass
+        self.obs_wrapper = obs_encoding_wrapper
+        self.use_bias = use_bias
+        self.mode = mode
+        self.init_update_episodes = init_update_episodes
+        self.update_episodes = init_update_episodes
+        self.obs_buffer: List[np.ndarray] = []
+        self.rew_buffer: List[np.ndarray] = []
+        self.terminal_states_buffer: List[np.ndarray] = []
+
+        self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
+        self.mdim = self.obs_dim * obs_encoding_wrapper.action_space.n + self.obs_dim
+        self.mv_normal_rewards = None
+        self._obs_feats = None
+        self._segment_features = None
+        self.estimation_meta = {"use_bias": self.use_bias}
+        self.episodes = 0
+
+    def step(self, action):
+        next_obs, reward, term, trunc, info = super().step(action)
+        next_obs_feats = self.obs_wrapper.observation(next_obs)
+        # Add s to action-specific columns
+        # and s' to the last columns.
+        step_features = np.zeros(shape=(self.mdim))
+        start_index = action * self.obs_dim
+        step_features[start_index : start_index + self.obs_dim] += self._obs_feats
+        step_features[-self.obs_dim :] += next_obs_feats
+        self._segment_features += step_features
+
+        # Add example to buffer and
+        # use aggregate reward.
+        if info["segment_step"] == info["delay"] - 1:
+            self.obs_buffer.append(self._segment_features)
+            # aggregate reward
+            self.rew_buffer.append(reward)
+            # reset for the next segment
+            self._segment_features = np.zeros(shape=(self.mdim))
+
+        if self.mv_normal_rewards is not None:
+            # estimate
+            feats = step_features
+            if self.use_bias:
+                feats = np.concatenate([feats, np.array([1.0])])
+            reward = np.dot(feats, self.mv_normal_rewards.mean)
+            est_state = OptState.SOLVED
+        else:
+            # zero impute until rewards are estimated
+            if info["segment_step"] != info["delay"] - 1:
+                reward = 0.0
+            # else, use aggregate reward
+            est_state = OptState.UNSOLVED
+
+        if term or trunc:
+            # Update estimate
+            self.episodes += 1
+            # The action is not relevant here,
+            # since every action leads to the same
+            # transition.
+            # But we represent every action for completeness.
+            for ts_action in range(self.obs_wrapper.action_space.n):
+                term_state = np.zeros(shape=(self.mdim))
+                ts_idx = ts_action * self.obs_dim
+                # To simplify the problem for the convex solver
+                # we encode the (S,A) - not S'
+                term_state[ts_idx : ts_idx + self.obs_dim] += next_obs_feats
+                self.terminal_states_buffer.append(term_state)
+
+            if self.episodes % self.update_episodes == 0:
+                self.estimate_posterior()
+                if self.mode == self.DOUBLE:
+                    self.update_episodes *= 2
+                elif self.mode == self.INTERVAL:
+                    pass
+
+        # For the next step
+        self._obs_feats = next_obs_feats
+        return (
+            next_obs,
+            reward,
+            term,
+            trunc,
+            {"estimator": {"state": est_state}, **info},
+        )
+
+    def reset(self, *, seed=None, options=None):
+        obs, info = super().reset(seed=seed, options=options)
+        self._obs_feats = self.obs_wrapper.observation(obs)
+        # Init segment and step features array
+        self._segment_features = np.zeros(shape=(self.mdim))
+        return obs, info
+
+    def estimate_posterior(self):
+        """
+        Estimate new posterior.
+        """
+        if len(self.obs_buffer) == 0:
+            return
+
+        # estimate rewards
+        matrix = np.stack(self.obs_buffer, np.float64)
+        rewards = np.array(self.rew_buffer, np.float64)
+        term_states = np.array(self.terminal_states_buffer, np.float64)
+        if self.use_bias:
+            matrix = np.concatenate(
+                [
+                    matrix,
+                    np.expand_dims(np.ones(shape=len(matrix)), axis=-1),
+                ],
+                axis=1,
+            )
+            term_states = np.concatenate(
+                [
+                    term_states,
+                    np.expand_dims(np.ones(shape=len(term_states)), axis=-1),
+                ],
+                axis=1,
+            )
+        if self.use_bias:
+            matrix = np.concatenate(
+                [
+                    matrix,
+                    np.expand_dims(np.ones(shape=len(self.obs_buffer)), axis=-1),
+                ],
+                axis=1,
+            )
+
+        try:
+            if self.mv_normal_rewards is None:
+                # Construct the problem.
+                def constraint_fn(solution):
+                    return [term_state @ solution == 0 for term_state in term_states]
+
+                # Frequentist prior
+                self.mv_normal_rewards = optsol.MultivariateNormal.convex_least_squares(
+                    matrix=matrix, rhs=rewards, constraint_fn=constraint_fn
+                )
+            else:
+                self.mv_normal_rewards = (
+                    optsol.MultivariateNormal.bayes_linear_regression(
+                        matrix=matrix, rhs=rewards, prior=self.mv_normal_rewards
+                    )
+                )
+
+        except ValueError:
+            logging.info(
+                "%s - Failed estimation for %s",
+                type(self).__name__,
+                self.env,
+            )
+        else:
+            error = metrics.rmse(
+                v_pred=np.dot(matrix, self.mv_normal_rewards.mean),
+                v_true=rewards,
+                axis=0,
+            )
+            self.estimation_meta["sample"] = {"size": rewards.shape[0]}
+            self.estimation_meta["error"] = {"rmse": error}
+            self.estimation_meta["estimate"] = {
+                "weights": self.mv_normal_rewards.mean.tolist(),
+                "constraints": len(term_states),
+            }
+            logging.info(
+                "%s - Estimated rewards for %s. RMSE: %f; # Samples: %d",
+                type(self).__name__,
+                self.env,
+                error,
+                rewards.shape[0],
+            )
+
+            # Clear buffers for next data
+            self.obs_buffer = []
+            self.rew_buffer = []
+            self.terminal_states_buffer = []

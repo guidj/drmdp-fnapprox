@@ -55,6 +55,38 @@ class MultivariateNormal:
         return MultivariateNormal(coeff, cov)
 
     @classmethod
+    def convex_least_squares(
+        cls,
+        matrix,
+        rhs,
+        constraint_fn: Callable[[cp.Variable], Sequence],
+        inverse: str = "pseudo",
+    ) -> Optional["MultivariateNormal"]:
+        """
+        Least-squares estimation: mean and covariance.
+        """
+        if inverse == "exact":
+            inverse_op = linalg.inv
+        elif inverse == "pseudo":
+            inverse_op = linalg.pinv
+        else:
+            raise ValueError(f"Unknown inverse: {inverse}")
+
+        coeff = solve_convex_least_squares(
+            matrix=matrix, rhs=rhs, constraint_fn=constraint_fn
+        )
+        try:
+            # Σᵦ = (Σᵦ^-1 + X'X)^-1 * σ²
+            # Sigma^2 is the variance of the error term
+            # Here, we assume sigma^2 = 1
+            cov = inverse_op(np.matmul(matrix.T, matrix))
+        except linalg.LinAlgError as err:
+            if "Singular matrix" in err.args[0]:
+                return None
+            raise err
+        return MultivariateNormal(coeff, cov)
+
+    @classmethod
     def bayes_linear_regression(
         cls, matrix, rhs, prior: "MultivariateNormal"
     ) -> Optional["MultivariateNormal"]:
@@ -192,6 +224,11 @@ def proj_obs_to_rwest_vec(buffer, sample_size: int):
 
 
 def solve_least_squares(matrix: np.ndarray, rhs: np.ndarray) -> np.ndarray:
+    """
+    Solves a least-squares problem Ax = b.
+    `A` is matrix.
+    `b` is rhs (right-hand side).
+    """
     try:
         solution, _, _, _ = np.linalg.lstsq(a=matrix, b=rhs, rcond=None)
         return solution  # type: ignore
@@ -206,7 +243,7 @@ def solve_rwe(env: gym.Env, num_steps: int, sample_size: int, delay: int):
     return buffer, solve_least_squares(Xd, yd)
 
 
-def solve_cvp(
+def solve_convex_least_squares(
     matrix: np.ndarray,
     rhs: np.ndarray,
     constraint_fn: Callable[[cp.Variable], Sequence],
