@@ -293,8 +293,8 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper):
         """
         Estimate rewards with lstsq.
         """
-        matrix = np.stack(self.obs_buffer)
-        rewards = np.array(self.rew_buffer)
+        matrix = np.stack(self.obs_buffer, dtype=np.float64)
+        rewards = np.array(self.rew_buffer, dtype=np.float64)
         nexamples = rewards.shape[0]
         if self.use_bias:
             matrix = np.concatenate(
@@ -383,12 +383,13 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper):
         self.init_attempt_estimation_episode = init_attempt_estimation_episode
         self.update_episode = init_attempt_estimation_episode
         self.episodes = 0
+        self.posterior_updates = 0
         self.obs_buffer: List[np.ndarray] = []
         self.rew_buffer: List[np.ndarray] = []
 
         self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
         self.mdim = self.obs_dim * obs_encoding_wrapper.action_space.n + self.obs_dim
-        self.mv_normal_rewards = None
+        self.mv_normal_rewards: Optional[optsol.MultivariateNormal] = None
         self._obs_feats = None
         self._segment_features = None
         self.estimation_meta = {"use_bias": self.use_bias}
@@ -430,7 +431,7 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper):
         if term or trunc:
             self.episodes += 1
             if self.episodes % self.update_episode == 0:
-                self.estimate_posterior()
+                self.estimate_rewards()
                 # Schedule next update
                 if self.mode == self.DOUBLE:
                     self.update_episode *= 2
@@ -454,7 +455,7 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper):
         self._segment_features = np.zeros(shape=(self.mdim))
         return obs, info
 
-    def estimate_posterior(self):
+    def estimate_rewards(self):
         """
         Estimate new posterior.
         """
@@ -486,6 +487,7 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper):
                         matrix=matrix, rhs=rewards, prior=self.mv_normal_rewards
                     )
                 )
+                self.posterior_updates += 1
 
         except ValueError:
             logging.info(
@@ -505,7 +507,8 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper):
                 "weights": self.mv_normal_rewards.mean.tolist(),
             }
             logging.info(
-                "%s - Estimated rewards for %s. RMSE: %f; # Samples: %d",
+                "%s - %s rewards for %s. RMSE: %f; # Samples: %d",
+                "Estimated" if self.posterior_updates == 0 else "Updated",
                 type(self).__name__,
                 self.env,
                 error,
@@ -757,13 +760,14 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
         self.init_attempt_estimation_episode = init_attempt_estimation_episode
         self.update_episode = init_attempt_estimation_episode
         self.episodes = 0
+        self.posterior_updates = 0
         self.obs_buffer: List[np.ndarray] = []
         self.rew_buffer: List[np.ndarray] = []
         self.terminal_states_buffer: List[np.ndarray] = []
 
         self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
         self.mdim = self.obs_dim * obs_encoding_wrapper.action_space.n + self.obs_dim
-        self.mv_normal_rewards = None
+        self.mv_normal_rewards: Optional[optsol.MultivariateNormal] = None
         self._obs_feats = None
         self._segment_features = None
         self.estimation_meta = {"use_bias": self.use_bias}
@@ -802,9 +806,8 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
             # else, use aggregate reward
             est_state = OptState.UNSOLVED
 
-        # Add constraint for terminal state
-        # if there is no estimate (used for first estimate)
-        if term and self.mv_normal_rewards is None:
+        # Add constraint for terminal state.
+        if term:
             # The action is not relevant here,
             # since every action leads to the same
             # transition.
@@ -819,9 +822,8 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
 
         if term or trunc:
             self.episodes += 1
-
             if self.episodes % self.update_episode == 0:
-                self.estimate_posterior()
+                self.estimate_rewards()
                 if self.mode == self.DOUBLE:
                     self.update_episode *= 2
                 elif self.mode == self.INTERVAL:
@@ -844,7 +846,7 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
         self._segment_features = np.zeros(shape=(self.mdim))
         return obs, info
 
-    def estimate_posterior(self):
+    def estimate_rewards(self):
         """
         Estimate new posterior.
         """
@@ -852,8 +854,8 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
             return
 
         # estimate rewards
-        matrix = np.stack(self.obs_buffer, np.float64)
-        rewards = np.array(self.rew_buffer, np.float64)
+        matrix = np.stack(self.obs_buffer, dtype=np.float64)
+        rewards = np.array(self.rew_buffer, dtype=np.float64)
         term_states = (
             np.stack(self.terminal_states_buffer, dtype=np.float64)
             if self.terminal_states_buffer
@@ -878,27 +880,30 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
                 )
 
         try:
-            if self.mv_normal_rewards is None:
-                # Construct the problem.
-                def constraint_fn(solution):
-                    return [term_state @ solution == 0 for term_state in term_states]
+            if self.mv_normal_rewards is not None:
+                # This is a posterior update,
+                # increment counter.
+                self.posterior_updates += 1
+            
+            # Construct the problem.
+            def constraint_fn(solution):
+                return [term_state @ solution == 0 for term_state in term_states]
 
-                # Frequentist prior
-                self.mv_normal_rewards = optsol.MultivariateNormal.convex_least_squares(
-                    matrix=matrix, rhs=rewards, constraint_fn=constraint_fn
-                )
-            else:
-                self.mv_normal_rewards = (
-                    optsol.MultivariateNormal.bayes_linear_regression(
-                        matrix=matrix, rhs=rewards, prior=self.mv_normal_rewards
-                    )
-                )
+            self.mv_normal_rewards = optsol.MultivariateNormal.convex_least_squares(
+                matrix=matrix,
+                rhs=rewards,
+                constraint_fn=constraint_fn,
+                warm_start_initial_guess=self.mv_normal_rewards.mean
+                if self.mv_normal_rewards
+                else None,
+            )
 
-        except ValueError:
+        except ValueError as err:
             logging.info(
-                "%s - Failed estimation for %s",
+                "%s - Failed estimation for %s: \n%s",
                 type(self).__name__,
                 self.env,
+                err
             )
         else:
             error = metrics.rmse(
@@ -913,11 +918,13 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
                 "constraints": len(term_states),
             }
             logging.info(
-                "%s - Estimated rewards for %s. RMSE: %f; # Samples: %d",
+                "%s - %s rewards for %s. RMSE: %f; # Samples: %d, # Constraints: %d",
+                "Estimated" if self.posterior_updates == 0 else "Updated",
                 type(self).__name__,
                 self.env,
                 error,
                 nexamples,
+                len(self.terminal_states_buffer),
             )
 
             # Clear buffers for next data

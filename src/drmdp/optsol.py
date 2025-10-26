@@ -60,6 +60,7 @@ class MultivariateNormal:
         matrix,
         rhs,
         constraint_fn: Callable[[cp.Variable], Sequence],
+        warm_start_initial_guess: Optional[np.ndarray] = None,
         inverse: str = "pseudo",
     ) -> Optional["MultivariateNormal"]:
         """
@@ -73,7 +74,10 @@ class MultivariateNormal:
             raise ValueError(f"Unknown inverse: {inverse}")
 
         coeff = solve_convex_least_squares(
-            matrix=matrix, rhs=rhs, constraint_fn=constraint_fn
+            matrix=matrix,
+            rhs=rhs,
+            constraint_fn=constraint_fn,
+            warm_start_initial_guess=warm_start_initial_guess,
         )
         try:
             # Σᵦ = (Σᵦ^-1 + X'X)^-1 * σ²
@@ -247,17 +251,18 @@ def solve_convex_least_squares(
     matrix: np.ndarray,
     rhs: np.ndarray,
     constraint_fn: Callable[[cp.Variable], Sequence],
+    warm_start_initial_guess: Optional[np.ndarray] = None,
 ) -> np.ndarray:
     """
     Solves Least Squares with convex optimisation,
     with added constraints.
     """
-    solution = cp.Variable(matrix.shape[-1])
+    solution = cp.Variable(matrix.shape[-1], value=warm_start_initial_guess)
     objective = cp.Minimize(cp.sum_squares(matrix @ solution - rhs))
     prob = cp.Problem(objective, constraint_fn(solution))
 
     try:
-        prob.solve()
+        prob.solve(warm_start=True)
         if prob.status == cp.OPTIMAL:
             return solution.value
         raise ValueError(f"No Solution. Status: {prob.status}; Sol: {solution.value}")
