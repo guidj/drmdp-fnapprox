@@ -343,7 +343,7 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper):
     presented, and zero is used otherwise.
 
     Rewards are estimated with Bayesian Least-Squares.
-    Rewards are first estimated after `init_update_episodes`.
+    Rewards are first estimated after `init_estimation_sample_size`.
     After that, they are either updated following a doubling
     schedule or at fixed intervals.
     """
@@ -356,7 +356,7 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper):
         env: gym.Env,
         obs_encoding_wrapper: gym.ObservationWrapper,
         mode: str = DOUBLE,
-        init_update_episodes: int = 10,
+        init_estimation_sample_size: int = 10,
         use_bias: bool = False,
     ):
         super().__init__(env)
@@ -373,8 +373,9 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper):
         self.obs_wrapper = obs_encoding_wrapper
         self.use_bias = use_bias
         self.mode = mode
-        self.init_update_episodes = init_update_episodes
-        self.update_episodes = init_update_episodes
+        self.init_estimation_sample_size = init_estimation_sample_size
+        self.update_sample_size = init_estimation_sample_size
+        self.cumulative_estimation_sample_size = 0
         self.obs_buffer: List[np.ndarray] = []
         self.rew_buffer: List[np.ndarray] = []
 
@@ -384,7 +385,6 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper):
         self._obs_feats = None
         self._segment_features = None
         self.estimation_meta = {"use_bias": self.use_bias}
-        self.episodes = 0
 
     def step(self, action):
         next_obs, reward, term, trunc, info = super().step(action)
@@ -401,34 +401,33 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper):
         # use aggregate reward.
         if info["segment_step"] == info["delay"] - 1:
             self.obs_buffer.append(self._segment_features)
-            # aggregate reward
+            # Aggregate reward
             self.rew_buffer.append(reward)
-            # reset for the next segment
+            # Reset for the next segment
             self._segment_features = np.zeros(shape=(self.mdim))
+            # Update cumulative sample count
+            self.cumulative_estimation_sample_size += 1
 
         if self.mv_normal_rewards is not None:
-            # estimate
+            # Estimate rewards
             feats = step_features
             if self.use_bias:
                 feats = np.concatenate([feats, np.array([1.0])])
             reward = np.dot(feats, self.mv_normal_rewards.mean)
             est_state = OptState.SOLVED
         else:
-            # zero impute until rewards are estimated
+            # Zero impute until rewards are estimated
             if info["segment_step"] != info["delay"] - 1:
                 reward = 0.0
             # else, use aggregate reward
             est_state = OptState.UNSOLVED
 
-        if term or trunc:
-            # Update estimate
-            self.episodes += 1
-            if self.episodes % self.update_episodes == 0:
-                self.estimate_posterior()
-                if self.mode == self.DOUBLE:
-                    self.update_episodes *= 2
-                elif self.mode == self.INTERVAL:
-                    pass
+        if self.cumulative_estimation_sample_size % self.update_sample_size == 0:
+            self.estimate_posterior()
+            if self.mode == self.DOUBLE:
+                self.update_sample_size *= 2
+            elif self.mode == self.INTERVAL:
+                pass
 
         # For the next step
         self._obs_feats = next_obs_feats
@@ -701,7 +700,7 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
     presented, and zero is used otherwise.
 
     Rewards are estimated with Bayesian Least-Squares.
-    Rewards are first estimated after `init_update_episodes`.
+    Rewards are first estimated after `init_estimation_sample_size`.
     After that, they are either updated following a doubling
     schedule or at fixed intervals.
     """
@@ -714,7 +713,7 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
         env: gym.Env,
         obs_encoding_wrapper: gym.ObservationWrapper,
         mode: str = DOUBLE,
-        init_update_episodes: int = 10,
+        init_estimation_sample_size: int = 10,
         use_bias: bool = False,
     ):
         super().__init__(env)
@@ -731,8 +730,9 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
         self.obs_wrapper = obs_encoding_wrapper
         self.use_bias = use_bias
         self.mode = mode
-        self.init_update_episodes = init_update_episodes
-        self.update_episodes = init_update_episodes
+        self.init_estimation_sample_size = init_estimation_sample_size
+        self.update_sample_size = init_estimation_sample_size
+        self.cumulative_estimation_sample_size = 0
         self.obs_buffer: List[np.ndarray] = []
         self.rew_buffer: List[np.ndarray] = []
         self.terminal_states_buffer: List[np.ndarray] = []
@@ -743,7 +743,6 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
         self._obs_feats = None
         self._segment_features = None
         self.estimation_meta = {"use_bias": self.use_bias}
-        self.episodes = 0
 
     def step(self, action):
         next_obs, reward, term, trunc, info = super().step(action)
@@ -764,6 +763,8 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
             self.rew_buffer.append(reward)
             # reset for the next segment
             self._segment_features = np.zeros(shape=(self.mdim))
+            # Update cumulative estimation sample count
+            self.cumulative_estimation_sample_size += 1
 
         if self.mv_normal_rewards is not None:
             # estimate
@@ -780,8 +781,6 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
             est_state = OptState.UNSOLVED
 
         if term or trunc:
-            # Update estimate
-            self.episodes += 1
             # The action is not relevant here,
             # since every action leads to the same
             # transition.
@@ -794,12 +793,12 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
                 term_state[ts_idx : ts_idx + self.obs_dim] += next_obs_feats
                 self.terminal_states_buffer.append(term_state)
 
-            if self.episodes % self.update_episodes == 0:
-                self.estimate_posterior()
-                if self.mode == self.DOUBLE:
-                    self.update_episodes *= 2
-                elif self.mode == self.INTERVAL:
-                    pass
+        if self.cumulative_estimation_sample_size % self.update_sample_size == 0:
+            self.estimate_posterior()
+            if self.mode == self.DOUBLE:
+                self.update_sample_size *= 2
+            elif self.mode == self.INTERVAL:
+                pass
 
         # For the next step
         self._obs_feats = next_obs_feats

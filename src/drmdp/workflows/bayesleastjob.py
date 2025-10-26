@@ -19,7 +19,7 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
                 "reward_mapper": {
                     "name": "least-bayes-lfa",
                     "args": {
-                        "init_update_episodes": init_update_episode,
+                        "init_estimation_sample_size": init_update_episode,
                         "mode": mode,
                         "feats_spec": feats_spec,
                         "use_bias": False,
@@ -38,7 +38,7 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
                 "reward_mapper": {
                     "name": "least-bayes-lfa",
                     "args": {
-                        "init_update_episodes": init_update_episode,
+                        "init_estimation_sample_size": init_update_episode,
                         "mode": mode,
                         "feats_spec": feats_spec,
                         "use_bias": False,
@@ -57,7 +57,7 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
                 "reward_mapper": {
                     "name": "least-bayes-lfa",
                     "args": {
-                        "init_update_episodes": init_update_episode,
+                        "init_estimation_sample_size": init_update_episode,
                         "mode": mode,
                         "feats_spec": feats_spec,
                         "use_bias": False,
@@ -76,7 +76,7 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
                 "reward_mapper": {
                     "name": "least-bayes-lfa",
                     "args": {
-                        "init_update_episodes": init_update_episode,
+                        "init_estimation_sample_size": init_update_episode,
                         "mode": mode,
                         "feats_spec": feats_spec,
                         "use_bias": False,
@@ -95,7 +95,7 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
                 "reward_mapper": {
                     "name": "least-bayes-lfa",
                     "args": {
-                        "init_update_episodes": init_update_episode,
+                        "init_estimation_sample_size": init_update_episode,
                         "mode": mode,
                         "feats_spec": feats_spec,
                         "use_bias": False,
@@ -114,7 +114,7 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
                 "reward_mapper": {
                     "name": "least-bayes-lfa",
                     "args": {
-                        "init_update_episodes": init_update_episode,
+                        "init_estimation_sample_size": init_update_episode,
                         "mode": mode,
                         "feats_spec": feats_spec,
                         "use_bias": False,
@@ -133,7 +133,7 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
                 "reward_mapper": {
                     "name": "least-bayes-lfa",
                     "args": {
-                        "init_update_episodes": init_update_episode,
+                        "init_estimation_sample_size": init_update_episode,
                         "mode": mode,
                         "feats_spec": feats_spec,
                         "use_bias": False,
@@ -152,7 +152,7 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
                 "reward_mapper": {
                     "name": "least-bayes-lfa",
                     "args": {
-                        "init_update_episodes": init_update_episode,
+                        "init_estimation_sample_size": init_update_episode,
                         "mode": mode,
                         "feats_spec": feats_spec,
                         "use_bias": False,

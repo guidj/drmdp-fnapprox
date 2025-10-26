@@ -126,7 +126,7 @@ def least_specs(sample_sizes: Sequence[int], feat_spec: Mapping[str, Any]):
 
 
 def least_bayes_specs(
-    init_update_episodes: Sequence[int], feat_spec: Mapping[str, Any]
+    init_estimation_sample_size: Sequence[int], feat_spec: Mapping[str, Any]
 ):
     """
     Least squares estimatation specs.
@@ -135,12 +135,12 @@ def least_bayes_specs(
         {
             "name": "least-bayes-lfa",
             "args": {
-                "init_update_episodes": init_update_episode,
+                "init_estimation_sample_size": init_update_episode,
                 "mode": "double",
                 "feats_spec": feat_spec,
             },
         }
-        for init_update_episode in init_update_episodes
+        for init_update_episode in init_estimation_sample_size
     ]
 
 
@@ -175,15 +175,15 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             },
             "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 4}}],
             "rewest": least_specs(
-                sample_sizes=(100, 200, 400, 800),
+                sample_sizes=(100, 200, 300),
                 feat_spec={"name": "scale", "args": None},
             )
             + cvlps_specs(
-                sample_sizes=(100, 200, 400, 800),
+                sample_sizes=(100, 200, 300),
                 feat_spec={"name": "scale", "args": None},
             )
             + least_bayes_specs(
-                init_update_episodes=(10, 25, 50, 100),
+                init_estimation_sample_size=(10, 20, 30),
                 feat_spec={"name": "scale", "args": None},
             ),
             "epochs": 1,
@@ -198,15 +198,15 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             },
             "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 4}}],
             "rewest": least_specs(
-                sample_sizes=(100, 200, 400, 800),
+                sample_sizes=(100, 200, 300),
                 feat_spec={"name": "scale", "args": None},
             )
             + cvlps_specs(
-                sample_sizes=(100, 200, 400, 800),
+                sample_sizes=(100, 200, 300),
                 feat_spec={"name": "scale", "args": None},
             )
             + least_bayes_specs(
-                init_update_episodes=(10, 25, 50, 100),
+                init_estimation_sample_size=(10, 20, 30),
                 feat_spec={"name": "scale", "args": None},
             ),
             "epochs": 1,
@@ -221,15 +221,15 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             },
             "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 3}}],
             "rewest": least_specs(
-                sample_sizes=(100, 200, 400, 800),
+                sample_sizes=(100, 200, 300),
                 feat_spec={"name": "scale", "args": None},
             )
             + cvlps_specs(
-                sample_sizes=(100, 200, 400, 800),
+                sample_sizes=(100, 200, 300),
                 feat_spec={"name": "scale", "args": None},
             )
             + least_bayes_specs(
-                init_update_episodes=(10, 25, 50, 100),
+                init_estimation_sample_size=(10, 20, 30),
                 feat_spec={"name": "scale", "args": None},
             ),
             "epochs": 1,
@@ -244,15 +244,15 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             },
             "feats_specs": [{"name": "scale", "args": None}],
             "rewest": least_specs(
-                sample_sizes=(100, 200, 400, 800),
+                sample_sizes=(100, 200, 300),
                 feat_spec={"name": "scale", "args": None},
             )
             + cvlps_specs(
-                sample_sizes=(100, 200, 400, 800),
+                sample_sizes=(100, 200, 300),
                 feat_spec={"name": "scale", "args": None},
             )
             + least_bayes_specs(
-                init_update_episodes=(10, 25, 50, 100),
+                init_estimation_sample_size=(10, 20, 30),
                 feat_spec={"name": "scale", "args": None},
             ),
             "epochs": 1,
@@ -267,15 +267,15 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             },
             "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
             "rewest": least_specs(
-                sample_sizes=(100, 200, 400, 800),
+                sample_sizes=(100, 200, 300),
                 feat_spec={"name": "scale", "args": None},
             )
             + cvlps_specs(
-                sample_sizes=(100, 200, 400, 800),
+                sample_sizes=(100, 200, 300),
                 feat_spec={"name": "scale", "args": None},
             )
             + least_bayes_specs(
-                init_update_episodes=(10, 25, 50, 100),
+                init_estimation_sample_size=(10, 20, 30),
                 feat_spec={"name": "scale", "args": None},
             ),
             "epochs": 1,
@@ -290,15 +290,15 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             },
             "feats_specs": [{"name": "scale", "args": None}],
             "rewest": least_specs(
-                sample_sizes=(100, 200, 400, 800),
+                sample_sizes=(100, 200, 300),
                 feat_spec={"name": "scale", "args": None},
             )
             + cvlps_specs(
-                sample_sizes=(100, 200, 400, 800),
+                sample_sizes=(100, 200, 300),
                 feat_spec={"name": "scale", "args": None},
             )
             + least_bayes_specs(
-                init_update_episodes=(10, 25, 50, 100),
+                init_estimation_sample_size=(10, 20, 30),
                 feat_spec={"name": "scale", "args": None},
             ),
             "epochs": 1,
@@ -310,15 +310,15 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 {"name": "tiles", "args": {"tiling_dim": 6}},
             ],
             "rewest": least_specs(
-                sample_sizes=(100, 200, 400, 800),
+                sample_sizes=(100, 200, 300),
                 feat_spec={"name": "tiles", "args": {"tiling_dim": 6}},
             )
             + cvlps_specs(
-                sample_sizes=(100, 200, 400, 800),
+                sample_sizes=(100, 200, 300),
                 feat_spec={"name": "tiles", "args": {"tiling_dim": 6}},
             )
             + least_bayes_specs(
-                init_update_episodes=(10, 25, 50, 100),
+                init_estimation_sample_size=(10, 20, 30),
                 feat_spec={"name": "tiles", "args": {"tiling_dim": 6}},
             ),
             "epochs": 100,
@@ -330,15 +330,15 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 {"name": "tiles", "args": {"tiling_dim": 6}},
             ],
             "rewest": least_specs(
-                sample_sizes=(100, 200, 400, 800),
+                sample_sizes=(100, 200, 300),
                 feat_spec={"name": "tiles", "args": {"tiling_dim": 6}},
             )
             + cvlps_specs(
-                sample_sizes=(100, 200, 400, 800),
+                sample_sizes=(100, 200, 300),
                 feat_spec={"name": "tiles", "args": {"tiling_dim": 6}},
             )
             + least_bayes_specs(
-                init_update_episodes=(10, 25, 50, 100),
+                init_estimation_sample_size=(10, 20, 30),
                 feat_spec={"name": "tiles", "args": {"tiling_dim": 6}},
             ),
             "epochs": 100,
@@ -352,15 +352,15 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 {"name": "tiles", "args": {"tiling_dim": 6}},
             ],
             "rewest": least_specs(
-                sample_sizes=(1_000, 2_000, 4_000, 8_000),
+                sample_sizes=(100, 200, 300),
                 feat_spec={"name": "tiles", "args": {"tiling_dim": 6}},
             )
             + cvlps_specs(
-                sample_sizes=(1_000, 2_000, 4_000, 8_000),
+                sample_sizes=(100, 200, 300),
                 feat_spec={"name": "tiles", "args": {"tiling_dim": 6}},
             )
             + least_bayes_specs(
-                init_update_episodes=(10, 25, 50, 100),
+                init_estimation_sample_size=(10, 20, 30),
                 feat_spec={"name": "tiles", "args": {"tiling_dim": 6}},
             ),
             "epochs": 10,
@@ -372,15 +372,15 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 {"name": "tiles", "args": {"tiling_dim": 8}},
             ],
             "rewest": least_specs(
-                sample_sizes=(1_000, 2_000, 4_000, 8_000),
+                sample_sizes=(100, 200, 300),
                 feat_spec={"name": "tiles", "args": {"tiling_dim": 8}},
             )
             + cvlps_specs(
-                sample_sizes=(1_000, 2_000, 4_000, 8_000),
+                sample_sizes=(100, 200, 300),
                 feat_spec={"name": "tiles", "args": {"tiling_dim": 8}},
             )
             + least_bayes_specs(
-                init_update_episodes=(10, 25, 50, 100),
+                init_estimation_sample_size=(10, 20, 30),
                 feat_spec={"name": "tiles", "args": {"tiling_dim": 8}},
             ),
             "epochs": 10,
