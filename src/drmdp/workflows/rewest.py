@@ -162,7 +162,7 @@ def cvlps_specs(
         {
             "name": "cvlps",
             "args": {
-                "attempt_estimation_episodes": attempt_estimation_episode,
+                "attempt_estimation_episode": attempt_estimation_episode,
                 "feats_spec": feat_spec,
             },
         }
