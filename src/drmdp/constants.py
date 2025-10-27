@@ -9,6 +9,7 @@ TILES = "tiles"
 SPLICED_TILES = "spliced-tiles"
 RANDOM = "random"
 CLUSTER_CENTROID = "cluster-c"
+FLAT_GRID_COORD = "flat-grid-coord"
 DEFAULT_PARAMS_GRID = {
     "n_components": range(4, 12),
     "covariance_type": ["spherical", "tied", "diag", "full"],

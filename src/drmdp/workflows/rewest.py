@@ -384,7 +384,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             ],
             "rewest": discrete_least_specs(
                 attempt_estimation_episodes=(10, 50, 100),
-                feat_spec={"name": "cluster-c", "args": {"num_clusters": 100}},
+                feat_spec={"name": "flat-grid-coord", "args": None},
             )
             + least_specs(
                 attempt_estimation_episodes=(10, 50, 100),
@@ -412,7 +412,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             ],
             "rewest": discrete_least_specs(
                 attempt_estimation_episodes=(10, 50, 100),
-                feat_spec={"name": "cluster-c", "args": {"num_clusters": 100}},
+                feat_spec={"name": "flat-grid-coord", "args": None},
             )
             + least_specs(
                 attempt_estimation_episodes=(10, 50, 100),
@@ -470,7 +470,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             ],
             "rewest": discrete_least_specs(
                 attempt_estimation_episodes=(10, 50, 100),
-                feat_spec={"name": "cluster-c", "args": {"num_clusters": 100}},
+                feat_spec={"name": "flat-grid-coord", "args": None},
             )
             + least_specs(
                 attempt_estimation_episodes=(10, 50, 100),

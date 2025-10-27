@@ -101,7 +101,10 @@ class ClusterCentroidObsWrapper(gym.ObservationWrapper):
         self.num_clusters = num_clusters
         self.sample_steps = sample_steps
         buffer = dataproc.collection_traj_data(env, steps=self.sample_steps)
-        env.observation_space.sample()
+        if not isinstance(env.observation_space, gym.spaces.Box):
+            raise ValueError(
+                f"Source `env` observation space must be of type `Box`. Got {type(env.observation_space)}"
+            )
         # To make centroids float64.
         # Bypass KMeans issues with float32 centroids
         # when calling `predict`
@@ -124,6 +127,41 @@ class ClusterCentroidObsWrapper(gym.ObservationWrapper):
         """
         clusters_batch = self.estimator.predict([observation])
         return clusters_batch[0]
+
+
+class FlatGridCoordObsWrapper(gym.ObservationWrapper):
+    """
+    Maps 2D grids positions to a
+    single value.
+    """
+
+    def __init__(self, env: gym.Env):
+        super().__init__(env)
+        if not isinstance(env.observation_space, gym.spaces.Box):
+            raise ValueError(
+                f"Source `env` observation space must be of type `Box`. Got {type(env.observation_space)}"
+            )
+
+        if not np.size(env.observation_space.shape) <= 2:
+            raise ValueError(
+                f"Expected a 2D observation space. Got: {env.observation_space.shape}"
+            )
+
+        self.value_ranges = env.observation_space.high - env.observation_space.low
+        self.d1 = np.size(env.observation_space.shape) == 1
+        # num coordinates
+        self.nstates = np.prod(self.value_ranges)
+        self.observation_space = gym.spaces.Discrete(self.nstates)
+
+    def observation(self, observation: ObsType):
+        """
+        Returns cluster assignment.
+        """
+        if self.d1:
+            return observation
+
+        row, col = observation
+        return row * self.value_ranges[0] + col
 
 
 class TilesObsWrapper(gym.ObservationWrapper):
@@ -182,4 +220,6 @@ def wrap(env: gym.Env, wrapper: Optional[str] = None, **kwargs):
         return ClusterCentroidObsWrapper(
             env, num_clusters=num_clusters, sample_steps=steps
         )
+    if wrapper == constants.FLAT_GRID_COORD:
+        return FlatGridCoordObsWrapper(env)
     raise ValueError(f"Wrapper `{wrapper}` unknown")

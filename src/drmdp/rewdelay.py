@@ -212,11 +212,11 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper):
         super().__init__(env)
         if not isinstance(obs_encoding_wrapper.observation_space, gym.spaces.Discrete):
             raise ValueError(
-                f"obs_wrapper space must of type Discrete. Got: {type(obs_encoding_wrapper)}"
+                f"obs_wrapper space must of type Discrete. Got: {type(obs_encoding_wrapper.observation_space)}"
             )
         if not isinstance(obs_encoding_wrapper.action_space, gym.spaces.Discrete):
             raise ValueError(
-                f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper)}"
+                f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper.action_space)}"
             )
         self.obs_wrapper = obs_encoding_wrapper
         self.attempt_estimation_episode = attempt_estimation_episode
@@ -227,7 +227,6 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper):
 
         self.nstates = obs_encoding_wrapper.observation_space.n
         self.nactions = obs_encoding_wrapper.action_space.n
-        # TODO: capture next state?
         self.mdim = self.nstates * self.nactions
         self.weights = None
         self._obs_feats = None
