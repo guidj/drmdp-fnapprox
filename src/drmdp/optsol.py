@@ -242,9 +242,13 @@ def solve_least_squares(matrix: np.ndarray, rhs: np.ndarray) -> np.ndarray:
 
 
 def solve_rwe(env: gym.Env, num_steps: int, sample_size: int, delay: int):
+    """
+    Estimates rewards by collecting trajectory windows,
+    and running least squares.
+    """
     buffer = dataproc.collection_traj_data(env, steps=num_steps)
-    Xd, yd = delay_reward_data(buffer, delay=delay, sample_size=sample_size)
-    return buffer, solve_least_squares(Xd, yd)
+    matrix, rhs = delay_reward_data(buffer, delay=delay, sample_size=sample_size)
+    return buffer, solve_least_squares(matrix=matrix, rhs=rhs)
 
 
 def solve_convex_least_squares(

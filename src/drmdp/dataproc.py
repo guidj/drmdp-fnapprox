@@ -1,6 +1,6 @@
 import copy
 import uuid
-from typing import Any, Mapping
+from typing import Any, Mapping, Optional, Sequence
 
 import gymnasium as gym
 import pandas as pd
@@ -22,8 +22,11 @@ POLICY_TYPES = {
 }
 
 
-def collection_traj_data(env: gym.Env, steps: int):
-    obs, _ = env.reset()
+def collection_traj_data(env: gym.Env, steps: int, seed: Optional[int] = None):
+    """
+    Collects sample trajectory data.
+    """
+    obs, _ = env.reset(seed=seed)
     step = 0
     buffer = []
     while step < steps:
@@ -44,6 +47,11 @@ def collection_traj_data(env: gym.Env, steps: int):
 
 
 def process_data(df_raw):
+    """
+    Applies data filfers, and defines the correct
+    policy identifier.
+    """
+
     def filter(meta):
         return meta["experiment"]["env_spec"]["name"] not in set(
             ["Finite-TC-ShuntDc-v0"]
@@ -72,6 +80,10 @@ def process_data(df_raw):
 
 
 def read_data(files, reader: str = "ray"):
+    """
+    Reads experiment results data, using either
+    `ray` or `pandas`.
+    """
     if reader == "ray":
         with ray.init():
             ds_metrics = ray.data.read_parquet(files)
@@ -88,11 +100,18 @@ def read_data(files, reader: str = "ray"):
 
 
 def wide_metrics(df_metrics):
+    """
+    Drops the column `metrics`, and explodes
+    the `returns` column.
+    """
     df_raw = df_metrics.drop(["metrics"], axis=1, inplace=False)
     return df_raw.explode("returns")
 
 
 def get_distinct_envs(df_data: pd.DataFrame):
+    """
+    Returns a set of unique environments.
+    """
     envs = {}
     for row in df_data.to_dict("records"):
         env_spec = row["meta"]["env_spec"]
@@ -102,7 +121,11 @@ def get_distinct_envs(df_data: pd.DataFrame):
     return envs
 
 
-def drop_duplicate_sets(df_data: pd.DataFrame, keys):
+def drop_duplicate_sets(df_data: pd.DataFrame, keys: Sequence[str]):
+    """
+    Drops rows that have the same value
+    for columns specied with `keys`.
+    """
     col = str(uuid.uuid4())
     rows = []
     for row in df_data.to_dict("records"):
