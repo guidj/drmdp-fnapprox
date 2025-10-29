@@ -7,7 +7,7 @@ import os.path
 import sys
 import tempfile
 import uuid
-from typing import Any, List, Mapping, Sequence
+from typing import Any, List, Mapping, Optional, Sequence
 
 import gymnasium as gym
 import numpy as np
@@ -524,10 +524,10 @@ def run_reward_estimation_study(specs, turns: int, num_episodes: int, output_pat
         result_writer = ResultWriter.remote(output_path)  # pylint: disable=no-member
         write_result_tasks = []
         results_refs = [run_fn.remote(job) for job in jobs]
-        for finished_task in yield_as_completed(results_refs):
+        for finished_task in yield_as_completed(results_refs, "Reward-Estimation"):
             write_result_tasks.append(result_writer.write.remote(finished_task))
 
-        wait_till_completion(write_result_tasks)
+        wait_till_completion(write_result_tasks, "Write-Result")
         ray.get(result_writer.sync.remote())
 
 
@@ -548,7 +548,7 @@ def run_fn(job_spec: JobSpec):
     return result
 
 
-def wait_till_completion(tasks_refs):
+def wait_till_completion(tasks_refs, name: Optional[str] = None):
     """
     Waits for every ray task to complete.
     """
@@ -557,7 +557,8 @@ def wait_till_completion(tasks_refs):
         finished_tasks, unfinished_tasks = ray.wait(unfinished_tasks)
         for _ in finished_tasks:
             logging.info(
-                "Completed task. %d left out of %d.",
+                "Completed task %s. %d left out of %d.",
+                name,
                 len(unfinished_tasks),
                 len(tasks_refs),
             )
@@ -566,7 +567,7 @@ def wait_till_completion(tasks_refs):
             break
 
 
-def yield_as_completed(tasks_refs):
+def yield_as_completed(tasks_refs, name: Optional[str] = None):
     """
     Waits for every ray task to complete.
     """
@@ -576,7 +577,8 @@ def yield_as_completed(tasks_refs):
         finished_tasks, unfinished_tasks = ray.wait(unfinished_tasks)
         for finished_task in finished_tasks:
             logging.info(
-                "Yielding task. %d left out of %d.",
+                "Yielding task %s. %d left out of %d.",
+                name,
                 len(unfinished_tasks),
                 len(tasks_refs),
             )
