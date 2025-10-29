@@ -399,6 +399,9 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper):
         """
         Estimate rewards with lstsq.
         """
+        if self.est_buffer.size() == 0:
+            return
+
         obs_buffer, rew_buffer = zip(*self.est_buffer.buffer)
         matrix = np.stack(obs_buffer, dtype=np.float64)
         rewards = np.array(rew_buffer, dtype=np.float64)
@@ -554,6 +557,9 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper):
         """
         Estimate rewards with lstsq.
         """
+        if self.est_buffer.size() == 0:
+            return
+
         obs_buffer, rew_buffer = zip(*self.est_buffer.buffer)
         matrix = np.stack(obs_buffer, dtype=np.float64)
         rewards = np.array(rew_buffer, dtype=np.float64)
@@ -723,7 +729,6 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper):
         if self.est_buffer.size() == 0:
             return
 
-        # estimate rewards
         obs_buffer, rew_buffer = zip(*self.est_buffer.buffer)
         matrix = np.stack(obs_buffer, dtype=np.float64)
         rewards = np.array(rew_buffer, dtype=np.float64)
@@ -907,6 +912,9 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper):
         """
         Estimate rewards with lstsq.
         """
+        if self.est_buffer.size() == 0:
+            return
+
         obs_buffer, rew_buffer = zip(*self.est_buffer.buffer)
         matrix = np.stack(obs_buffer, dtype=np.float64)
         rewards = np.array(rew_buffer, dtype=np.float64)
@@ -1112,7 +1120,6 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
         if self.est_buffer.size() == 0:
             return
 
-        # estimate rewards
         obs_buffer, rew_buffer = zip(*self.est_buffer.buffer)
         matrix = np.stack(obs_buffer, dtype=np.float64)
         rewards = np.array(rew_buffer, dtype=np.float64)
