@@ -78,13 +78,6 @@ class ResultWriter:
         the buffer.
         """
         if self.results:
-            bytes_size = sys.getsizeof(self.results)
-            logging.info(
-                "%f: Writing partition %d - %fMB",
-                type(self).__name__,
-                self.partition,
-                bytes_size / 1024 / 1024,
-            )
             write_records(
                 os.path.join(self.output_path, f"result-{self.partition}.jsonl"),
                 records=self.results,
@@ -709,6 +702,12 @@ def write_records(output_path: str, records):
     """
     Exports records into JSON files.
     """
+    bytes_size = sys.getsizeof(records)
+    logging.info(
+        "Writing partition of %fMB to %s",
+        bytes_size / 1024 / 1024,
+        output_path,
+    )
     with tf.io.gfile.GFile(output_path, "w") as writable:
         for record in records:
             json.dump(record, writable)
