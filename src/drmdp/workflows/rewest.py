@@ -55,7 +55,7 @@ class ResultWriter:
     Remote task to export results.
     """
 
-    def __init__(self, output_path: str, partition_size: int = 10):
+    def __init__(self, output_path: str, partition_size: int = 100):
         self.output_path = output_path
         self.partition_size = partition_size
         self.results: List[Any] = []
@@ -77,6 +77,7 @@ class ResultWriter:
         the buffer.
         """
         if self.results:
+            logging.info("%f: Writing partition %d", type(self).__name__, self.partition)
             write_records(
                 os.path.join(self.output_path, f"result-{self.partition}.jsonl"),
                 records=self.results,
