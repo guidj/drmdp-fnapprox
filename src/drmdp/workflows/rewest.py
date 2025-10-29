@@ -4,6 +4,7 @@ import itertools
 import json
 import logging
 import os.path
+import sys
 import tempfile
 import uuid
 from typing import Any, List, Mapping, Sequence
@@ -77,7 +78,13 @@ class ResultWriter:
         the buffer.
         """
         if self.results:
-            logging.info("%f: Writing partition %d", type(self).__name__, self.partition)
+            bytes_size = sys.getsizeof(self.results)
+            logging.info(
+                "%f: Writing partition %d - %fMB",
+                type(self).__name__,
+                self.partition,
+                bytes_size / 1024 / 1024,
+            )
             write_records(
                 os.path.join(self.output_path, f"result-{self.partition}.jsonl"),
                 records=self.results,
