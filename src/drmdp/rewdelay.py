@@ -10,8 +10,6 @@ import numpy as np
 
 from drmdp import mathutils, metrics, optsol
 
-BUFFER_MAX_SIZE_BYTES = 256 * 1024 * 1024
-
 
 class OptState(str, Enum):
     """
@@ -315,7 +313,7 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper):
         obs_encoding_wrapper: gym.ObservationWrapper,
         attempt_estimation_episode: int,
         use_bias: bool = False,
-        max_buffer_size_bytes: int = BUFFER_MAX_SIZE_BYTES,
+        max_buffer_size_bytes: Optional[int] = None,
     ):
         super().__init__(env)
         if not isinstance(obs_encoding_wrapper.observation_space, gym.spaces.Discrete):
@@ -470,7 +468,7 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper):
         obs_encoding_wrapper: gym.ObservationWrapper,
         attempt_estimation_episode: int,
         use_bias: bool = False,
-        max_buffer_size_bytes: int = BUFFER_MAX_SIZE_BYTES,
+        max_buffer_size_bytes: Optional[int] = None,
     ):
         super().__init__(env)
         if not isinstance(obs_encoding_wrapper.observation_space, gym.spaces.Box):
@@ -634,7 +632,7 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper):
         mode: str = DOUBLE,
         init_attempt_estimation_episode: int = 10,
         use_bias: bool = False,
-        max_buffer_size_bytes: int = BUFFER_MAX_SIZE_BYTES,
+        max_buffer_size_bytes: Optional[int] = None,
     ):
         super().__init__(env)
         if not isinstance(obs_encoding_wrapper.observation_space, gym.spaces.Box):
@@ -808,7 +806,7 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper):
         obs_encoding_wrapper: gym.ObservationWrapper,
         attempt_estimation_episode: int,
         use_bias: bool = False,
-        max_buffer_size_bytes: int = BUFFER_MAX_SIZE_BYTES,
+        max_buffer_size_bytes: Optional[int] = None,
     ):
         super().__init__(env)
         if not isinstance(obs_encoding_wrapper.observation_space, gym.spaces.Box):
@@ -1011,7 +1009,7 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
         mode: str = DOUBLE,
         init_attempt_estimation_episode: int = 10,
         use_bias: bool = False,
-        max_buffer_size_bytes: int = BUFFER_MAX_SIZE_BYTES,
+        max_buffer_size_bytes: Optional[int] = None,
     ):
         super().__init__(env)
         if not isinstance(obs_encoding_wrapper.observation_space, gym.spaces.Box):
