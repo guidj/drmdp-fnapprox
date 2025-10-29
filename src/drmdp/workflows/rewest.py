@@ -56,7 +56,7 @@ class ResultWriter:
     Remote task to export results.
     """
 
-    def __init__(self, output_path: str, partition_size: int = 100):
+    def __init__(self, output_path: str, partition_size: int = 25):
         self.output_path = output_path
         self.partition_size = partition_size
         self.results: List[Any] = []
@@ -522,8 +522,13 @@ def run_reward_estimation_study(specs, turns: int, num_episodes: int, output_pat
     with ray.init() as context:
         logging.info("Starting ray task: %s", context)
         result_writer = ResultWriter.remote(output_path)  # pylint: disable=no-member
+        write_result_tasks = []
         results_refs = [run_fn.remote(job) for job in jobs]
-        wait_till_completion(results_refs, result_writer)
+        for finished_task in yield_as_completed(results_refs):
+            write_result_tasks.append(result_writer.write.remote(finished_task))
+
+        wait_till_completion(write_result_tasks)
+        ray.get(result_writer.sync.remote())
 
 
 @ray.remote
@@ -543,15 +548,14 @@ def run_fn(job_spec: JobSpec):
     return result
 
 
-def wait_till_completion(tasks_refs, result_writer: ResultWriter):
+def wait_till_completion(tasks_refs):
     """
     Waits for every ray task to complete.
     """
     unfinished_tasks = tasks_refs
     while True:
         finished_tasks, unfinished_tasks = ray.wait(unfinished_tasks)
-        for finished_task in finished_tasks:
-            ray.get(result_writer.write.remote(finished_task))  # type: ignore
+        for _ in finished_tasks:
             logging.info(
                 "Completed task. %d left out of %d.",
                 len(unfinished_tasks),
@@ -561,8 +565,25 @@ def wait_till_completion(tasks_refs, result_writer: ResultWriter):
         if len(unfinished_tasks) == 0:
             break
 
-    # Flush remaining files
-    ray.get(result_writer.sync.remote())  # type: ignore
+
+def yield_as_completed(tasks_refs):
+    """
+    Waits for every ray task to complete.
+    """
+    unfinished_tasks = tasks_refs
+    finished_tasks = []
+    while True:
+        finished_tasks, unfinished_tasks = ray.wait(unfinished_tasks)
+        for finished_task in finished_tasks:
+            logging.info(
+                "Yielding task. %d left out of %d.",
+                len(unfinished_tasks),
+                len(tasks_refs),
+            )
+            yield finished_task
+
+        if len(unfinished_tasks) == 0:
+            break
 
 
 def reward_estimation(job_spec: JobSpec):
