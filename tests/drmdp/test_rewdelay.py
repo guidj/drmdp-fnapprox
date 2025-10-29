@@ -60,8 +60,7 @@ def test_least_lfa_generative_reward_wrapper_init():
     assert wrapped.obs_dim == 2
     assert wrapped.mdim == 8  # 2 * 3 + 2
     assert wrapped.weights is None
-    assert len(wrapped.obs_buffer) == 0
-    assert len(wrapped.rew_buffer) == 0
+    assert wrapped.est_buffer.size() == 0
 
 
 def test_least_lfa_generative_reward_wrapper_step():
@@ -92,16 +91,12 @@ def test_least_lfa_generative_reward_wrapper_step():
     assert (rew4, term, trunc) == (2.0, True, False)
 
     # After `attempt_estimation_episode` segments, should estimate rewards
-    obs_buffer = np.array(
-        [
-            [0.5, -0.5, 0.5, -0.5, 0.0, 0.0, 1.0, -1.0],
-            [0.5, -0.5, 0.0, 0.0, 0.5, -0.5, 1.0, -1.0],
-        ]
-    )
-    rew_buffer = np.array([2.0, 2.0])
+    buffer = [
+        ([0.5, -0.5, 0.5, -0.5, 0.0, 0.0, 1.0, -1.0], 2.0),
+        ([0.5, -0.5, 0.0, 0.0, 0.5, -0.5, 1.0, -1.0], 2.0),
+    ]
     assert wrapped.weights is not None
-    np.testing.assert_array_equal(wrapped.obs_buffer, obs_buffer)
-    np.testing.assert_array_equal(wrapped.rew_buffer, rew_buffer)
+    np.testing.assert_equal(wrapped.est_buffer.buffer, buffer)
 
 
 def test_least_lfa_generative_reward_wrapper_invalid_spaces():
@@ -150,8 +145,7 @@ def test_convex_solver_generative_reward_wrapper_init():
     assert wrapped.obs_dim == 2
     assert wrapped.mdim == 8  # 2 * 3 + 2
     assert wrapped.weights is None
-    assert len(wrapped.obs_buffer) == 0
-    assert len(wrapped.rew_buffer) == 0
+    assert wrapped.est_buffer.size() == 0
 
 
 def test_convex_solver_generative_reward_wrapper_step():
@@ -182,16 +176,12 @@ def test_convex_solver_generative_reward_wrapper_step():
     assert (rew4, term, trunc) == (2.0, True, False)
 
     # After `attempt_estimation_episode` segments, should estimate rewards
-    obs_buffer = np.array(
-        [
-            [0.5, -0.5, 0.5, -0.5, 0.0, 0.0, 1.0, -1.0],
-            [0.5, -0.5, 0.0, 0.0, 0.5, -0.5, 1.0, -1.0],
-        ]
-    )
-    rew_buffer = np.array([2.0, 2.0])
+    buffer = [
+        ([0.5, -0.5, 0.5, -0.5, 0.0, 0.0, 1.0, -1.0], 2.0),
+        ([0.5, -0.5, 0.0, 0.0, 0.5, -0.5, 1.0, -1.0], 2.0),
+    ]
     assert wrapped.weights is not None
-    np.testing.assert_array_equal(wrapped.obs_buffer, obs_buffer)
-    np.testing.assert_array_equal(wrapped.rew_buffer, rew_buffer)
+    np.testing.assert_equal(wrapped.est_buffer.buffer, buffer)
 
 
 def test_convex_solver_generative_reward_wrapper_invalid_spaces():

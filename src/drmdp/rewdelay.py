@@ -10,6 +10,8 @@ import numpy as np
 
 from drmdp import mathutils, metrics, optsol
 
+BUFFER_MAX_SIZE_BYTES = 256 * 1024 * 1024
+
 
 class OptState(str, Enum):
     """
@@ -327,8 +329,7 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper):
         self.attempt_estimation_episode = attempt_estimation_episode
         self.episodes = 0
         self.use_bias = use_bias
-        self.obs_buffer: List[np.ndarray] = []
-        self.rew_buffer: List[np.ndarray] = []
+        self.est_buffer = DataBuffer(max_size_bytes=BUFFER_MAX_SIZE_BYTES)
 
         self.nstates = obs_encoding_wrapper.observation_space.n
         self.nactions = obs_encoding_wrapper.action_space.n
@@ -359,9 +360,7 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper):
             # Add example to buffer and
             # use aggregate reward.
             if info["segment_step"] == info["delay"] - 1:
-                self.obs_buffer.append(self._segment_features)
-                # aggregate reward
-                self.rew_buffer.append(reward)
+                self.est_buffer.add((self._segment_features, reward))
                 # reset for the next segment
                 self._segment_features = np.zeros(shape=(self.mdim))
             else:
@@ -399,8 +398,9 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper):
         """
         Estimate rewards with lstsq.
         """
-        matrix = np.stack(self.obs_buffer, dtype=np.float64)
-        rewards = np.array(self.rew_buffer, dtype=np.float64)
+        obs_buffer, rew_buffer = zip(*self.est_buffer.buffer)
+        matrix = np.stack(obs_buffer, dtype=np.float64)
+        rewards = np.array(rew_buffer, dtype=np.float64)
         nexamples = rewards.shape[0]
         if self.use_bias:
             matrix = np.concatenate(
@@ -420,8 +420,10 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper):
                 nexamples - nexamples_drop,
                 replace=False,
             )
-            self.obs_buffer = np.asarray(self.obs_buffer)[indices].tolist()
-            self.rew_buffer = np.asarray(self.rew_buffer)[indices].tolist()
+            obs_buffer = matrix[indices].tolist()
+            rew_buffer = rewards[indices].tolist()
+            self.est_buffer.buffer = list(zip(obs_buffer, rew_buffer))
+
             logging.info(
                 "%s - Failed estimation for %s. Dropping %d samples",
                 type(self).__name__,
@@ -478,8 +480,7 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper):
         self.attempt_estimation_episode = attempt_estimation_episode
         self.episodes = 0
         self.use_bias = use_bias
-        self.obs_buffer: List[np.ndarray] = []
-        self.rew_buffer: List[np.ndarray] = []
+        self.est_buffer = DataBuffer(max_size_bytes=BUFFER_MAX_SIZE_BYTES)
 
         self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
         self.mdim = self.obs_dim * obs_encoding_wrapper.action_space.n + self.obs_dim
@@ -513,9 +514,7 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper):
             # Add example to buffer and
             # use aggregate reward.
             if info["segment_step"] == info["delay"] - 1:
-                self.obs_buffer.append(self._segment_features)
-                # aggregate reward
-                self.rew_buffer.append(reward)
+                self.est_buffer.add((self._segment_features, reward))
                 # reset for the next segment
                 self._segment_features = np.zeros(shape=(self.mdim))
             else:
@@ -553,8 +552,9 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper):
         """
         Estimate rewards with lstsq.
         """
-        matrix = np.stack(self.obs_buffer, dtype=np.float64)
-        rewards = np.array(self.rew_buffer, dtype=np.float64)
+        obs_buffer, rew_buffer = zip(*self.est_buffer.buffer)
+        matrix = np.stack(obs_buffer, dtype=np.float64)
+        rewards = np.array(rew_buffer, dtype=np.float64)
         nexamples = rewards.shape[0]
         if self.use_bias:
             matrix = np.concatenate(
@@ -574,8 +574,9 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper):
                 nexamples - nexamples_drop,
                 replace=False,
             )
-            self.obs_buffer = np.asarray(self.obs_buffer)[indices].tolist()
-            self.rew_buffer = np.asarray(self.rew_buffer)[indices].tolist()
+            obs_buffer = matrix[indices].tolist()
+            rew_buffer = rewards[indices].tolist()
+            self.est_buffer.buffer = list(zip(obs_buffer, rew_buffer))
             logging.info(
                 "%s - Failed estimation for %s. Dropping %d samples",
                 type(self).__name__,
@@ -644,8 +645,7 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper):
         self.update_episode = init_attempt_estimation_episode
         self.episodes = 0
         self.posterior_updates = 0
-        self.obs_buffer: List[np.ndarray] = []
-        self.rew_buffer: List[np.ndarray] = []
+        self.est_buffer = DataBuffer(max_size_bytes=BUFFER_MAX_SIZE_BYTES)
 
         self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
         self.mdim = self.obs_dim * obs_encoding_wrapper.action_space.n + self.obs_dim
@@ -668,9 +668,7 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper):
         # Add example to buffer and
         # use aggregate reward.
         if info["segment_step"] == info["delay"] - 1:
-            self.obs_buffer.append(self._segment_features)
-            # Aggregate reward
-            self.rew_buffer.append(reward)
+            self.est_buffer.add((self._segment_features, reward))
             # Reset for the next segment
             self._segment_features = np.zeros(shape=(self.mdim))
 
@@ -719,12 +717,13 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper):
         """
         Estimate new posterior.
         """
-        if len(self.obs_buffer) == 0:
+        if self.est_buffer.size() == 0:
             return
 
         # estimate rewards
-        matrix = np.stack(self.obs_buffer, dtype=np.float64)
-        rewards = np.array(self.rew_buffer, dtype=np.float64)
+        obs_buffer, rew_buffer = zip(*self.est_buffer.buffer)
+        matrix = np.stack(obs_buffer, dtype=np.float64)
+        rewards = np.array(rew_buffer, dtype=np.float64)
         nexamples = rewards.shape[0]
         if self.use_bias:
             matrix = np.concatenate(
@@ -776,8 +775,7 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper):
             )
 
             # Clear buffers for next data
-            self.obs_buffer = []
-            self.rew_buffer = []
+            self.est_buffer.clear()
 
 
 class ConvexSolverGenerativeRewardWrapper(gym.Wrapper):
@@ -816,9 +814,8 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper):
         self.attempt_estimation_episode = attempt_estimation_episode
         self.episodes = 0
         self.use_bias = use_bias
-        self.obs_buffer: List[np.ndarray] = []
-        self.rew_buffer: List[np.ndarray] = []
-        self.terminal_states_buffer: List[np.ndarray] = []
+        self.est_buffer = DataBuffer(max_size_bytes=BUFFER_MAX_SIZE_BYTES)
+        self.tst_buffer = DataBuffer(max_size_bytes=BUFFER_MAX_SIZE_BYTES)
 
         self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
         self.mdim = self.obs_dim * self.obs_wrapper.action_space.n + self.obs_dim
@@ -852,9 +849,7 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper):
             # Add example to buffer and
             # use aggregate reward.
             if info["segment_step"] == info["delay"] - 1:
-                self.obs_buffer.append(self._segment_features)
-                # aggregate reward
-                self.rew_buffer.append(reward)
+                self.est_buffer.add((self._segment_features, reward))
                 # reset for the next segment
                 self._segment_features = np.zeros(shape=(self.mdim))
             else:
@@ -876,7 +871,7 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper):
                 # To simplify the problem for the convex solver
                 # we encode the (S,A) - not S'
                 term_state[ts_idx : ts_idx + self.obs_dim] += next_obs_feats
-                self.terminal_states_buffer.append(term_state)
+                self.tst_buffer.add(term_state)
 
         if term or trunc:
             self.episodes += 1
@@ -908,11 +903,12 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper):
         """
         Estimate rewards with lstsq.
         """
-        matrix = np.stack(self.obs_buffer, dtype=np.float64)
-        rewards = np.array(self.rew_buffer, dtype=np.float64)
+        obs_buffer, rew_buffer = zip(*self.est_buffer.buffer)
+        matrix = np.stack(obs_buffer, dtype=np.float64)
+        rewards = np.array(rew_buffer, dtype=np.float64)
         term_states = (
-            np.stack(self.terminal_states_buffer, dtype=np.float64)
-            if self.terminal_states_buffer
+            np.stack(self.tst_buffer.buffer, dtype=np.float64)
+            if self.tst_buffer.size() > 0
             else []
         )
         nexamples = rewards.shape[0]
@@ -949,8 +945,9 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper):
                 self.attempt_estimation_episode - nexamples_drop,
                 replace=False,
             )
-            self.obs_buffer = np.asarray(self.obs_buffer)[indices].tolist()
-            self.rew_buffer = np.asarray(self.rew_buffer)[indices].tolist()
+            obs_buffer = matrix[indices].tolist()
+            rew_buffer = rewards[indices].tolist()
+            self.est_buffer.buffer = list(zip(obs_buffer, rew_buffer))
             logging.info(
                 "%s - Failed estimation for %s. Dropping %d samples",
                 type(self).__name__,
@@ -1021,9 +1018,8 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
         self.update_episode = init_attempt_estimation_episode
         self.episodes = 0
         self.posterior_updates = 0
-        self.obs_buffer: List[np.ndarray] = []
-        self.rew_buffer: List[np.ndarray] = []
-        self.terminal_states_buffer: List[np.ndarray] = []
+        self.est_buffer = DataBuffer(max_size_bytes=BUFFER_MAX_SIZE_BYTES)
+        self.tst_buffer = DataBuffer(max_size_bytes=BUFFER_MAX_SIZE_BYTES)
 
         self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
         self.mdim = self.obs_dim * obs_encoding_wrapper.action_space.n + self.obs_dim
@@ -1046,9 +1042,7 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
         # Add example to buffer and
         # use aggregate reward.
         if info["segment_step"] == info["delay"] - 1:
-            self.obs_buffer.append(self._segment_features)
-            # aggregate reward
-            self.rew_buffer.append(reward)
+            self.est_buffer.add((self._segment_features, reward))
             # reset for the next segment
             self._segment_features = np.zeros(shape=(self.mdim))
 
@@ -1078,7 +1072,7 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
                 # To simplify the problem for the convex solver
                 # we encode the (S,A) - not S'
                 term_state[ts_idx : ts_idx + self.obs_dim] += next_obs_feats
-                self.terminal_states_buffer.append(term_state)
+                self.tst_buffer.add(term_state)
 
         if term or trunc:
             self.episodes += 1
@@ -1110,15 +1104,16 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
         """
         Estimate new posterior.
         """
-        if len(self.obs_buffer) == 0:
+        if self.est_buffer.size() == 0:
             return
 
         # estimate rewards
-        matrix = np.stack(self.obs_buffer, dtype=np.float64)
-        rewards = np.array(self.rew_buffer, dtype=np.float64)
+        obs_buffer, rew_buffer = zip(*self.est_buffer.buffer)
+        matrix = np.stack(obs_buffer, dtype=np.float64)
+        rewards = np.array(rew_buffer, dtype=np.float64)
         term_states = (
-            np.stack(self.terminal_states_buffer, dtype=np.float64)
-            if self.terminal_states_buffer
+            np.stack(self.tst_buffer.buffer, dtype=np.float64)
+            if self.tst_buffer.size() > 0
             else []
         )
         nexamples = rewards.shape[0]
@@ -1184,13 +1179,12 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
                 self.env,
                 error,
                 nexamples,
-                len(self.terminal_states_buffer),
+                self.tst_buffer.size(),
             )
 
             # Clear buffers for next data
-            self.obs_buffer = []
-            self.rew_buffer = []
-            self.terminal_states_buffer = []
+            self.est_buffer.clear()
+            self.tst_buffer.clear()
 
 
 def list_size(xs: List[Any]) -> int:
