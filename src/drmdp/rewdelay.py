@@ -119,11 +119,17 @@ class DataBuffer:
     ACC_FIRST = "FIRST"
     ACC_LASTEST = "LASTEST"
 
-    def __init__(self, max_capacity: int, acc_mode: str):
+    def __init__(
+        self,
+        max_capacity: Optional[int] = None,
+        max_size_bytes: Optional[int] = None,
+        acc_mode: str = ACC_LASTEST,
+    ):
         """
         Init.
         """
         self.max_capacity = max_capacity
+        self.max_size_bytes = max_size_bytes
         self.acc_mode = acc_mode
         self.inputs_buffer: List[Any] = []
         self.labels_buffer: List[Any] = []
@@ -132,20 +138,42 @@ class DataBuffer:
         """
         Adds data to buffer.
         """
-        if len(self.labels_buffer) >= self.max_capacity:
-            if self.acc_mode == self.ACC_LASTEST:
-                # Drop earliest value
-                self.inputs_buffer.pop(0)
-                self.labels_buffer.pop(0)
+        if not self.max_capacity and not self.max_size_bytes:
+            self.inputs_buffer.append(inputs)
+            self.labels_buffer.append(label)
 
+        if self.max_capacity:
+            if len(self.labels_buffer) >= self.max_capacity:
+                if self.acc_mode == self.ACC_LASTEST:
+                    # Drop earliest value
+                    self.inputs_buffer.pop(0)
+                    self.labels_buffer.pop(0)
+
+                    # Add new value
+                    self.inputs_buffer.append(inputs)
+                    self.labels_buffer.append(label)
+                # else mode == ACC_FIRST - do not add
+            else:
                 # Add new value
                 self.inputs_buffer.append(inputs)
                 self.labels_buffer.append(label)
-            # Otherwise, stop adding - we want the first samples
-        else:
-            # Add values
-            self.inputs_buffer.append(inputs)
-            self.labels_buffer.append(label)
+
+        if self.max_size_bytes:
+            new_element_bytes = sys.getsizeof(inputs) + sys.getsizeof(label)
+            if self.size_bytes() + new_element_bytes >= self.max_size_bytes:
+                if self.acc_mode == self.ACC_LASTEST:
+                    while self.size_bytes() + new_element_bytes >= self.max_size_bytes:
+                        # Drop earliest value
+                        self.inputs_buffer.pop(0)
+                        self.labels_buffer.pop(0)
+
+                    # Add values
+                    self.inputs_buffer.append(inputs)
+                    self.labels_buffer.append(label)
+                # else acc_mode == ACC_FIRST - do not add
+            else:
+                self.inputs_buffer.append(inputs)
+                self.labels_buffer.append(label)
 
     def clear(self):
         """
