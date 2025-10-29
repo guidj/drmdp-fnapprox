@@ -131,10 +131,9 @@ class DataBuffer:
         self.max_capacity = max_capacity
         self.max_size_bytes = max_size_bytes
         self.acc_mode = acc_mode
-        self.inputs_buffer: List[Any] = []
-        self.labels_buffer: List[Any] = []
+        self.buffer: List[Any] = []
 
-    def add(self, inputs: Any, label: Any):
+    def add(self, element: Any):
         """
         Adds data to buffer.
         """
@@ -142,83 +141,74 @@ class DataBuffer:
         if self.max_capacity and self.max_size_bytes:
             safe_byte_limit = True
             safe_size_limit = True
-            new_element_bytes = sys.getsizeof(inputs) + sys.getsizeof(label)
-            if self.size_bytes() + new_element_bytes >= self.max_size_bytes:
+            if list_size(self.buffer + [element]) >= self.max_size_bytes:
                 if self.acc_mode == self.ACC_LASTEST:
-                    while self.size_bytes() + new_element_bytes >= self.max_size_bytes:
+                    while list_size(self.buffer + [element]) >= self.max_size_bytes:
                         self._pop_earliest()
                 else:
                     safe_byte_limit = False
 
-            if len(self.labels_buffer) >= self.max_capacity:
+            if self.size() >= self.max_capacity:
                 if self.acc_mode == self.ACC_LASTEST:
                     self._pop_earliest()
                 else:
                     safe_size_limit = False
 
             if safe_byte_limit and safe_size_limit:
-                self._append(inputs, label)
+                self._append(element)
 
         elif self.max_size_bytes:
-            new_element_bytes = sys.getsizeof(inputs) + sys.getsizeof(label)
-            if self.size_bytes() + new_element_bytes >= self.max_size_bytes:
+            if list_size(self.buffer + [element]) >= self.max_size_bytes:
                 if self.acc_mode == self.ACC_LASTEST:
-                    while self.size_bytes() + new_element_bytes >= self.max_size_bytes:
+                    while list_size(self.buffer + [element]) >= self.max_size_bytes:
                         self._pop_earliest()
-                    self._append(inputs, label)
+                    self._append(element)
                 # else acc_mode == ACC_FIRST - do not add
             else:
-                self._append(inputs, label)
+                self._append(element)
 
         elif self.max_capacity:
-            if len(self.labels_buffer) >= self.max_capacity:
+            if self.size() >= self.max_capacity:
                 if self.acc_mode == self.ACC_LASTEST:
                     self._pop_earliest()
-                    self._append(inputs, label)
+                    self._append(element)
                 # else mode == ACC_FIRST - do not add
             else:
                 # Add new value
-                self._append(inputs, label)
+                self._append(element)
         else:
             # No limits
-            self._append(inputs, label)
+            self._append(element)
 
     def clear(self):
         """
         Empties buffer.
         """
-        self.inputs_buffer = []
-        self.labels_buffer = []
+        self.buffer = []
 
     def size(self):
         """
         Current buffer size.
         """
-        return len(self.labels_buffer)
+        return len(self.buffer)
 
     def size_bytes(self):
         """
         Current buffer size in bytes.
         """
-        return (
-            sys.getsizeof(self.inputs_buffer)
-            + sys.getsizeof(self.labels_buffer)
-            - 2 * sys.getsizeof([])
-        )
+        return list_size(self.buffer)
 
     def _pop_earliest(self):
         """
         Remove the First-In element in the list.
         """
-        self.inputs_buffer.pop(0)
-        self.labels_buffer.pop(0)
+        self.buffer.pop(0)
 
-    def _append(self, inputs, label):
+    def _append(self, element: Any):
         """
         Appends values to buffers.
         """
-        self.inputs_buffer.append(inputs)
-        self.labels_buffer.append(label)
+        self.buffer.append(element)
 
 
 class DelayedRewardWrapper(gym.Wrapper):
@@ -1201,3 +1191,10 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
             self.obs_buffer = []
             self.rew_buffer = []
             self.terminal_states_buffer = []
+
+
+def list_size(xs: List[Any]) -> int:
+    """
+    Gets the size of a list in bytes.
+    """
+    return sys.getsizeof(xs) - sys.getsizeof([])
