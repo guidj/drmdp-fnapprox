@@ -138,42 +138,50 @@ class DataBuffer:
         """
         Adds data to buffer.
         """
-        if not self.max_capacity and not self.max_size_bytes:
-            self.inputs_buffer.append(inputs)
-            self.labels_buffer.append(label)
 
-        if self.max_capacity:
-            if len(self.labels_buffer) >= self.max_capacity:
-                if self.acc_mode == self.ACC_LASTEST:
-                    # Drop earliest value
-                    self.inputs_buffer.pop(0)
-                    self.labels_buffer.pop(0)
-
-                    # Add new value
-                    self.inputs_buffer.append(inputs)
-                    self.labels_buffer.append(label)
-                # else mode == ACC_FIRST - do not add
-            else:
-                # Add new value
-                self.inputs_buffer.append(inputs)
-                self.labels_buffer.append(label)
-
-        if self.max_size_bytes:
+        if self.max_capacity and self.max_size_bytes:
+            safe_byte_limit = True
+            safe_size_limit = True
             new_element_bytes = sys.getsizeof(inputs) + sys.getsizeof(label)
             if self.size_bytes() + new_element_bytes >= self.max_size_bytes:
                 if self.acc_mode == self.ACC_LASTEST:
                     while self.size_bytes() + new_element_bytes >= self.max_size_bytes:
-                        # Drop earliest value
-                        self.inputs_buffer.pop(0)
-                        self.labels_buffer.pop(0)
+                        self._pop_earliest()
+                else:
+                    safe_byte_limit = False
 
-                    # Add values
-                    self.inputs_buffer.append(inputs)
-                    self.labels_buffer.append(label)
+            if len(self.labels_buffer) >= self.max_capacity:
+                if self.acc_mode == self.ACC_LASTEST:
+                    self._pop_earliest()
+                else:
+                    safe_size_limit = False
+
+            if safe_byte_limit and safe_size_limit:
+                self._append(inputs, label)
+
+        elif self.max_size_bytes:
+            new_element_bytes = sys.getsizeof(inputs) + sys.getsizeof(label)
+            if self.size_bytes() + new_element_bytes >= self.max_size_bytes:
+                if self.acc_mode == self.ACC_LASTEST:
+                    while self.size_bytes() + new_element_bytes >= self.max_size_bytes:
+                        self._pop_earliest()
+                    self._append(inputs, label)
                 # else acc_mode == ACC_FIRST - do not add
             else:
-                self.inputs_buffer.append(inputs)
-                self.labels_buffer.append(label)
+                self._append(inputs, label)
+
+        elif self.max_capacity:
+            if len(self.labels_buffer) >= self.max_capacity:
+                if self.acc_mode == self.ACC_LASTEST:
+                    self._pop_earliest()
+                    self._append(inputs, label)
+                # else mode == ACC_FIRST - do not add
+            else:
+                # Add new value
+                self._append(inputs, label)
+        else:
+            # No limits
+            self._append(inputs, label)
 
     def clear(self):
         """
@@ -192,7 +200,25 @@ class DataBuffer:
         """
         Current buffer size in bytes.
         """
-        return sys.getsizeof(self.inputs_buffer) + sys.getsizeof(self.labels_buffer)
+        return (
+            sys.getsizeof(self.inputs_buffer)
+            + sys.getsizeof(self.labels_buffer)
+            - 2 * sys.getsizeof([])
+        )
+
+    def _pop_earliest(self):
+        """
+        Remove the First-In element in the list.
+        """
+        self.inputs_buffer.pop(0)
+        self.labels_buffer.pop(0)
+
+    def _append(self, inputs, label):
+        """
+        Appends values to buffers.
+        """
+        self.inputs_buffer.append(inputs)
+        self.labels_buffer.append(label)
 
 
 class DelayedRewardWrapper(gym.Wrapper):

@@ -313,3 +313,149 @@ def test_delayed_reward_wrapper_reset():
     assert wrapped.segment == 0
     assert wrapped.segment_step == -1
     assert not wrapped.rewards
+
+
+def test_data_buffer():
+    buffer = rewdelay.DataBuffer()
+    assert buffer.max_capacity is None
+    assert buffer.max_size_bytes is None
+    assert buffer.size() == 0
+    assert buffer.size_bytes() == 0
+
+    buffer.add(1, 0)
+    assert buffer.inputs_buffer == [1]
+    assert buffer.labels_buffer == [0]
+    assert buffer.size() == 1
+    assert buffer.size_bytes() == 64
+
+    buffer.add(1, 2)
+    buffer.add(3, 4)
+    buffer.add(5, 6)
+    buffer.add(7, 8)
+    assert buffer.inputs_buffer == [1, 1, 3, 5, 7]
+    assert buffer.labels_buffer == [0, 2, 4, 6, 8]
+    assert buffer.size() == 5
+    assert buffer.size_bytes() == 128
+
+    buffer.clear()
+    assert buffer.size() == 0
+    assert buffer.size_bytes() == 0
+
+    buffer.add(1, 0)
+    assert buffer.inputs_buffer == [1]
+    assert buffer.labels_buffer == [0]
+    assert buffer.size() == 1
+    assert buffer.size_bytes() == 64
+
+
+def test_data_buffer_max_capacity_with_latest_acc_mode():
+    buffer = rewdelay.DataBuffer(
+        max_capacity=10,
+    )
+
+    for value in range(100):
+        buffer.add(value, value)
+        assert buffer.size() <= 10
+        # latest
+        assert buffer.inputs_buffer == list(range(max(0, value - 10 + 1), value + 1))
+        assert buffer.labels_buffer == list(range(max(0, value - 10 + 1), value + 1))
+
+    buffer.clear()
+    assert buffer.size() == 0
+    assert buffer.size_bytes() == 0
+
+    buffer.add(1, 0)
+    assert buffer.inputs_buffer == [1]
+    assert buffer.labels_buffer == [0]
+    assert buffer.size() == 1
+    assert buffer.size_bytes() == 64
+
+
+def test_data_buffer_max_capacity_with_first_acc_mode():
+    buffer = rewdelay.DataBuffer(max_capacity=10, acc_mode="FIRST")
+
+    for value in range(100):
+        buffer.add(value, value)
+        assert buffer.size() <= 10
+        # first
+        assert buffer.inputs_buffer == list(range(0, min(value + 1, 10)))
+        assert buffer.labels_buffer == list(range(0, min(value + 1, 10)))
+
+    buffer.clear()
+    assert buffer.size() == 0
+    assert buffer.size_bytes() == 0
+
+    buffer.add(1, 0)
+    assert buffer.inputs_buffer == [1]
+    assert buffer.labels_buffer == [0]
+    assert buffer.size() == 1
+    assert buffer.size_bytes() == 64
+
+
+def test_data_buffer_max_size_bytes_with_latest_acc_mode():
+    buffer = rewdelay.DataBuffer(max_size_bytes=128)
+
+    for value in range(100):
+        buffer.add(value, value)
+        assert buffer.size() > 0
+        assert buffer.size_bytes() <= 128
+        # latest
+        assert buffer.inputs_buffer[-1] == value
+        assert buffer.labels_buffer[-1] == value
+
+    buffer.clear()
+    assert buffer.size() == 0
+    assert buffer.size_bytes() == 0
+
+    buffer.add(1, 0)
+    assert buffer.inputs_buffer == [1]
+    assert buffer.labels_buffer == [0]
+    assert buffer.size() == 1
+    assert buffer.size_bytes() == 64
+
+
+def test_data_buffer_max_size_bytes_with_first_acc_mode():
+    buffer = rewdelay.DataBuffer(max_size_bytes=128, acc_mode="FIRST")
+
+    for value in range(100):
+        buffer.add(value, value)
+        assert buffer.size() > 0
+        assert buffer.size_bytes() <= 128
+        # latest
+        assert buffer.inputs_buffer[0] == 0
+        assert buffer.labels_buffer[0] == 0
+
+    buffer.clear()
+    assert buffer.size() == 0
+    assert buffer.size_bytes() == 0
+
+    buffer.add(1, 0)
+    assert buffer.inputs_buffer == [1]
+    assert buffer.labels_buffer == [0]
+    assert buffer.size() == 1
+    assert buffer.size_bytes() == 64
+
+
+def test_data_buffer_max_capacity_max_size_bytes_with_latest_acc_mode():
+    buffer = rewdelay.DataBuffer(
+        max_capacity=2,
+        max_size_bytes=128,
+    )
+
+    for value in range(100):
+        buffer.add(value, value)
+        assert 0 < buffer.size() <= 2
+        assert buffer.size_bytes() <= 128
+        # latest
+        assert buffer.inputs_buffer[-1] == value
+        assert buffer.labels_buffer[-1] == value
+
+    buffer.clear()
+    assert buffer.size() == 0
+    assert buffer.size_bytes() == 0
+
+    buffer.add(1, 0)
+    assert buffer.inputs_buffer == [1]
+    assert buffer.labels_buffer == [0]
+    assert buffer.size() == 1
+    assert buffer.size_bytes() == 64
