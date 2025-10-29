@@ -1,8 +1,9 @@
 import abc
 import logging
 import random
+import sys
 from enum import Enum
-from typing import Callable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, List, Optional, Sequence, Tuple
 
 import gymnasium as gym
 import numpy as np
@@ -104,6 +105,66 @@ class ClippedPoissonDelay(RewardDelay):
     @classmethod
     def id(cls):
         return "clipped-poisson"
+
+
+class DataBuffer:
+    """
+    A data buffer, for storing inputs and
+    labels.
+
+    Has a `max_capacity` to limit memory usage.
+    Either accumulates first or last samples.
+    """
+
+    ACC_FIRST = "FIRST"
+    ACC_LASTEST = "LASTEST"
+
+    def __init__(self, max_capacity: int, acc_mode: str):
+        """
+        Init.
+        """
+        self.max_capacity = max_capacity
+        self.acc_mode = acc_mode
+        self.inputs_buffer: List[Any] = []
+        self.labels_buffer: List[Any] = []
+
+    def add(self, inputs: Any, label: Any):
+        """
+        Adds data to buffer.
+        """
+        if len(self.labels_buffer) >= self.max_capacity:
+            if self.acc_mode == self.ACC_LASTEST:
+                # Drop earliest value
+                self.inputs_buffer.pop(0)
+                self.labels_buffer.pop(0)
+
+                # Add new value
+                self.inputs_buffer.append(inputs)
+                self.labels_buffer.append(label)
+            # Otherwise, stop adding - we want the first samples
+        else:
+            # Add values
+            self.inputs_buffer.append(inputs)
+            self.labels_buffer.append(label)
+
+    def clear(self):
+        """
+        Empties buffer.
+        """
+        self.inputs_buffer = []
+        self.labels_buffer = []
+
+    def size(self):
+        """
+        Current buffer size.
+        """
+        return len(self.labels_buffer)
+
+    def size_bytes(self):
+        """
+        Current buffer size in bytes.
+        """
+        return sys.getsizeof(self.inputs_buffer) + sys.getsizeof(self.labels_buffer)
 
 
 class DelayedRewardWrapper(gym.Wrapper):
