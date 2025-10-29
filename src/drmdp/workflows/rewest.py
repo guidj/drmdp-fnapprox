@@ -55,7 +55,7 @@ class ResultWriter:
     Remote task to export results.
     """
 
-    def __init__(self, output_path: str, partition_size: int = 100):
+    def __init__(self, output_path: str, partition_size: int = 10):
         self.output_path = output_path
         self.partition_size = partition_size
         self.results: List[Any] = []
@@ -464,7 +464,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
         },
         {
             "name": "GridWorld-v0",
-            "args": {"max_episode_steps": 2500},
+            "args": {"max_episode_steps": MAX_STEPS},
             "feats_specs": [
                 {"name": "tiles", "args": {"tiling_dim": 8}},
             ],
