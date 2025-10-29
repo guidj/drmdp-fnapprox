@@ -1184,7 +1184,6 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
 
             # Clear buffers for next data
             self.est_buffer.clear()
-            self.tst_buffer.clear()
 
 
 def list_size(xs: List[Any]) -> int:
