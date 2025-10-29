@@ -56,7 +56,7 @@ class ResultWriter:
     Remote task to export results.
     """
 
-    def __init__(self, output_path: str, partition_size: int = 25):
+    def __init__(self, output_path: str, partition_size: int = 100):
         self.output_path = output_path
         self.partition_size = partition_size
         self.results: List[Any] = []
