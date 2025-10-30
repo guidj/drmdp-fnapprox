@@ -50,7 +50,7 @@ class JobSpec:
     turn: int
 
 
-@ray.remote
+# @ray.remote
 class ResultWriter:
     """
     Remote task to export results.
@@ -531,14 +531,8 @@ def run_reward_estimation_study(specs, turns: int, num_episodes: int, output_pat
 
     with ray.init() as context:
         logging.info("Starting ray task: %s", context)
-        result_writer = ResultWriter.remote(output_path)  # pylint: disable=no-member
-        write_result_tasks = []
         results_refs = [run_fn.remote(job) for job in jobs]
-        for finished_task in yield_as_completed(results_refs, "Reward-Estimation"):
-            write_result_tasks.append(result_writer.write.remote(finished_task))
-
-        wait_till_completion(write_result_tasks, "Write-Result")
-        ray.get(result_writer.sync.remote())
+        wait_till_completion(results_refs, "Reward-Estimation")
 
 
 @ray.remote
@@ -550,11 +544,11 @@ def run_fn(job_spec: JobSpec):
     task_id = str(uuid.uuid4())
     logging.info("Starting task %s, %s", task_id, job_spec)
     try:
-        result = reward_estimation(job_spec)
+        output = reward_estimation(job_spec)
+        result = {"task_id": task_id, **dataclasses.asdict(job_spec), "meta": output}
     except Exception as err:
         raise RuntimeError(f"Task {task_id} `{job_spec}` failed") from err
     logging.info("Completed task %s: %s", task_id, job_spec)
-    result = {"task_id": task_id, **dataclasses.asdict(job_spec), "meta": result}
     return result
 
 
