@@ -313,7 +313,6 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper):
         obs_encoding_wrapper: gym.ObservationWrapper,
         attempt_estimation_episode: int,
         use_bias: bool = False,
-        max_buffer_size_bytes: Optional[int] = None,
     ):
         super().__init__(env)
         if not isinstance(obs_encoding_wrapper.observation_space, gym.spaces.Discrete):
@@ -328,7 +327,7 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper):
         self.attempt_estimation_episode = attempt_estimation_episode
         self.episodes = 0
         self.use_bias = use_bias
-        self.est_buffer = DataBuffer(max_size_bytes=max_buffer_size_bytes)
+        self.est_buffer = DataBuffer()
 
         self.nstates = obs_encoding_wrapper.observation_space.n
         self.nactions = obs_encoding_wrapper.action_space.n
@@ -468,7 +467,6 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper):
         obs_encoding_wrapper: gym.ObservationWrapper,
         attempt_estimation_episode: int,
         use_bias: bool = False,
-        max_buffer_size_bytes: Optional[int] = None,
     ):
         super().__init__(env)
         if not isinstance(obs_encoding_wrapper.observation_space, gym.spaces.Box):
@@ -483,7 +481,7 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper):
         self.attempt_estimation_episode = attempt_estimation_episode
         self.episodes = 0
         self.use_bias = use_bias
-        self.est_buffer = DataBuffer(max_size_bytes=max_buffer_size_bytes)
+        self.est_buffer = DataBuffer()
 
         self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
         self.mdim = self.obs_dim * obs_encoding_wrapper.action_space.n + self.obs_dim
@@ -632,7 +630,6 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper):
         mode: str = DOUBLE,
         init_attempt_estimation_episode: int = 10,
         use_bias: bool = False,
-        max_buffer_size_bytes: Optional[int] = None,
     ):
         super().__init__(env)
         if not isinstance(obs_encoding_wrapper.observation_space, gym.spaces.Box):
@@ -652,7 +649,7 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper):
         self.update_episode = init_attempt_estimation_episode
         self.episodes = 0
         self.posterior_updates = 0
-        self.est_buffer = DataBuffer(max_size_bytes=max_buffer_size_bytes)
+        self.est_buffer = DataBuffer()
 
         self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
         self.mdim = self.obs_dim * obs_encoding_wrapper.action_space.n + self.obs_dim
@@ -806,7 +803,6 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper):
         obs_encoding_wrapper: gym.ObservationWrapper,
         attempt_estimation_episode: int,
         use_bias: bool = False,
-        max_buffer_size_bytes: Optional[int] = None,
     ):
         super().__init__(env)
         if not isinstance(obs_encoding_wrapper.observation_space, gym.spaces.Box):
@@ -821,8 +817,8 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper):
         self.attempt_estimation_episode = attempt_estimation_episode
         self.episodes = 0
         self.use_bias = use_bias
-        self.est_buffer = DataBuffer(max_size_bytes=max_buffer_size_bytes)
-        self.tst_buffer = DataBuffer(max_size_bytes=max_buffer_size_bytes)
+        self.est_buffer = DataBuffer()
+        self.tst_buffer = DataBuffer()
 
         self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
         self.mdim = self.obs_dim * self.obs_wrapper.action_space.n + self.obs_dim
@@ -1009,7 +1005,7 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
         mode: str = DOUBLE,
         init_attempt_estimation_episode: int = 10,
         use_bias: bool = False,
-        max_buffer_size_bytes: Optional[int] = None,
+        constraints_buffer_limit: Optional[int] = None,
     ):
         super().__init__(env)
         if not isinstance(obs_encoding_wrapper.observation_space, gym.spaces.Box):
@@ -1029,12 +1025,14 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
         self.update_episode = init_attempt_estimation_episode
         self.episodes = 0
         self.posterior_updates = 0
-        self.est_buffer = DataBuffer(max_size_bytes=max_buffer_size_bytes)
-        self.tst_buffer = DataBuffer(max_size_bytes=max_buffer_size_bytes)
+        self.est_buffer = DataBuffer()
+        self.tst_buffer = DataBuffer(
+            max_capacity=constraints_buffer_limit,
+        )
 
         self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
         self.mdim = self.obs_dim * obs_encoding_wrapper.action_space.n + self.obs_dim
-        self.mv_normal_rewards: Optional[optsol.MultivariateNormal] = None
+        self.weights: Optional[np.ndarray] = None
         self._obs_feats = None
         self._segment_features = None
         self.estimation_meta = {"use_bias": self.use_bias}
@@ -1057,12 +1055,12 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
             # reset for the next segment
             self._segment_features = np.zeros(shape=(self.mdim))
 
-        if self.mv_normal_rewards is not None:
+        if self.weights is not None:
             # estimate
             feats = step_features
             if self.use_bias:
                 feats = np.concatenate([feats, np.array([1.0])])
-            reward = np.dot(feats, self.mv_normal_rewards.mean)
+            reward = np.dot(feats, self.weights)
             est_state = OptState.SOLVED
         else:
             # zero impute until rewards are estimated
@@ -1145,7 +1143,7 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
                 )
 
         try:
-            if self.mv_normal_rewards is not None:
+            if self.weights is not None:
                 # This is a posterior update,
                 # increment counter.
                 self.posterior_updates += 1
@@ -1154,13 +1152,11 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
             def constraint_fn(solution):
                 return [term_state @ solution == 0 for term_state in term_states]
 
-            self.mv_normal_rewards = optsol.MultivariateNormal.convex_least_squares(
+            self.weights = optsol.solve_convex_least_squares(
                 matrix=matrix,
                 rhs=rewards,
                 constraint_fn=constraint_fn,
-                warm_start_initial_guess=self.mv_normal_rewards.mean
-                if self.mv_normal_rewards
-                else None,
+                warm_start_initial_guess=self.weights,
             )
 
         except ValueError as err:
@@ -1172,14 +1168,14 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
             )
         else:
             error = metrics.rmse(
-                v_pred=np.dot(matrix, self.mv_normal_rewards.mean),
+                v_pred=np.dot(matrix, self.weights),
                 v_true=rewards,
                 axis=0,
             )
             self.estimation_meta["sample"] = {"size": nexamples}
             self.estimation_meta["error"] = {"rmse": error}
             self.estimation_meta["estimate"] = {
-                "weights": self.mv_normal_rewards.mean.tolist(),
+                "weights": self.weights.tolist(),
                 "constraints": len(term_states),
             }
             logging.info(
@@ -1194,6 +1190,7 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
 
             # Clear buffers for next data
             self.est_buffer.clear()
+            self.tst_buffer.clear()
 
 
 def list_size(xs: List[Any]) -> int:
