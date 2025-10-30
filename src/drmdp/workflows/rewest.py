@@ -50,13 +50,13 @@ class JobSpec:
     turn: int
 
 
-# @ray.remote
+@ray.remote
 class ResultWriter:
     """
     Remote task to export results.
     """
 
-    def __init__(self, output_path: str, partition_size: int = 100):
+    def __init__(self, output_path: str, partition_size: int = 50):
         self.output_path = output_path
         self.partition_size = partition_size
         self.results: List[Any] = []
@@ -531,8 +531,19 @@ def run_reward_estimation_study(specs, turns: int, num_episodes: int, output_pat
 
     with ray.init() as context:
         logging.info("Starting ray task: %s", context)
+        result_writer = ResultWriter.remote(output_path=output_path)
         results_refs = [run_fn.remote(job) for job in jobs]
-        wait_till_completion(results_refs, "Reward-Estimation")
+        write_result_refs = []
+        for completed_result_ref in yield_as_completed(
+            results_refs, "Reward-Estimation"
+        ):
+            write_result_ref = result_writer.write.remote(completed_result_ref)  # type: ignore
+            write_result_refs.append(write_result_ref)
+
+        # Finish all export tasks.
+        wait_till_completion(write_result_refs, name="Write-Result")
+        # Flush buffer
+        ray.get(result_writer.sync.remote())  # type: ignore
 
 
 @ray.remote
