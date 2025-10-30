@@ -161,7 +161,6 @@ class FlatGridCoordObsWrapper(gym.ObservationWrapper):
             shape[0] if isinstance(env.observation_space.shape, Sequence) else shape
         )
         self.value_ranges = env.observation_space.high - env.observation_space.low
-        self.d1 = env.observation_space.shape[0] == 1
         # num coordinates
         self.nstates = int(np.prod(self.value_ranges))
         self.observation_space = gym.spaces.Discrete(self.nstates)
