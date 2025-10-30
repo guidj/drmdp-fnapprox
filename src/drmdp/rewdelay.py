@@ -400,7 +400,7 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper):
         # matrix.
         if self.est_buffer.size() <= self.mdim:
             return
-        
+
         obs_buffer, rew_buffer = zip(*self.est_buffer.buffer)
         matrix = np.stack(obs_buffer, dtype=np.float64)
         rewards = np.array(rew_buffer, dtype=np.float64)
@@ -415,7 +415,14 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper):
             )
         try:
             self.weights = optsol.solve_least_squares(matrix=matrix, rhs=rewards)
-        except ValueError:
+        except ValueError as err:
+            logging.info(
+                "%s - Failed estimation for %s: \n%s",
+                type(self).__name__,
+                self.env,
+                err,
+            )
+
             # drop latest 5% of samples
             nexamples_drop = int(nexamples * 0.05)
             indices = self.rng.choice(
@@ -428,11 +435,11 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper):
             self.est_buffer.buffer = list(zip(obs_buffer, rew_buffer))
 
             logging.info(
-                "%s - Failed estimation for %s. Dropping %d samples",
+                "%s - Dropped %d samples",
                 type(self).__name__,
-                self.env,
                 nexamples_drop,
             )
+
         else:
             error = metrics.rmse(
                 v_pred=np.dot(matrix, self.weights), v_true=rewards, axis=0
@@ -574,7 +581,14 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper):
             )
         try:
             self.weights = optsol.solve_least_squares(matrix=matrix, rhs=rewards)
-        except ValueError:
+        except ValueError as err:
+            logging.info(
+                "%s - Failed estimation for %s: \n%s",
+                type(self).__name__,
+                self.env,
+                err,
+            )
+
             # drop latest 5% of samples
             nexamples_drop = int(nexamples * 0.05)
             indices = self.rng.choice(
@@ -585,12 +599,13 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper):
             obs_buffer = matrix[indices].tolist()
             rew_buffer = rewards[indices].tolist()
             self.est_buffer.buffer = list(zip(obs_buffer, rew_buffer))
+
             logging.info(
-                "%s - Failed estimation for %s. Dropping %d samples",
+                "%s - Dropped %d samples",
                 type(self).__name__,
-                self.env,
                 nexamples_drop,
             )
+
         else:
             error = metrics.rmse(
                 v_pred=np.dot(matrix, self.weights), v_true=rewards, axis=0
@@ -758,11 +773,12 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper):
                 )
                 self.posterior_updates += 1
 
-        except ValueError:
+        except ValueError as err:
             logging.info(
-                "%s - Failed estimation for %s",
+                "%s - Failed estimation for %s: \n%s",
                 type(self).__name__,
                 self.env,
+                err,
             )
         else:
             error = metrics.rmse(
@@ -953,7 +969,13 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper):
             self.weights = optsol.solve_convex_least_squares(
                 matrix=matrix, rhs=rewards, constraint_fn=constraint_fn
             )
-        except ValueError:
+        except ValueError as err:
+            logging.info(
+                "%s - Failed estimation for %s: \n%s",
+                type(self).__name__,
+                self.env,
+                err,
+            )
             # drop latest 5% of samples
             nexamples_drop = int(nexamples * 0.05)
             indices = self.rng.choice(
@@ -965,9 +987,8 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper):
             rew_buffer = rewards[indices].tolist()
             self.est_buffer.buffer = list(zip(obs_buffer, rew_buffer))
             logging.info(
-                "%s - Failed estimation for %s. Dropping %d samples",
+                "%s - Dropped %d samples",
                 type(self).__name__,
-                self.env,
                 nexamples_drop,
             )
         else:
