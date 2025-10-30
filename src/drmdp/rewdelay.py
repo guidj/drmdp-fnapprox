@@ -394,11 +394,13 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper):
 
     def estimate_rewards(self):
         """
-        Estimate rewards with lstsq.
+        Estimate rewards with Least Squares.
         """
-        if self.est_buffer.size() == 0:
+        # Estimate when there is a tall
+        # matrix.
+        if self.est_buffer.size() <= self.mdim:
             return
-
+        
         obs_buffer, rew_buffer = zip(*self.est_buffer.buffer)
         matrix = np.stack(obs_buffer, dtype=np.float64)
         rewards = np.array(rew_buffer, dtype=np.float64)
@@ -551,9 +553,11 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper):
 
     def estimate_rewards(self):
         """
-        Estimate rewards with lstsq.
+        Estimate rewards with Least Squares.
         """
-        if self.est_buffer.size() == 0:
+        # Estimate when there is a tall
+        # matrix.
+        if self.est_buffer.size() <= self.mdim:
             return
 
         obs_buffer, rew_buffer = zip(*self.est_buffer.buffer)
@@ -719,9 +723,12 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper):
 
     def estimate_rewards(self):
         """
-        Estimate new posterior.
+        Estimate rewards or update posterior estimate
+        of Least Squares.
         """
-        if self.est_buffer.size() == 0:
+        # Estimate when there is a tall
+        # matrix.
+        if self.est_buffer.size() <= self.mdim:
             return
 
         obs_buffer, rew_buffer = zip(*self.est_buffer.buffer)
@@ -904,9 +911,12 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper):
 
     def estimate_rewards(self):
         """
-        Estimate rewards with lstsq.
+        Estimate rewards with convex optimisation
+        with constraints.
         """
-        if self.est_buffer.size() == 0:
+        # Estimate when there is a tall
+        # matrix.
+        if self.est_buffer.size() <= self.mdim:
             return
 
         obs_buffer, rew_buffer = zip(*self.est_buffer.buffer)
@@ -1111,9 +1121,14 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
 
     def estimate_rewards(self):
         """
-        Estimate new posterior.
+        Estimate rewards with convex optimisation
+        with constraints or update estimate
+        using prior estimate as the initial
+        guess.
         """
-        if self.est_buffer.size() == 0:
+        # Estimate when there is a tall
+        # matrix.
+        if self.est_buffer.size() <= self.mdim:
             return
 
         obs_buffer, rew_buffer = zip(*self.est_buffer.buffer)
