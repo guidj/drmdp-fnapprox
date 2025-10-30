@@ -443,7 +443,7 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper):
                 "weights": self.weights.tolist(),
             }
             logging.info(
-                "%s - Estimated rewards for %s. RMSE: %f; # Samples: %d",
+                "%s - Estimated rewards for %s. RMSE: %f; No. Samples: %d",
                 type(self).__name__,
                 self.env,
                 error,
@@ -601,7 +601,7 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper):
                 "weights": self.weights.tolist(),
             }
             logging.info(
-                "%s - Estimated rewards for %s. RMSE: %f; # Samples: %d",
+                "%s - Estimated rewards for %s. RMSE: %f; No. Samples: %d",
                 type(self).__name__,
                 self.env,
                 error,
@@ -776,7 +776,7 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper):
                 "weights": self.mv_normal_rewards.mean.tolist(),
             }
             logging.info(
-                "%s - %s rewards for %s. RMSE: %f; # Samples: %d",
+                "%s - %s rewards for %s. RMSE: %f; No. Samples: %d",
                 "Estimated" if self.posterior_updates == 0 else "Updated",
                 type(self).__name__,
                 self.env,
@@ -981,7 +981,7 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper):
                 "constraints": len(term_states),
             }
             logging.info(
-                "%s - Estimated rewards for %s. RMSE: %f; # Samples: %d, # Constraints: %d",
+                "%s - Estimated rewards for %s. RMSE: %f; No. Samples: %d, # Constraints: %d",
                 type(self).__name__,
                 self.env,
                 error,
@@ -1194,7 +1194,7 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
                 "constraints": len(term_states),
             }
             logging.info(
-                "%s - %s rewards for %s. RMSE: %f; # Samples: %d, # Constraints: %d",
+                "%s - %s rewards for %s. RMSE: %f; No. Samples: %d, # Constraints: %d",
                 "Estimated" if self.posterior_updates == 0 else "Updated",
                 type(self).__name__,
                 self.env,
