@@ -529,11 +529,7 @@ def run_reward_estimation_study(specs, turns: int, num_episodes: int, output_pat
             jobs.append(job_spec)
     np.random.shuffle(jobs)  # type: ignore
 
-    with ray.init(
-        runtime_env={
-            "env_vars": {"RAY_DEBUG": "0"},
-        }
-    ) as context:
+    with ray.init() as context:
         logging.info("Starting ray task: %s", context)
         result_writer = ResultWriter.remote(output_path=output_path)
         results_refs = [run_fn.remote(job) for job in jobs]
