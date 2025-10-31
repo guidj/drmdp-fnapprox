@@ -211,6 +211,66 @@ class DataBuffer:
         self.buffer.append(element)
 
 
+class WindowedTaskSchedule:
+    """
+    Sets schedule for updates, using two types of schedules:
+    1. Fixed interval (fixed)
+    2. Doubling size (double)
+    """
+
+    FIXED = "fixed"
+    DOUBLE = "double"
+
+    def __init__(self, mode: str, init_update_ep: int):
+        """
+        Instatiates the class for a given update schedule.
+        """
+        if mode not in (self.FIXED, self.DOUBLE):
+            raise ValueError(
+                f"Unsupported mode: {mode}. Must be ({self.FIXED}, {self.DOUBLE})"
+            )
+
+        self.mode = mode
+        self.init_update_ep = init_update_ep
+        self.curr_update_ep = init_update_ep
+        self._done = False
+
+        self.next_update_ep = (
+            self.curr_update_ep * 2
+            if self.mode == self.DOUBLE
+            else self.curr_update_ep + self.init_update_ep
+        )
+
+    def step(self, episode: int) -> None:
+        """
+        Updates the estimation window.
+        """
+        if episode == self.next_update_ep:
+            # New window
+            self.curr_update_ep = self.next_update_ep
+            self.next_update_ep = (
+                self.curr_update_ep * 2
+                if self.mode == self.DOUBLE
+                else self.curr_update_ep + self.init_update_ep
+            )
+            # Reset window state.
+            self._done = False
+
+    def set_state(self, succ: bool) -> None:
+        """
+        Sets state for the current cycle.
+        """
+
+        self._done = succ
+
+    @property
+    def current_window_done(self) -> bool:
+        """
+        Returns true if the current cycle state is `False`.
+        """
+        return self._done
+
+
 class DelayedRewardWrapper(gym.Wrapper):
     """
     Emits rewards following a delayed aggregation schedule.
@@ -639,14 +699,11 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper):
     schedule or at fixed intervals.
     """
 
-    INTERVAL = "interval"
-    DOUBLE = "double"
-
     def __init__(
         self,
         env: gym.Env,
         obs_encoding_wrapper: gym.ObservationWrapper,
-        mode: str = DOUBLE,
+        mode: str = WindowedTaskSchedule.DOUBLE,
         init_attempt_estimation_episode: int = 10,
         use_bias: bool = False,
     ):
@@ -659,11 +716,11 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper):
             raise ValueError(
                 f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper)}"
             )
-        if mode not in (self.INTERVAL, self.DOUBLE):
-            pass
         self.obs_wrapper = obs_encoding_wrapper
         self.use_bias = use_bias
-        self.mode = mode
+        self.windowed_task_schedule = WindowedTaskSchedule(
+            mode=mode, init_update_ep=init_attempt_estimation_episode
+        )
         self.init_attempt_estimation_episode = init_attempt_estimation_episode
         self.update_episode = init_attempt_estimation_episode
         self.episodes = 0
@@ -711,13 +768,11 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper):
 
         if term or trunc:
             self.episodes += 1
-            if self.episodes % self.update_episode == 0:
-                self.estimate_rewards()
-                # Schedule next update
-                if self.mode == self.DOUBLE:
-                    self.update_episode *= 2
-                elif self.mode == self.INTERVAL:
-                    pass
+            self.windowed_task_schedule.step(self.episodes)
+
+            if not self.windowed_task_schedule.current_window_done:
+                outcome = self.estimate_rewards()
+                self.windowed_task_schedule.set_state(succ=outcome)
 
         # For the next step
         self._obs_feats = next_obs_feats
@@ -736,7 +791,7 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper):
         self._segment_features = np.zeros(shape=(self.mdim))
         return obs, info
 
-    def estimate_rewards(self):
+    def estimate_rewards(self) -> bool:
         """
         Estimate rewards or update posterior estimate
         of Least Squares.
@@ -744,7 +799,7 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper):
         # Estimate when there is a tall
         # matrix.
         if self.est_buffer.size() <= self.mdim:
-            return
+            return False
 
         obs_buffer, rew_buffer = zip(*self.est_buffer.buffer)
         matrix = np.stack(obs_buffer, dtype=np.float64)
@@ -780,6 +835,7 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper):
                 self.env,
                 err,
             )
+            return False
         else:
             error = metrics.rmse(
                 v_pred=np.dot(matrix, self.mv_normal_rewards.mean),
@@ -802,6 +858,7 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper):
 
             # Clear buffers for next data
             self.est_buffer.clear()
+        return True
 
 
 class ConvexSolverGenerativeRewardWrapper(gym.Wrapper):
@@ -1027,14 +1084,11 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
     schedule or at fixed intervals.
     """
 
-    INTERVAL = "interval"
-    DOUBLE = "double"
-
     def __init__(
         self,
         env: gym.Env,
         obs_encoding_wrapper: gym.ObservationWrapper,
-        mode: str = DOUBLE,
+        mode: str = WindowedTaskSchedule.DOUBLE,
         init_attempt_estimation_episode: int = 10,
         use_bias: bool = False,
         constraints_buffer_limit: Optional[int] = None,
@@ -1048,11 +1102,11 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
             raise ValueError(
                 f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper)}"
             )
-        if mode not in (self.INTERVAL, self.DOUBLE):
-            pass
         self.obs_wrapper = obs_encoding_wrapper
         self.use_bias = use_bias
-        self.mode = mode
+        self.windowed_task_schedule = WindowedTaskSchedule(
+            mode=mode, init_update_ep=init_attempt_estimation_episode
+        )
         self.init_attempt_estimation_episode = init_attempt_estimation_episode
         self.update_episode = init_attempt_estimation_episode
         self.episodes = 0
@@ -1117,12 +1171,11 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
 
         if term or trunc:
             self.episodes += 1
-            if self.episodes % self.update_episode == 0:
-                self.estimate_rewards()
-                if self.mode == self.DOUBLE:
-                    self.update_episode *= 2
-                elif self.mode == self.INTERVAL:
-                    pass
+            self.windowed_task_schedule.step(self.episodes)
+
+            if not self.windowed_task_schedule.current_window_done:
+                outcome = self.estimate_rewards()
+                self.windowed_task_schedule.set_state(succ=outcome)
 
         # For the next step
         self._obs_feats = next_obs_feats
@@ -1141,7 +1194,7 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
         self._segment_features = np.zeros(shape=(self.mdim))
         return obs, info
 
-    def estimate_rewards(self):
+    def estimate_rewards(self) -> bool:
         """
         Estimate rewards with convex optimisation
         with constraints or update estimate
@@ -1151,7 +1204,7 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
         # Estimate when there is a tall
         # matrix.
         if self.est_buffer.size() <= self.mdim:
-            return
+            return False
 
         obs_buffer, rew_buffer = zip(*self.est_buffer.buffer)
         matrix = np.stack(obs_buffer, dtype=np.float64)
@@ -1203,6 +1256,7 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
                 self.env,
                 err,
             )
+            return False
         else:
             error = metrics.rmse(
                 v_pred=np.dot(matrix, self.weights),
@@ -1228,6 +1282,7 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
             # Clear buffers for next data
             self.est_buffer.clear()
             self.tst_buffer.clear()
+        return True
 
 
 def list_size(xs: List[Any]) -> int:
