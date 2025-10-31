@@ -476,7 +476,7 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper):
         try:
             self.weights = optsol.solve_least_squares(matrix=matrix, rhs=rewards)
         except ValueError as err:
-            logging.info(
+            logging.debug(
                 "%s - Failed estimation for %s: \n%s",
                 type(self).__name__,
                 self.env,
@@ -494,7 +494,7 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper):
             rew_buffer = rewards[indices].tolist()
             self.est_buffer.buffer = list(zip(obs_buffer, rew_buffer))
 
-            logging.info(
+            logging.debug(
                 "%s - Dropped %d samples",
                 type(self).__name__,
                 nexamples_drop,
@@ -642,7 +642,7 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper):
         try:
             self.weights = optsol.solve_least_squares(matrix=matrix, rhs=rewards)
         except ValueError as err:
-            logging.info(
+            logging.debug(
                 "%s - Failed estimation for %s: \n%s",
                 type(self).__name__,
                 self.env,
@@ -660,7 +660,7 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper):
             rew_buffer = rewards[indices].tolist()
             self.est_buffer.buffer = list(zip(obs_buffer, rew_buffer))
 
-            logging.info(
+            logging.debug(
                 "%s - Dropped %d samples",
                 type(self).__name__,
                 nexamples_drop,
@@ -829,7 +829,7 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper):
                 self.posterior_updates += 1
 
         except ValueError as err:
-            logging.info(
+            logging.debug(
                 "%s - Failed estimation for %s: \n%s",
                 type(self).__name__,
                 self.env,
@@ -1028,7 +1028,7 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper):
                 matrix=matrix, rhs=rewards, constraint_fn=constraint_fn
             )
         except ValueError as err:
-            logging.info(
+            logging.debug(
                 "%s - Failed estimation for %s: \n%s",
                 type(self).__name__,
                 self.env,
@@ -1044,7 +1044,7 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper):
             obs_buffer = matrix[indices].tolist()
             rew_buffer = rewards[indices].tolist()
             self.est_buffer.buffer = list(zip(obs_buffer, rew_buffer))
-            logging.info(
+            logging.debug(
                 "%s - Dropped %d samples",
                 type(self).__name__,
                 nexamples_drop,
@@ -1250,7 +1250,7 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
             )
 
         except ValueError as err:
-            logging.info(
+            logging.debug(
                 "%s - Failed estimation for %s: \n%s",
                 type(self).__name__,
                 self.env,
