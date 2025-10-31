@@ -826,6 +826,7 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper):
         obs_encoding_wrapper: gym.ObservationWrapper,
         attempt_estimation_episode: int,
         use_bias: bool = False,
+        constraints_buffer_limit: Optional[int] = None,
     ):
         super().__init__(env)
         if not isinstance(obs_encoding_wrapper.observation_space, gym.spaces.Box):
@@ -841,7 +842,7 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper):
         self.episodes = 0
         self.use_bias = use_bias
         self.est_buffer = DataBuffer()
-        self.tst_buffer = DataBuffer()
+        self.tst_buffer = DataBuffer(max_capacity=constraints_buffer_limit)
 
         self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
         self.mdim = self.obs_dim * self.obs_wrapper.action_space.n + self.obs_dim
