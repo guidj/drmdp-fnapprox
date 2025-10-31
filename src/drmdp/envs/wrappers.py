@@ -63,7 +63,7 @@ class GaussianMixObsWrapper(gym.ObservationWrapper):
         self.sample_steps = sample_steps
         # Make a copy of the env
         # to preserve state.
-        buffer = dataproc.collection_traj_data(copy.deepcopy(env), steps=sample_steps)
+        buffer = dataproc.collection_traj_data(copy.copy(env), steps=sample_steps)
         self.grid_search = self.gm_proj(buffer, param_grid, **kwargs)
         self.estimator = self.grid_search.best_estimator_
         self.obs_dim = self.grid_search.best_estimator_.n_components
@@ -113,7 +113,7 @@ class ClusterCentroidObsWrapper(gym.ObservationWrapper):
         # Make a copy of the env
         # to preserve state.
         buffer = dataproc.collection_traj_data(
-            copy.deepcopy(env), steps=self.sample_steps, seed=seed
+            copy.copy(env), steps=self.sample_steps, seed=seed
         )
         if not isinstance(env.observation_space, gym.spaces.Box):
             raise ValueError(
