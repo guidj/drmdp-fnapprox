@@ -1,3 +1,4 @@
+import copy
 from typing import Any, Dict, Hashable, Optional, Sequence
 
 import gymnasium as gym
@@ -60,7 +61,9 @@ class GaussianMixObsWrapper(gym.ObservationWrapper):
         super().__init__(env)
         self.param_grid = param_grid
         self.sample_steps = sample_steps
-        buffer = dataproc.collection_traj_data(env, steps=sample_steps)
+        # Make a copy of the env
+        # to preserve state.
+        buffer = dataproc.collection_traj_data(copy.deepcopy(env), steps=sample_steps)
         self.grid_search = self.gm_proj(buffer, param_grid, **kwargs)
         self.estimator = self.grid_search.best_estimator_
         self.obs_dim = self.grid_search.best_estimator_.n_components
@@ -107,7 +110,11 @@ class ClusterCentroidObsWrapper(gym.ObservationWrapper):
         super().__init__(env)
         self.num_clusters = num_clusters
         self.sample_steps = sample_steps
-        buffer = dataproc.collection_traj_data(env, steps=self.sample_steps, seed=seed)
+        # Make a copy of the env
+        # to preserve state.
+        buffer = dataproc.collection_traj_data(
+            copy.deepcopy(env), steps=self.sample_steps, seed=seed
+        )
         if not isinstance(env.observation_space, gym.spaces.Box):
             raise ValueError(
                 f"Source `env` observation space must be of type `Box`. Got {type(env.observation_space)}"

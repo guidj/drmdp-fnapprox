@@ -341,8 +341,8 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper):
     def step(self, action):
         next_obs, reward, term, trunc, info = super().step(action)
         next_obs_feats = self.obs_wrapper.observation(next_obs)
-        # Add s to action-specific columns
-        # and s' to the last columns.
+
+        # Find S x A position
         self._segment_features[self._obs_feats * self.nactions + action] += 1
 
         if self.weights is not None:
