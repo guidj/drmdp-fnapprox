@@ -569,14 +569,13 @@ def wait_till_completion(tasks_refs, name: Optional[str] = None):
     """
     unfinished_tasks = tasks_refs
     while True:
-        finished_tasks, unfinished_tasks = ray.wait(unfinished_tasks)
-        for _ in finished_tasks:
-            logging.info(
-                "Completed task %s. %d left out of %d.",
-                name,
-                len(unfinished_tasks),
-                len(tasks_refs),
-            )
+        _, unfinished_tasks = ray.wait(unfinished_tasks)
+        logging.info(
+            "Completed task %s. %d left out of %d.",
+            name,
+            len(unfinished_tasks),
+            len(tasks_refs),
+        )
 
         if len(unfinished_tasks) == 0:
             break
@@ -590,13 +589,13 @@ def yield_as_completed(tasks_refs, name: Optional[str] = None):
     finished_tasks = []
     while True:
         finished_tasks, unfinished_tasks = ray.wait(unfinished_tasks)
+        logging.info(
+            "Yielding task %s. %d left out of %d.",
+            name,
+            len(unfinished_tasks),
+            len(tasks_refs),
+        )
         for finished_task in finished_tasks:
-            logging.info(
-                "Yielding task %s. %d left out of %d.",
-                name,
-                len(unfinished_tasks),
-                len(tasks_refs),
-            )
             yield finished_task
 
         if len(unfinished_tasks) == 0:
