@@ -531,7 +531,7 @@ def run_reward_estimation_study(specs, turns: int, num_episodes: int, output_pat
 
     with ray.init(
         runtime_env={
-            "env_vars": {"RAY_DEBUG": "1"},
+            "env_vars": {"RAY_DEBUG": "0"},
         }
     ) as context:
         logging.info("Starting ray task: %s", context)
