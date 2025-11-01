@@ -159,7 +159,7 @@ def bayes_least_specs(
 def cvlps_specs(
     attempt_estimation_episodes: Sequence[int],
     feat_spec: Mapping[str, Any],
-    constraints_buffer_limit: Optional[int] = None,
+    constraints_buffer_limit: Optional[int] = 100,
 ):
     return [
         {
@@ -177,7 +177,7 @@ def cvlps_specs(
 def bayes_cvlps_specs(
     init_attempt_estimation_episodes: Sequence[int],
     feat_spec: Mapping[str, Any],
-    constraints_buffer_limit: Optional[int] = None,
+    constraints_buffer_limit: Optional[int] = 100,
 ):
     return [
         {
@@ -217,7 +217,6 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             + cvlps_specs(
                 attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "scale", "args": None},
-                constraints_buffer_limit=100,
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10, 20, 30),
@@ -249,7 +248,6 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             + cvlps_specs(
                 attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "scale", "args": None},
-                constraints_buffer_limit=100,
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10, 20, 30),
@@ -281,7 +279,6 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             + cvlps_specs(
                 attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "scale", "args": None},
-                constraints_buffer_limit=100,
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10, 20, 30),
@@ -313,7 +310,6 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             + cvlps_specs(
                 attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "scale", "args": None},
-                constraints_buffer_limit=100,
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10, 20, 30),
@@ -345,7 +341,6 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             + cvlps_specs(
                 attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "scale", "args": None},
-                constraints_buffer_limit=100,
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10, 20, 30),
@@ -377,7 +372,6 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             + cvlps_specs(
                 attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "scale", "args": None},
-                constraints_buffer_limit=100,
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10, 20, 30),
@@ -406,7 +400,6 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             + cvlps_specs(
                 attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "tiles", "args": {"tiling_dim": 6}},
-                constraints_buffer_limit=100,
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10, 20, 30),
@@ -415,7 +408,6 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             + bayes_cvlps_specs(
                 init_attempt_estimation_episodes=(10, 20, 30),
                 feat_spec={"name": "tiles", "args": {"tiling_dim": 6}},
-                constraints_buffer_limit=100,
             ),
             "epochs": 100,
         },
@@ -436,7 +428,6 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             + cvlps_specs(
                 attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "tiles", "args": {"tiling_dim": 6}},
-                constraints_buffer_limit=100,
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10, 20, 30),
@@ -445,7 +436,6 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             + bayes_cvlps_specs(
                 init_attempt_estimation_episodes=(10, 20, 30),
                 feat_spec={"name": "tiles", "args": {"tiling_dim": 6}},
-                constraints_buffer_limit=100,
             ),
             "epochs": 100,
         },
@@ -468,7 +458,6 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             + cvlps_specs(
                 attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "tiles", "args": {"tiling_dim": 6}},
-                constraints_buffer_limit=100,
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10, 20, 30),
@@ -477,7 +466,6 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             + bayes_cvlps_specs(
                 init_attempt_estimation_episodes=(10, 20, 30),
                 feat_spec={"name": "tiles", "args": {"tiling_dim": 6}},
-                constraints_buffer_limit=100,
             ),
             "epochs": 10,
         },
@@ -498,7 +486,6 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             + cvlps_specs(
                 attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "tiles", "args": {"tiling_dim": 8}},
-                constraints_buffer_limit=100,
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10, 20, 30),
@@ -507,7 +494,6 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             + bayes_cvlps_specs(
                 init_attempt_estimation_episodes=(10, 20, 30),
                 feat_spec={"name": "tiles", "args": {"tiling_dim": 8}},
-                constraints_buffer_limit=100,
             ),
             "epochs": 10,
         },
