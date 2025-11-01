@@ -774,7 +774,13 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper):
             reward,
             term,
             trunc,
-            {"estimator": {"state": est_state}, **info},
+            {
+                "estimator": {
+                    "state": est_state,
+                    "posterior_updates": self.posterior_updates,
+                },
+                **info,
+            },
         )
 
     def reset(self, *, seed=None, options=None):
@@ -1175,7 +1181,13 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
             reward,
             term,
             trunc,
-            {"estimator": {"state": est_state}, **info},
+            {
+                "estimator": {
+                    "state": est_state,
+                    "posterior_updates": self.posterior_updates,
+                },
+                **info,
+            },
         )
 
     def reset(self, *, seed=None, options=None):
