@@ -3,7 +3,7 @@ import logging
 import random
 import sys
 from enum import Enum
-from typing import Any, Callable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, List, Optional, Protocol, Sequence, Tuple
 
 import gymnasium as gym
 import numpy as np
@@ -271,7 +271,33 @@ class WindowedTaskSchedule:
         return self._done
 
 
-class DelayedRewardWrapper(gym.Wrapper):
+class SupportsName(Protocol):
+    """
+    Provides methods to get the name of the
+    class and underlying (`unwrapped`) env.
+    """
+
+    env: gym.Env
+    unwrapped: gym.Env
+
+    def get_name(self):
+        """
+        Name and id of the class.
+        """
+        cls_name = type(self).__name__
+        env_id = id(self)
+        return f"{cls_name}(id={env_id})"
+
+    def get_env_name(self):
+        """
+        Name and id of the underlying (`unwrapped`) environment.
+        """
+        cls_name = type(self.env.unwrapped).__name__
+        env_id = id(self.unwrapped)
+        return f"{cls_name}(id={env_id})"
+
+
+class DelayedRewardWrapper(gym.Wrapper, SupportsName):
     """
     Emits rewards following a delayed aggregation schedule.
     Rewards at the end of the reward window correspond
@@ -338,7 +364,7 @@ class DelayedRewardWrapper(gym.Wrapper):
         }
 
 
-class ZeroImputeMissingRewardWrapper(gym.RewardWrapper):
+class ZeroImputeMissingRewardWrapper(gym.RewardWrapper, SupportsName):
     """
     Missing rewards (`None`) are replaced with zero.
     """
@@ -355,7 +381,7 @@ class ZeroImputeMissingRewardWrapper(gym.RewardWrapper):
         return reward
 
 
-class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper):
+class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
     """
     The aggregate reward windows are used to
     estimate the underlying MDP rewards.
@@ -478,8 +504,8 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper):
         except ValueError as err:
             logging.debug(
                 "%s - Failed estimation for %s: \n%s",
-                type(self).__name__,
-                self.env,
+                self.get_name(),
+                self.get_env_name(),
                 err,
             )
 
@@ -492,7 +518,7 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper):
             self.est_buffer.buffer = list(zip(obs_buffer, rew_buffer))
             logging.debug(
                 "%s - Dropped %d samples",
-                type(self).__name__,
+                self.get_name(),
                 nexamples_dropped,
             )
 
@@ -507,14 +533,14 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper):
             }
             logging.info(
                 "%s - Estimated rewards for %s. RMSE: %f; No. Samples: %d",
-                type(self).__name__,
-                self.env,
+                self.get_name(),
+                self.get_env_name(),
                 error,
                 nexamples,
             )
 
 
-class LeastLfaGenerativeRewardWrapper(gym.Wrapper):
+class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
     """
     The aggregate reward windows are used to
     estimate the underlying MDP rewards.
@@ -640,8 +666,8 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper):
         except ValueError as err:
             logging.debug(
                 "%s - Failed estimation for %s: \n%s",
-                type(self).__name__,
-                self.env,
+                self.get_name(),
+                self.get_env_name(),
                 err,
             )
 
@@ -655,7 +681,7 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper):
 
             logging.debug(
                 "%s - Dropped %d samples",
-                type(self).__name__,
+                self.get_name(),
                 nexamples_dropped,
             )
 
@@ -670,14 +696,14 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper):
             }
             logging.info(
                 "%s - Estimated rewards for %s. RMSE: %f; No. Samples: %d",
-                type(self).__name__,
-                self.env,
+                self.get_name(),
+                self.get_env_name(),
                 error,
                 nexamples,
             )
 
 
-class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper):
+class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
     """
     The aggregate reward windows are used to
     estimate the underlying MDP rewards.
@@ -830,8 +856,8 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper):
         except ValueError as err:
             logging.debug(
                 "%s - Failed estimation for %s: \n%s",
-                type(self).__name__,
-                self.env,
+                self.get_name(),
+                self.get_env_name(),
                 err,
             )
             return False
@@ -849,8 +875,8 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper):
             logging.info(
                 "%s - %s rewards for %s. RMSE: %f; No. Samples: %d",
                 "Estimated" if self.posterior_updates == 0 else "Updated",
-                type(self).__name__,
-                self.env,
+                self.get_name(),
+                self.get_env_name(),
                 error,
                 nexamples,
             )
@@ -860,7 +886,7 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper):
         return True
 
 
-class ConvexSolverGenerativeRewardWrapper(gym.Wrapper):
+class ConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
     """
     The aggregate reward windows are used to
     estimate the underlying MDP rewards.
@@ -1029,8 +1055,8 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper):
         except ValueError as err:
             logging.debug(
                 "%s - Failed estimation for %s: \n%s",
-                type(self).__name__,
-                self.env,
+                self.get_name(),
+                self.get_env_name(),
                 err,
             )
             # drop latest 5% of samples
@@ -1042,7 +1068,7 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper):
             self.est_buffer.buffer = list(zip(obs_buffer, rew_buffer))
             logging.debug(
                 "%s - Dropped %d samples",
-                type(self).__name__,
+                self.get_name(),
                 nexamples_dropped,
             )
         else:
@@ -1057,15 +1083,15 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper):
             }
             logging.info(
                 "%s - Estimated rewards for %s. RMSE: %f; No. Samples: %d, # Constraints: %d",
-                type(self).__name__,
-                self.env,
+                self.get_name(),
+                self.get_env_name(),
                 error,
                 nexamples,
                 len(term_states),
             )
 
 
-class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
+class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
     """
     The aggregate reward windows are used to
     estimate the underlying MDP rewards.
@@ -1255,8 +1281,8 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
         except ValueError as err:
             logging.debug(
                 "%s - Failed estimation for %s: \n%s",
-                type(self).__name__,
-                self.env,
+                self.get_name(),
+                self.get_env_name(),
                 err,
             )
             return False
@@ -1275,8 +1301,8 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
             logging.info(
                 "%s - %s rewards for %s. RMSE: %f; No. Samples: %d, # Constraints: %d",
                 "Estimated" if self.posterior_updates == 0 else "Updated",
-                type(self).__name__,
-                self.env,
+                self.get_name(),
+                self.get_env_name(),
                 error,
                 nexamples,
                 self.tst_buffer.size(),
