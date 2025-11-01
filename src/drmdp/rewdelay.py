@@ -752,6 +752,7 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self._segment_features = None
         self.estimation_meta = {"use_bias": self.use_bias}
         self.est_buffer = DataBuffer(max_capacity=self.mdim * 10)
+        self.rng = np.random.default_rng()
 
     def step(self, action):
         next_obs, reward, term, trunc, info = super().step(action)
@@ -859,6 +860,18 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
                 self.get_name(),
                 self.get_env_name(),
                 err,
+            )
+            # drop latest 5% of samples
+            nexamples_dropped, (matrix, rewards) = drop_samples(
+                frac=0.05, arrays=[matrix, rewards], rng=self.rng
+            )
+            obs_buffer = matrix.tolist()
+            rew_buffer = rewards.tolist()
+            self.est_buffer.buffer = list(zip(obs_buffer, rew_buffer))
+            logging.debug(
+                "%s - Dropped %d samples",
+                self.get_name(),
+                nexamples_dropped,
             )
             return False
         else:
@@ -1284,6 +1297,19 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
                 self.get_name(),
                 self.get_env_name(),
                 err,
+            )
+
+            # drop latest 5% of samples
+            nexamples_dropped, (matrix, rewards) = drop_samples(
+                frac=0.05, arrays=[matrix, rewards], rng=self.rng
+            )
+            obs_buffer = matrix.tolist()
+            rew_buffer = rewards.tolist()
+            self.est_buffer.buffer = list(zip(obs_buffer, rew_buffer))
+            logging.debug(
+                "%s - Dropped %d samples",
+                self.get_name(),
+                nexamples_dropped,
             )
             return False
         else:
