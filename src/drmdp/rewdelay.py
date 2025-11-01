@@ -387,7 +387,6 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper):
         self.attempt_estimation_episode = attempt_estimation_episode
         self.episodes = 0
         self.use_bias = use_bias
-        self.est_buffer = DataBuffer()
 
         self.nstates = obs_encoding_wrapper.observation_space.n
         self.nactions = obs_encoding_wrapper.action_space.n
@@ -397,6 +396,7 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper):
         self._segment_features = None
         self.estimation_meta = {"use_bias": self.use_bias}
         self.rng = np.random.default_rng()
+        self.est_buffer = DataBuffer(max_capacity=self.mdim * 10)
 
     def step(self, action):
         next_obs, reward, term, trunc, info = super().step(action)
@@ -484,20 +484,16 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper):
             )
 
             # drop latest 5% of samples
-            nexamples_drop = int(nexamples * 0.05)
-            indices = self.rng.choice(
-                np.arange(nexamples),
-                nexamples - nexamples_drop,
-                replace=False,
+            nexamples_dropped, (matrix, rewards) = drop_samples(
+                frac=0.05, arrays=[matrix, rewards], rng=self.rng
             )
-            obs_buffer = matrix[indices].tolist()
-            rew_buffer = rewards[indices].tolist()
+            obs_buffer = matrix.tolist()
+            rew_buffer = rewards.tolist()
             self.est_buffer.buffer = list(zip(obs_buffer, rew_buffer))
-
             logging.debug(
                 "%s - Dropped %d samples",
                 type(self).__name__,
-                nexamples_drop,
+                nexamples_dropped,
             )
 
         else:
@@ -550,7 +546,6 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper):
         self.attempt_estimation_episode = attempt_estimation_episode
         self.episodes = 0
         self.use_bias = use_bias
-        self.est_buffer = DataBuffer()
 
         self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
         self.mdim = self.obs_dim * obs_encoding_wrapper.action_space.n + self.obs_dim
@@ -559,6 +554,7 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper):
         self._segment_features = None
         self.estimation_meta = {"use_bias": self.use_bias}
         self.rng = np.random.default_rng()
+        self.est_buffer = DataBuffer(max_capacity=self.mdim * 10)
 
     def step(self, action):
         next_obs, reward, term, trunc, info = super().step(action)
@@ -650,20 +646,17 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper):
             )
 
             # drop latest 5% of samples
-            nexamples_drop = int(nexamples * 0.05)
-            indices = self.rng.choice(
-                np.arange(nexamples),
-                nexamples - nexamples_drop,
-                replace=False,
+            nexamples_dropped, (matrix, rewards) = drop_samples(
+                frac=0.05, arrays=[matrix, rewards], rng=self.rng
             )
-            obs_buffer = matrix[indices].tolist()
-            rew_buffer = rewards[indices].tolist()
+            obs_buffer = matrix.tolist()
+            rew_buffer = rewards.tolist()
             self.est_buffer.buffer = list(zip(obs_buffer, rew_buffer))
 
             logging.debug(
                 "%s - Dropped %d samples",
                 type(self).__name__,
-                nexamples_drop,
+                nexamples_dropped,
             )
 
         else:
@@ -725,7 +718,6 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper):
         self.update_episode = init_attempt_estimation_episode
         self.episodes = 0
         self.posterior_updates = 0
-        self.est_buffer = DataBuffer()
 
         self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
         self.mdim = self.obs_dim * obs_encoding_wrapper.action_space.n + self.obs_dim
@@ -733,6 +725,7 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper):
         self._obs_feats = None
         self._segment_features = None
         self.estimation_meta = {"use_bias": self.use_bias}
+        self.est_buffer = DataBuffer(max_capacity=self.mdim * 10)
 
     def step(self, action):
         next_obs, reward, term, trunc, info = super().step(action)
@@ -898,8 +891,6 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper):
         self.attempt_estimation_episode = attempt_estimation_episode
         self.episodes = 0
         self.use_bias = use_bias
-        self.est_buffer = DataBuffer()
-        self.tst_buffer = DataBuffer(max_capacity=constraints_buffer_limit)
 
         self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
         self.mdim = self.obs_dim * self.obs_wrapper.action_space.n + self.obs_dim
@@ -908,6 +899,8 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper):
         self._segment_features = None
         self.estimation_meta = {"use_bias": self.use_bias}
         self.rng = np.random.default_rng()
+        self.est_buffer = DataBuffer(max_capacity=self.mdim * 10)
+        self.tst_buffer = DataBuffer(max_capacity=constraints_buffer_limit)
 
     def step(self, action):
         next_obs, reward, term, trunc, info = super().step(action)
@@ -1035,19 +1028,16 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper):
                 err,
             )
             # drop latest 5% of samples
-            nexamples_drop = int(nexamples * 0.05)
-            indices = self.rng.choice(
-                np.arange(nexamples),
-                self.attempt_estimation_episode - nexamples_drop,
-                replace=False,
+            nexamples_dropped, (matrix, rewards) = drop_samples(
+                frac=0.05, arrays=[matrix, rewards], rng=self.rng
             )
-            obs_buffer = matrix[indices].tolist()
-            rew_buffer = rewards[indices].tolist()
+            obs_buffer = matrix.tolist()
+            rew_buffer = rewards.tolist()
             self.est_buffer.buffer = list(zip(obs_buffer, rew_buffer))
             logging.debug(
                 "%s - Dropped %d samples",
                 type(self).__name__,
-                nexamples_drop,
+                nexamples_dropped,
             )
         else:
             error = metrics.rmse(
@@ -1111,10 +1101,6 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
         self.update_episode = init_attempt_estimation_episode
         self.episodes = 0
         self.posterior_updates = 0
-        self.est_buffer = DataBuffer()
-        self.tst_buffer = DataBuffer(
-            max_capacity=constraints_buffer_limit,
-        )
 
         self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
         self.mdim = self.obs_dim * obs_encoding_wrapper.action_space.n + self.obs_dim
@@ -1122,6 +1108,11 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper):
         self._obs_feats = None
         self._segment_features = None
         self.estimation_meta = {"use_bias": self.use_bias}
+        self.rng = np.random.default_rng()
+        self.est_buffer = DataBuffer(max_capacity=self.mdim * 10)
+        self.tst_buffer = DataBuffer(
+            max_capacity=constraints_buffer_limit,
+        )
 
     def step(self, action):
         next_obs, reward, term, trunc, info = super().step(action)
@@ -1290,3 +1281,22 @@ def list_size(xs: List[Any]) -> int:
     Gets the size of a list in bytes.
     """
     return sys.getsizeof(xs) - sys.getsizeof([])
+
+
+def drop_samples(
+    frac: float, arrays: Sequence[np.ndarray], rng: np.random.Generator
+) -> Tuple[int, Sequence[np.ndarray]]:
+    """
+    Drops a fraction of examples of every arrays.
+    Arrays are assumed to be of equal length in their
+    most outer dimension.
+    """
+    first = next(iter(arrays))
+    nexamples = len(first)
+    nexamples_to_drop = int(nexamples * frac)
+    indices = rng.choice(
+        np.arange(nexamples),
+        nexamples - nexamples_to_drop,
+        replace=False,
+    )
+    return nexamples_to_drop, (array[indices] for array in arrays)
