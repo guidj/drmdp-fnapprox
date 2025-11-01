@@ -409,7 +409,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 init_attempt_estimation_episodes=(10, 20, 30),
                 feat_spec={"name": "tiles", "args": {"tiling_dim": 6}},
             ),
-            "epochs": 100,
+            "epochs": 50,
         },
         {
             "name": "IceWorld-v0",
@@ -437,7 +437,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 init_attempt_estimation_episodes=(10, 20, 30),
                 feat_spec={"name": "tiles", "args": {"tiling_dim": 6}},
             ),
-            "epochs": 100,
+            "epochs": 50,
         },
         {
             "name": "MountainCar-v0",
