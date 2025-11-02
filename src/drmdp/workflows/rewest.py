@@ -236,7 +236,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 "constraint_violation_reward": 0.0,
                 "max_episode_steps": MAX_STEPS,
             },
-            "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 4}}],
+            "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
             "rewest": discrete_least_specs(
                 attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "cluster-c", "args": {"num_clusters": 100}},
@@ -330,37 +330,6 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 "max_episode_steps": MAX_STEPS,
             },
             "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
-            "rewest": discrete_least_specs(
-                attempt_estimation_episodes=(10, 50, 100),
-                feat_spec={"name": "cluster-c", "args": {"num_clusters": 100}},
-            )
-            + least_specs(
-                attempt_estimation_episodes=(10, 50, 100),
-                feat_spec={"name": "scale", "args": None},
-            )
-            + cvlps_specs(
-                attempt_estimation_episodes=(10, 50, 100),
-                feat_spec={"name": "scale", "args": None},
-            )
-            + bayes_least_specs(
-                init_attempt_estimation_episodes=(10, 20, 30),
-                feat_spec={"name": "scale", "args": None},
-            )
-            + bayes_cvlps_specs(
-                init_attempt_estimation_episodes=(10, 20, 30),
-                feat_spec={"name": "scale", "args": None},
-            ),
-            "epochs": 1,
-        },
-        {
-            "name": "Finite-TC-ShuntDc-v0",
-            "args": {
-                "reward_fn": "pos-enf",
-                "penalty_gamma": 1.0,
-                "constraint_violation_reward": 0.0,
-                "max_episode_steps": MAX_STEPS,
-            },
-            "feats_specs": [{"name": "scale", "args": None}],
             "rewest": discrete_least_specs(
                 attempt_estimation_episodes=(10, 50, 100),
                 feat_spec={"name": "cluster-c", "args": {"num_clusters": 100}},
