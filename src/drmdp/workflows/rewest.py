@@ -96,17 +96,22 @@ class RewardStoreWrapper(gym.Wrapper):
         self.buffer_size = buffer_size
         self.buffer = []
         self.solver_state = {"solution_found_step": None}
+        self.steps_counter = 0
 
     def step(self, action):
         obs, reward, term, trunc, info = super().step(action)
+        # Add to buffer
         if len(self.buffer) < self.buffer_size:
             self.buffer.append(reward)
-            if (
-                self.solver_state["solution_found_step"] is None
-                and "estimator" in info
-                and info["estimator"]["state"] == rewdelay.OptState.SOLVED
-            ):
-                self.solver_state["solution_found_step"] = len(self.buffer) - 1
+        # Check if solution exists and log step
+        if (
+            self.solver_state["solution_found_step"] is None
+            and "estimator" in info
+            and info["estimator"]["state"] == rewdelay.OptState.SOLVED
+        ):
+            self.solver_state["solution_found_step"] = self.steps_counter
+        # Increment step counter
+        self.steps_counter += 1
         return obs, reward, term, trunc, info
 
 
