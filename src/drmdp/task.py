@@ -30,15 +30,13 @@ def policy_control(exp_instance: core.ExperimentInstance):
     # init env and agent
     env_spec = exp_instance.experiment.env_spec
     problem_spec = exp_instance.experiment.problem_spec
-    env = envs.make(
-        env_name=env_spec.name,
-        **env_spec.args if env_spec.args else {},
-    )
-    env, monitor = monitor_wrapper(env)
+    proxied_env = create_env(env_spec.name, args=env_spec.args)
+    env, monitor = monitor_wrapper(proxied_env.env)
     rew_delay = reward_delay_distribution(problem_spec.delay_config)
     env = delay_wrapper(env, rew_delay)
     env = reward_mapper(
         env,
+        proxy_env=proxied_env.proxy,
         mapping_spec=problem_spec.reward_mapper,
     )
     feats_tfx = feats.create_feat_transformer(env=env, **env_spec.feats_spec)
@@ -87,6 +85,21 @@ def policy_control(exp_instance: core.ExperimentInstance):
                 f"Task {exp_instance.exp_id}, run {exp_instance.instance_id} failed"
             ) from err
     env.close()
+
+
+def create_env(name: str, args: Mapping[str, Any]) -> core.ProxiedEnv:
+    """
+    Creates an env and a proxy.
+    """
+    env = envs.make(
+        env_name=name,
+        **args if args else {},
+    )
+    proxy = envs.make(
+        env_name=name,
+        **args if args else {},
+    )
+    return core.ProxiedEnv(env=env, proxy=proxy)
 
 
 def create_task_id(task_prefix: str) -> str:
@@ -213,71 +226,65 @@ def delay_wrapper(
     return env
 
 
-def reward_mapper(env: gym.Env, mapping_spec: Mapping[str, Any]):
+def reward_mapper(env: gym.Env, proxy_env: gym.Env, mapping_spec: Mapping[str, Any]):
     """
     Creates a mapper for handling missing rewards.
     """
     name = mapping_spec["name"]
-    args = mapping_spec["args"]
+    m_args = dict(**mapping_spec["args"])
+    enc_feats_spec = m_args.pop("feats_spec") if "feats_spec" in m_args else None
+    observation_enc = observation_encoder(proxy_env, feats_spec=enc_feats_spec)
+
     if name == "identity":
         return env
     elif name == "zero-impute":
         return rewdelay.ZeroImputeMissingRewardWrapper(env)
     elif name == "discrete-least-lfa":
-        m_args = dict(**args)
-        feats_spec = m_args.pop("feats_spec")
         return rewdelay.DiscretisedLeastLfaGenerativeRewardWrapper(
             env=env,
-            obs_encoding_wrapper=wrappers.wrap(
-                env, wrapper=feats_spec["name"], **(feats_spec["args"] or {})
-            ),
+            obs_encoding_wrapper=observation_enc,
             **m_args,
         )
     elif name == "least-lfa":
-        m_args = dict(**args)
-        feats_spec = m_args.pop("feats_spec")
         # local copy before pop
         return rewdelay.LeastLfaGenerativeRewardWrapper(
             env=env,
-            obs_encoding_wrapper=wrappers.wrap(
-                env, wrapper=feats_spec["name"], **(feats_spec["args"] or {})
-            ),
+            obs_encoding_wrapper=observation_enc,
             **m_args,
         )
     elif name == "bayes-least-lfa":
-        m_args = dict(**args)
-        feats_spec = m_args.pop("feats_spec")
         # local copy before pop
         return rewdelay.BayesLeastLfaGenerativeRewardWrapper(
             env=env,
-            obs_encoding_wrapper=wrappers.wrap(
-                env, wrapper=feats_spec["name"], **(feats_spec["args"] or {})
-            ),
+            obs_encoding_wrapper=observation_enc,
             **m_args,
         )
     elif name == "cvlps":
-        m_args = dict(**args)
-        feats_spec = m_args.pop("feats_spec")
         # local copy before pop
         return rewdelay.ConvexSolverGenerativeRewardWrapper(
             env=env,
-            obs_encoding_wrapper=wrappers.wrap(
-                env, wrapper=feats_spec["name"], **(feats_spec["args"] or {})
-            ),
+            obs_encoding_wrapper=observation_enc,
             **m_args,
         )
     elif name == "bayes-cvlps":
-        m_args = dict(**args)
-        feats_spec = m_args.pop("feats_spec")
         # local copy before pop
         return rewdelay.BayesConvexSolverGenerativeRewardWrapper(
             env=env,
-            obs_encoding_wrapper=wrappers.wrap(
-                env, wrapper=feats_spec["name"], **(feats_spec["args"] or {})
-            ),
+            obs_encoding_wrapper=observation_enc,
             **m_args,
         )
     raise ValueError(f"Unknown mapping_method: {mapping_spec}")
+
+
+def observation_encoder(
+    env: gym.Env, feats_spec: Optional[Mapping[str, Any]]
+) -> Optional[gym.ObservationWrapper]:
+    """
+    Creates an observation wrapper given a spec.
+    """
+    if feats_spec is None:
+        return None
+    return wrappers.wrap(env, wrapper=feats_spec["name"], **(feats_spec["args"] or {}))
 
 
 def create_algorithm(

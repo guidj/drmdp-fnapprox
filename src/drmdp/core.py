@@ -178,6 +178,10 @@ class ExperimentInstance:
 
 
 class EnvMonitorWrapper(gym.Wrapper):
+    """
+    Tracks the returns and steps for an environment.
+    """
+
     def __init__(self, env):
         super().__init__(env)
         self.mon = EnvMonitor()
@@ -235,3 +239,13 @@ class Seeder:
         if self.instance is not None:
             return (self.MAX_INS * self.instance + 1) * (self.MAX_EPS + episode + 1)
         return self.instance
+
+
+@dataclasses.dataclass
+class ProxiedEnv:
+    """
+    An env and its proxy.
+    """
+
+    env: gym.Env
+    proxy: gym.Env

@@ -186,7 +186,7 @@ class FlatGridCoordObsWrapper(gym.ObservationWrapper):
 class TilesObsWrapper(gym.ObservationWrapper):
     def __init__(
         self,
-        env,
+        env: gym.Env,
         tiling_dim: int,
         num_tilings: Optional[int] = None,
         hash_dim: Optional[int] = None,

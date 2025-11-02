@@ -91,11 +91,15 @@ def run_fn(job_spec: JobSpec):
 
 def feats_spec_control(job_spec: JobSpec, task_id: str):
     env = gem.make(job_spec.env_name, reward_fn="pos-enf", max_episode_steps=MAX_STEPS)
+    proxy_env = gem.make(
+        job_spec.env_name, reward_fn="pos-enf", max_episode_steps=MAX_STEPS
+    )
     env, monitor = task.monitor_wrapper(env)
     rew_delay = task.reward_delay_distribution(None)
     env = task.delay_wrapper(env, rew_delay)
     env = task.reward_mapper(
         env,
+        proxy_env=proxy_env,
         mapping_spec={"name": "identity", "args": None},
     )
     feats_tfx = feats.create_feat_transformer(env=env, **job_spec.feats_spec)

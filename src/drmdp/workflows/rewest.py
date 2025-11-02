@@ -672,14 +672,22 @@ def setup_experiment(exp_instance: core.ExperimentInstance):
         env_name=env_spec.name,
         **env_spec.args if env_spec.args else {},
     )
+    # For non-control related ops, e.g. data collection
+    # or sampling for state projection.
+    proxy_env = envs.make(
+        env_name=env_spec.name,
+        **env_spec.args if env_spec.args else {},
+    )
     env, monitor = task.monitor_wrapper(env)
     # Save true reward, prior to any change.
     env = RewardStoreWrapper(env, buffer_size=REWARD_EVAL_SAMPLES)
     opt_logs["true_reward_buffer"] = env.buffer
     rew_delay = task.reward_delay_distribution(problem_spec.delay_config)
     env = task.delay_wrapper(env, rew_delay)
+
     env = task.reward_mapper(
         env,
+        proxy_env=proxy_env,
         mapping_spec=problem_spec.reward_mapper,
     )
     # Save rewards post transformation
