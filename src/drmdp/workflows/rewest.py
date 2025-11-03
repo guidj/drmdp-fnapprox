@@ -972,7 +972,7 @@ def write_records(
     if gzip_compression and not output_path.endswith(".gzip"):
         output_path = ".".join([output_path, "gzip"])
 
-    logging.info(
+    logging.debug(
         "Writing partition of %fMB to %s",
         bytes_size / 1024 / 1024,
         output_path,
@@ -997,7 +997,7 @@ def read_records(
     """
     Read records from JSON.
     """
-    logging.info(
+    logging.debug(
         "Reading file %s",
         input_path,
     )
