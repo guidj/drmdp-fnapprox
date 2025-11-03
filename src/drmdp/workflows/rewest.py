@@ -121,6 +121,9 @@ def discrete_least_specs(
     feat_specs: Sequence[Mapping[str, Any]],
     estimation_buffer_multiples: Sequence[int] = (2, 10, 25, None),
 ):
+    """
+    Discretised Least Squares specs.
+    """
     specs = []
     for aee, feat_spec, est_buffer_mult in itertools.product(
         attempt_estimation_episodes, feat_specs, estimation_buffer_multiples
@@ -143,6 +146,9 @@ def least_specs(
     feat_specs: Sequence[Mapping[str, Any]],
     estimation_buffer_multiples: Sequence[int] = (2, 10, 25, None),
 ):
+    """
+    Least Squares specs.
+    """
     specs = []
     for aee, feat_spec, est_buffer_mult in itertools.product(
         attempt_estimation_episodes, feat_specs, estimation_buffer_multiples
@@ -165,6 +171,9 @@ def bayes_least_specs(
     feat_specs: Sequence[Mapping[str, Any]],
     estimation_buffer_multiples: Sequence[int] = (2, 10, 25, None),
 ):
+    """
+    Bayesian linear regression specs.
+    """
     specs = []
     for iaee, feat_spec, est_buffer_mult in itertools.product(
         init_attempt_estimation_episodes, feat_specs, estimation_buffer_multiples
@@ -189,6 +198,9 @@ def cvlps_specs(
     estimation_buffer_multiples: Sequence[int] = (2, 10, 25, None),
     constraints_buffer_limit: Optional[int] = 100,
 ):
+    """
+    Constrained optimisation specs.
+    """
     specs = []
     for aee, feat_spec, est_buffer_mult in itertools.product(
         attempt_estimation_episodes, feat_specs, estimation_buffer_multiples
@@ -213,6 +225,9 @@ def bayes_cvlps_specs(
     estimation_buffer_multiples: Sequence[int] = (2, 10, 25, None),
     constraints_buffer_limit: Optional[int] = 100,
 ):
+    """
+    Bayesian linear regression specs.
+    """
     specs = []
     for iaee, feat_spec, est_buffer_mult in itertools.product(
         init_attempt_estimation_episodes, feat_specs, estimation_buffer_multiples
