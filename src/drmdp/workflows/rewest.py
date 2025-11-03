@@ -866,10 +866,7 @@ def create_exp_instance(job_spec: JobSpec):
             "name": job_spec.rewest_method,
             "args": job_spec.rewest_args,
         },
-        delay_config={
-            "name": "clipped-poisson",
-            "args": poisson_delay_args(job_spec.reward_delay),
-        },
+        delay_config=poisson_delay_config(job_spec.reward_delay),
         epsilon=0.2,
         gamma=1.0,
         learning_rate_config={
@@ -895,7 +892,7 @@ def create_exp_instance(job_spec: JobSpec):
     )
 
 
-def poisson_delay_args(lam: int):
+def poisson_delay_config(lam: int):
     """
     Natural Poisson bounds:
     low, lambda, high
@@ -908,7 +905,7 @@ def poisson_delay_args(lam: int):
     3 8 14
     """
     lb, _ = mathutils.poisson_exact_confidence_interval(lam)
-    return {"lam": lam, "min_delay": max(2, lb)}
+    return {"name": "clipped-poisson", "args": {"lam": lam, "min_delay": max(2, lb)}}
 
 
 def setup_experiment(exp_instance: core.ExperimentInstance):

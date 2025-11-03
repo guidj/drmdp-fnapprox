@@ -1,8 +1,14 @@
 import itertools
 from typing import Any, Mapping, Sequence
 
+from drmdp import mathutils
+
 EPSILON = 0.2
 MAX_STEPS_PER_EPISODE_GEM = 200
+LEARNING_RATE_SPEC = {
+    "name": "constant",
+    "args": {"initial_lr": 0.01},
+}
 
 
 def least_specs(
@@ -26,13 +32,10 @@ def least_specs(
                         "use_bias": False,
                     },
                 },
-                "delay_config": {"name": "fixed", "args": {"delay": delay}},
+                "delay_config": poisson_delay_config(delay),
                 "epsilon": EPSILON,
                 "gamma": gamma,
-                "learning_rate_config": {
-                    "name": "constant",
-                    "args": {"initial_lr": 0.01},
-                },
+                "learning_rate_config": LEARNING_RATE_SPEC,
             },
         )
     return tuple(specs)
@@ -60,13 +63,10 @@ def bayes_least_specs(
                         "use_bias": False,
                     },
                 },
-                "delay_config": {"name": "fixed", "args": {"delay": delay}},
+                "delay_config": poisson_delay_config(delay),
                 "epsilon": EPSILON,
                 "gamma": gamma,
-                "learning_rate_config": {
-                    "name": "constant",
-                    "args": {"initial_lr": 0.01},
-                },
+                "learning_rate_config": LEARNING_RATE_SPEC,
             },
         )
     return tuple(specs)
@@ -93,13 +93,10 @@ def cvlps_specs(
                         "use_bias": False,
                     },
                 },
-                "delay_config": {"name": "fixed", "args": {"delay": delay}},
+                "delay_config": poisson_delay_config(delay),
                 "epsilon": EPSILON,
                 "gamma": gamma,
-                "learning_rate_config": {
-                    "name": "constant",
-                    "args": {"initial_lr": 0.01},
-                },
+                "learning_rate_config": LEARNING_RATE_SPEC,
             },
         )
     return tuple(specs)
@@ -110,10 +107,6 @@ def common_problem_specs():
     Specs that apply to every env.
     """
     specs = []
-    lr_config = {
-        "name": "constant",
-        "args": {"initial_lr": 0.01},
-    }
     for gamma in (1.0, 0.99):
         specs.append(
             {
@@ -122,7 +115,7 @@ def common_problem_specs():
                 "delay_config": None,
                 "epsilon": EPSILON,
                 "gamma": gamma,
-                "learning_rate_config": lr_config,
+                "learning_rate_config": LEARNING_RATE_SPEC,
             },
         )
 
@@ -132,34 +125,37 @@ def common_problem_specs():
                     {
                         "policy_type": "drop-missing",
                         "reward_mapper": {"name": "identity", "args": None},
-                        "delay_config": {"name": "fixed", "args": {"delay": delay}},
+                        "delay_config": poisson_delay_config(delay),
                         "epsilon": EPSILON,
                         "gamma": gamma,
-                        "learning_rate_config": lr_config,
+                        "learning_rate_config": LEARNING_RATE_SPEC,
                     },
                     {
                         "policy_type": "markovian",
                         "reward_mapper": {"name": "zero-impute", "args": None},
-                        "delay_config": {"name": "fixed", "args": {"delay": delay}},
+                        "delay_config": poisson_delay_config(delay),
                         "epsilon": EPSILON,
                         "gamma": gamma,
-                        "learning_rate_config": lr_config,
+                        "learning_rate_config": LEARNING_RATE_SPEC,
                     },
                     {
                         "policy_type": "options",
                         "reward_mapper": {"name": "identity", "args": None},
-                        "delay_config": {"name": "fixed", "args": {"delay": 2}},
+                        "delay_config": {
+                            "name": "clipped-poisson",
+                            "args": {"delay": 2},
+                        },
                         "epsilon": EPSILON,
                         "gamma": 1.0,
-                        "learning_rate_config": lr_config,
+                        "learning_rate_config": LEARNING_RATE_SPEC,
                     },
                     {
                         "policy_type": "single-action-options",
                         "reward_mapper": {"name": "identity", "args": None},
-                        "delay_config": {"name": "fixed", "args": {"delay": delay}},
+                        "delay_config": poisson_delay_config(delay),
                         "epsilon": EPSILON,
                         "gamma": gamma,
-                        "learning_rate_config": lr_config,
+                        "learning_rate_config": LEARNING_RATE_SPEC,
                     },
                 ]
             )
@@ -379,3 +375,19 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
         },
     ]
     return tuple(specs)
+
+
+def poisson_delay_config(lam: int):
+    """
+    Natural Poisson bounds:
+    low, lambda, high
+    0 2 5
+    0 3 7
+    1 4 8
+    1 5 10
+    2 6 11
+    2 7 13
+    3 8 14
+    """
+    lb, _ = mathutils.poisson_exact_confidence_interval(lam)
+    return {"name": "clipped-poisson", "args": {"lam": lam, "min_delay": max(2, lb)}}
