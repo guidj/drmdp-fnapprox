@@ -1,4 +1,5 @@
 import argparse
+import copy
 import dataclasses
 import gzip
 import itertools
@@ -15,7 +16,7 @@ import numpy as np
 import ray
 import tensorflow as tf
 
-from drmdp import core, envs, feats, logger, mathutils, rewdelay, task
+from drmdp import core, envs, feats, logger, mathutils, metrics, rewdelay, task
 
 MAX_STEPS = 200
 REWARD_DELAYS = (2, 4, 6)
@@ -776,7 +777,39 @@ def run_fn(job_spec: JobSpec):
     except Exception as err:
         raise RuntimeError(f"Task {task_id} `{job_spec}` failed") from err
     logging.info("Completed task %s: %s", task_id, job_spec)
-    return result
+    return proc_result(result)
+
+
+def proc_result(result: Mapping[str, Any]) -> Mapping[str, Any]:
+    """
+    Calculates final results.
+    """
+    output = copy.deepcopy(result)
+    meta = output["meta"]
+    # all-steps error
+    r_true = np.array(meta["true_reward_buffer"], dtype=np.float64)
+    r_pred = np.array(meta["pred_reward_buffer"], dtype=np.float64)
+    # use the smallest, working backwards
+    # (workaround for setup order)
+    min_size = np.minimum(np.size(r_true), np.size(r_pred))
+    r_true, r_pred = r_true[-min_size:], r_pred[-min_size:]
+    all_steps_error = metrics.rmse(v_true=r_true, v_pred=r_pred, axis=0)
+
+    # post estimation error
+    solution_step: Optional[int] = meta["solver_state"]["solution_found_step"]
+    post_est_error = (
+        metrics.rmse(
+            v_true=r_true[solution_step:], v_pred=r_pred[solution_step:], axis=0
+        )
+        if solution_step
+        else np.nan
+    )
+
+    del meta["true_reward_buffer"]
+    del meta["pred_reward_buffer"]
+    meta["all_steps_error"] = all_steps_error
+    meta["post_est_error"] = post_est_error
+    return output
 
 
 def wait_till_completion(tasks_refs, name: Optional[str] = None):
