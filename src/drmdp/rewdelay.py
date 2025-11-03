@@ -398,7 +398,7 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         env: gym.Env,
         obs_encoding_wrapper: gym.ObservationWrapper,
         attempt_estimation_episode: int,
-        estimation_buffer_mult: int = 10,
+        estimation_buffer_mult: Optional[int] = None,
         use_bias: bool = False,
     ):
         super().__init__(env)
@@ -426,6 +426,8 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self.rng = np.random.default_rng()
         self.est_buffer = DataBuffer(
             max_capacity=self.mdim * self.estimation_buffer_mult
+            if self.estimation_buffer_mult
+            else None
         )
 
     def step(self, action):
@@ -561,7 +563,7 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         env: gym.Env,
         obs_encoding_wrapper: gym.ObservationWrapper,
         attempt_estimation_episode: int,
-        estimation_buffer_mult: int = 10,
+        estimation_buffer_mult: Optional[int] = None,
         use_bias: bool = False,
     ):
         super().__init__(env)
@@ -588,6 +590,8 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self.rng = np.random.default_rng()
         self.est_buffer = DataBuffer(
             max_capacity=self.mdim * self.estimation_buffer_mult
+            if self.estimation_buffer_mult
+            else None
         )
 
     def step(self, action):
@@ -732,7 +736,7 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         obs_encoding_wrapper: gym.ObservationWrapper,
         mode: str = WindowedTaskSchedule.DOUBLE,
         init_attempt_estimation_episode: int = 10,
-        estimation_buffer_mult: int = 10,
+        estimation_buffer_mult: Optional[int] = None,
         use_bias: bool = False,
     ):
         super().__init__(env)
@@ -765,6 +769,8 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self.estimation_meta = {"use_bias": self.use_bias}
         self.est_buffer = DataBuffer(
             max_capacity=self.mdim * self.estimation_buffer_mult
+            if self.estimation_buffer_mult
+            else None
         )
         self.rng = np.random.default_rng()
 
@@ -934,7 +940,7 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         env: gym.Env,
         obs_encoding_wrapper: gym.ObservationWrapper,
         attempt_estimation_episode: int,
-        estimation_buffer_mult: int = 10,
+        estimation_buffer_mult: Optional[int] = None,
         use_bias: bool = False,
         constraints_buffer_limit: Optional[int] = None,
     ):
@@ -963,6 +969,8 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self.rng = np.random.default_rng()
         self.est_buffer = DataBuffer(
             max_capacity=self.mdim * self.estimation_buffer_mult
+            if self.estimation_buffer_mult
+            else None
         )
         self.tst_buffer = DataBuffer(max_capacity=self.constraints_buffer_limit)
 
@@ -1144,7 +1152,7 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         obs_encoding_wrapper: gym.ObservationWrapper,
         mode: str = WindowedTaskSchedule.DOUBLE,
         init_attempt_estimation_episode: int = 10,
-        estimation_buffer_mult: int = 10,
+        estimation_buffer_mult: Optional[int] = None,
         use_bias: bool = False,
         constraints_buffer_limit: Optional[int] = None,
     ):
@@ -1180,6 +1188,8 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self.rng = np.random.default_rng()
         self.est_buffer = DataBuffer(
             max_capacity=self.mdim * self.estimation_buffer_mult
+            if self.estimation_buffer_mult
+            else None
         )
         self.tst_buffer = DataBuffer(
             max_capacity=self.constraints_buffer_limit,
