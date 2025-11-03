@@ -83,7 +83,7 @@ def create_tasks(
     """
     Runs numerical experiments on policy evaluation.
     """
-    experiments = tuple(parse_experiments(specs=controlexps.SPECS))
+    experiments = parse_experiments(specs=controlexps.experiment_specs())
     experiment_instances = tuple(
         task.generate_experiments_instances(
             experiments=experiments,
