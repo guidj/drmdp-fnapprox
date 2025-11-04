@@ -163,16 +163,16 @@ class FlatGridCoordObsWrapper(gym.ObservationWrapper):
                 f"Env should be a 1D array. Got {env.observation_space.shape}"
             )
 
-        if not np.issubdtype(env.observation_space.dtype, np.integer):
-            raise TypeError(
-                f"Env observation_space must be of `int` type. Got {env.observation_space.dtype}"
-            )
-
         shape = env.observation_space.shape
         self.dim = (
             shape[0] if isinstance(env.observation_space.shape, Sequence) else shape
         )
-        self.value_ranges = env.observation_space.high - env.observation_space.low
+        value_ranges = env.observation_space.high - env.observation_space.low
+        self.value_ranges = np.array(value_ranges, dtype=np.int64)
+        if np.sum(value_ranges - self.value_ranges) != 0:
+            raise ValueError(
+                f"Bad value range: {env.observation_space}. Make sure all values are integers."
+            )
         # num coordinates
         self.nstates = int(np.prod(self.value_ranges))
         self.observation_space = gym.spaces.Discrete(self.nstates)
