@@ -30,15 +30,13 @@ def policy_control(exp_instance: core.ExperimentInstance):
     # init env and agent
     env_spec = exp_instance.experiment.env_spec
     problem_spec = exp_instance.experiment.problem_spec
-    env = envs.make(
-        env_name=env_spec.name,
-        **env_spec.args if env_spec.args else {},
-    )
-    env, monitor = monitor_wrapper(env)
+    proxied_env = create_env(env_spec.name, args=env_spec.args)
+    env, monitor = monitor_wrapper(proxied_env.env)
     rew_delay = reward_delay_distribution(problem_spec.delay_config)
     env = delay_wrapper(env, rew_delay)
     env = reward_mapper(
         env,
+        proxy_env=proxied_env.proxy,
         mapping_spec=problem_spec.reward_mapper,
     )
     feats_tfx = feats.create_feat_transformer(env=env, **env_spec.feats_spec)
@@ -89,6 +87,21 @@ def policy_control(exp_instance: core.ExperimentInstance):
     env.close()
 
 
+def create_env(name: str, args: Optional[Mapping[str, Any]]) -> core.ProxiedEnv:
+    """
+    Creates an env and a proxy.
+    """
+    env = envs.make(
+        env_name=name,
+        **args if args else {},
+    )
+    proxy = envs.make(
+        env_name=name,
+        **args if args else {},
+    )
+    return core.ProxiedEnv(env=env, proxy=proxy)
+
+
 def create_task_id(task_prefix: str) -> str:
     """
     Creates a task id using a given prefix
@@ -113,6 +126,10 @@ def generate_experiments_instances(
     output_dir: str,
     task_prefix: str,
 ) -> Iterator[core.ExperimentInstance]:
+    """
+    Parse experiments and creates experiment
+    instances from it.
+    """
     for experiment in experiments:
         exp_id = "-".join([create_task_id(task_prefix), experiment.env_spec.name])
         for idx in range(num_runs):
@@ -174,6 +191,11 @@ def learning_rate(name: str, args: Mapping[str, Any]) -> optsol.LearningRateSche
 def reward_delay_distribution(
     delay_config: Optional[Mapping[str, Any]],
 ) -> Optional[rewdelay.RewardDelay]:
+    """
+    Returns an instance of a delayed
+    reward distribution that can be used
+    to sample delays.
+    """
     if delay_config:
         name = delay_config["name"]
         args = delay_config["args"]
@@ -184,6 +206,10 @@ def reward_delay_distribution(
 
 
 def monitor_wrapper(env: gym.Env) -> Tuple[gym.Env, core.EnvMonitor]:
+    """
+    Wraps the environment in monitor that tracks returns
+    based on the underlying rewards.
+    """
     mon_env = core.EnvMonitorWrapper(env)
     return mon_env, mon_env.mon
 
@@ -191,41 +217,74 @@ def monitor_wrapper(env: gym.Env) -> Tuple[gym.Env, core.EnvMonitor]:
 def delay_wrapper(
     env: gym.Env, reward_delay: Optional[rewdelay.RewardDelay]
 ) -> gym.Env:
+    """
+    If a delayed reward config is given, wraps
+    `env` with the specified mapper.
+    """
     if reward_delay:
         return rewdelay.DelayedRewardWrapper(env, reward_delay=reward_delay)
     return env
 
 
-def reward_mapper(env: gym.Env, mapping_spec: Mapping[str, Any]):
+def reward_mapper(env: gym.Env, proxy_env: gym.Env, mapping_spec: Mapping[str, Any]):
+    """
+    Creates a mapper for handling missing rewards.
+    """
     name = mapping_spec["name"]
-    args = mapping_spec["args"]
+    m_args = dict(**(mapping_spec["args"] or {}))
+    enc_feats_spec = m_args.pop("feats_spec") if "feats_spec" in m_args else None
+    observation_enc = observation_encoder(proxy_env, feats_spec=enc_feats_spec)
+
     if name == "identity":
         return env
     elif name == "zero-impute":
-        return rewdelay.ZeroImputeMissingWrapper(env)
-    elif name == "least-lfa":
-        m_args = dict(**args)
-        feats_spec = m_args.pop("feats_spec")
-        # local copy before pop
-        return rewdelay.LeastLfaMissingWrapper(
+        return rewdelay.ZeroImputeMissingRewardWrapper(env)
+    elif name == "discrete-least-lfa":
+        return rewdelay.DiscretisedLeastLfaGenerativeRewardWrapper(
             env=env,
-            obs_encoding_wrapper=wrappers.wrap(
-                env, wrapper=feats_spec["name"], **(feats_spec["args"] or {})
-            ),
+            obs_encoding_wrapper=observation_enc,
             **m_args,
         )
-    elif name == "least-bayes-lfa":
-        m_args = dict(**args)
-        feats_spec = m_args.pop("feats_spec")
+    elif name == "least-lfa":
         # local copy before pop
-        return rewdelay.LeastBayesLfaMissingWrapper(
+        return rewdelay.LeastLfaGenerativeRewardWrapper(
             env=env,
-            obs_encoding_wrapper=wrappers.wrap(
-                env, wrapper=feats_spec["name"], **(feats_spec["args"] or {})
-            ),
+            obs_encoding_wrapper=observation_enc,
+            **m_args,
+        )
+    elif name == "bayes-least-lfa":
+        # local copy before pop
+        return rewdelay.BayesLeastLfaGenerativeRewardWrapper(
+            env=env,
+            obs_encoding_wrapper=observation_enc,
+            **m_args,
+        )
+    elif name == "cvlps":
+        # local copy before pop
+        return rewdelay.ConvexSolverGenerativeRewardWrapper(
+            env=env,
+            obs_encoding_wrapper=observation_enc,
+            **m_args,
+        )
+    elif name == "bayes-cvlps":
+        # local copy before pop
+        return rewdelay.BayesConvexSolverGenerativeRewardWrapper(
+            env=env,
+            obs_encoding_wrapper=observation_enc,
             **m_args,
         )
     raise ValueError(f"Unknown mapping_method: {mapping_spec}")
+
+
+def observation_encoder(
+    env: gym.Env, feats_spec: Optional[Mapping[str, Any]]
+) -> Optional[gym.ObservationWrapper]:
+    """
+    Creates an observation wrapper given a spec.
+    """
+    if feats_spec is None:
+        return None
+    return wrappers.wrap(env, wrapper=feats_spec["name"], **(feats_spec["args"] or {}))
 
 
 def create_algorithm(
@@ -238,6 +297,10 @@ def create_algorithm(
     epsilon: float,
     base_seed: Optional[int] = None,
 ):
+    """
+    Creates an algorithm instance based on the provided
+    arguments.
+    """
     if policy_type == "markovian":
         return algorithms.SemigradientSARSAFnApprox(
             lr=lr,

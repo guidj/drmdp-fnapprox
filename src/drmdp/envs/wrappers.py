@@ -1,9 +1,10 @@
-from typing import Any, Dict, Hashable, Optional
+import copy
+from typing import Any, Dict, Hashable, Optional, Sequence
 
 import gymnasium as gym
 import numpy as np
 from gymnasium.core import ObsType
-from sklearn import mixture, model_selection
+from sklearn import cluster, mixture, model_selection
 
 from drmdp import constants, dataproc, mathutils, tiles
 
@@ -56,21 +57,26 @@ class ScaleObsWrapper(gym.ObservationWrapper):
 
 
 class GaussianMixObsWrapper(gym.ObservationWrapper):
-    def __init__(self, env, param_grid, sample_steps: int):
+    def __init__(self, env, param_grid, sample_steps: int, **kwargs):
         super().__init__(env)
-        buffer = dataproc.collection_traj_data(env, steps=sample_steps)
-        self.grid_search = self.gm_proj(buffer, param_grid)
+        self.param_grid = param_grid
+        self.sample_steps = sample_steps
+        # Make a copy of the env
+        # to preserve state.
+        buffer = dataproc.collection_traj_data(copy.copy(env), steps=sample_steps)
+        self.grid_search = self.gm_proj(buffer, param_grid, **kwargs)
         self.estimator = self.grid_search.best_estimator_
         self.obs_dim = self.grid_search.best_estimator_.n_components
 
         self.observation_space = gym.spaces.Box(
-            low=np.zeros(shape=self.obs_dim, dtype=np.float64),
-            high=np.ones(shape=self.obs_dim, dtype=np.float64),
+            low=np.zeros(shape=self.obs_dim),
+            high=np.ones(shape=self.obs_dim),
+            dtype=np.float64,
         )
 
-    def gm_proj(self, buffer, param_grid):
+    def gm_proj(self, buffer, param_grid, **kwargs):
         grid_search = model_selection.GridSearchCV(
-            mixture.GaussianMixture(init_params="k-means++"),
+            mixture.GaussianMixture(init_params="k-means++", **kwargs),
             param_grid=param_grid,
             scoring=self.gmm_bic_score,
         )
@@ -87,10 +93,105 @@ class GaussianMixObsWrapper(gym.ObservationWrapper):
         return basis_probs_batch[0]
 
 
+class ClusterCentroidObsWrapper(gym.ObservationWrapper):
+    """
+    Clusters the input space.
+    As such, maps each state into a centroid id.
+    Centroids are in the range [0, `num_clusters`).
+    """
+
+    def __init__(
+        self,
+        env: gym.Env,
+        num_clusters: int,
+        sample_steps: int,
+        seed: Optional[int] = None,
+    ):
+        super().__init__(env)
+        self.num_clusters = num_clusters
+        self.sample_steps = sample_steps
+        # Make a copy of the env
+        # to preserve state.
+        buffer = dataproc.collection_traj_data(
+            copy.copy(env), steps=self.sample_steps, seed=seed
+        )
+        if not isinstance(env.observation_space, gym.spaces.Box):
+            raise ValueError(
+                f"Source `env` observation space must be of type `Box`. Got {type(env.observation_space)}"
+            )
+        # To make centroids float64.
+        # Bypass KMeans issues with float32 centroids
+        # when calling `predict`
+        matrix = np.stack([tup[0] for tup in buffer], dtype=np.float64)
+        self.estimator = self.fit_clusters(matrix)
+        self.obs_dim = self.num_clusters
+        self.observation_space = gym.spaces.Discrete(self.num_clusters)
+
+    def fit_clusters(self, matrix, seed: Optional[int] = None):
+        """
+        Fit clusters.
+        """
+        clustering = cluster.KMeans(
+            n_clusters=self.num_clusters, init="k-means++", random_state=seed
+        )
+        clustering.fit(matrix)
+        return clustering
+
+    def observation(self, observation: ObsType):
+        """
+        Returns cluster assignment.
+        """
+        clusters_batch = self.estimator.predict([observation])
+        return clusters_batch[0]
+
+
+class FlatGridCoordObsWrapper(gym.ObservationWrapper):
+    """
+    Maps n-dimension array grid positions to a
+    single value.
+    """
+
+    def __init__(self, env: gym.Env):
+        super().__init__(env)
+        if not isinstance(env.observation_space, gym.spaces.Box):
+            raise ValueError(
+                f"Source `env` observation space must be of type `Box`. Got {type(env.observation_space)}"
+            )
+
+        if np.size(env.observation_space.shape) != 1:
+            raise ValueError(
+                f"Env should be a 1D array. Got {env.observation_space.shape}"
+            )
+
+        shape = env.observation_space.shape
+        self.dim = (
+            shape[0] if isinstance(env.observation_space.shape, Sequence) else shape
+        )
+        value_ranges = env.observation_space.high - env.observation_space.low
+        self.value_ranges = np.array(value_ranges, dtype=np.int64)
+        if np.sum(value_ranges - self.value_ranges) != 0:
+            raise ValueError(
+                f"Bad value range: {env.observation_space}. Make sure all values are integers."
+            )
+        # num coordinates
+        self.nstates = int(np.prod(self.value_ranges))
+        self.observation_space = gym.spaces.Discrete(self.nstates)
+
+    def observation(self, observation: ObsType):
+        """
+        Returns cluster assignment.
+        """
+        xs = np.concatenate([observation, [1]])
+        pos = 0
+        for idx in range(self.dim):
+            pos += xs[idx] * np.prod(self.value_ranges[idx + 1 :])
+        return int(pos)
+
+
 class TilesObsWrapper(gym.ObservationWrapper):
     def __init__(
         self,
-        env,
+        env: gym.Env,
         tiling_dim: int,
         num_tilings: Optional[int] = None,
         hash_dim: Optional[int] = None,
@@ -122,10 +223,13 @@ class TilesObsWrapper(gym.ObservationWrapper):
 
 
 def wrap(env: gym.Env, wrapper: Optional[str] = None, **kwargs):
+    """
+    Creates an environment observation wrappers.
+    """
     if wrapper is None:
         return env
     if wrapper == constants.RANDOM:
-        enc_size = kwargs.get("enc_size", constants.DEFAULT_PARAMS_GRID)
+        enc_size = kwargs["enc_size"]
         return RandomBinaryObsWrapper(env, enc_size=enc_size)
     if wrapper == constants.SCALE:
         return ScaleObsWrapper(env)
@@ -137,4 +241,12 @@ def wrap(env: gym.Env, wrapper: Optional[str] = None, **kwargs):
         tiling_dim = kwargs.get("tiling_dim", constants.DEFAULT_TILING_DIM)
         hash_dim = kwargs.get("hash_dim", constants.DEFAULT_HASH_DIM)
         return TilesObsWrapper(env, tiling_dim=tiling_dim, hash_dim=hash_dim)
+    if wrapper == constants.CLUSTER_CENTROID:
+        num_clusters = kwargs["num_clusters"]
+        steps = kwargs.get("steps", constants.DEFAULT_CLUSTER_STEPS)
+        return ClusterCentroidObsWrapper(
+            env, num_clusters=num_clusters, sample_steps=steps
+        )
+    if wrapper == constants.FLAT_GRID_COORD:
+        return FlatGridCoordObsWrapper(env)
     raise ValueError(f"Wrapper `{wrapper}` unknown")

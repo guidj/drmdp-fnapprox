@@ -1,7 +1,9 @@
 import abc
 import dataclasses
-from typing import Optional
+from typing import Callable, Optional, Sequence
 
+import cvxpy as cp
+import cvxpy.error
 import gymnasium as gym
 import numpy as np
 from scipy import linalg
@@ -41,6 +43,42 @@ class MultivariateNormal:
             raise ValueError(f"Unknown inverse: {inverse}")
 
         coeff = solve_least_squares(matrix, rhs)
+        try:
+            # Σᵦ = (Σᵦ^-1 + X'X)^-1 * σ²
+            # Sigma^2 is the variance of the error term
+            # Here, we assume sigma^2 = 1
+            cov = inverse_op(np.matmul(matrix.T, matrix))
+        except linalg.LinAlgError as err:
+            if "Singular matrix" in err.args[0]:
+                return None
+            raise err
+        return MultivariateNormal(coeff, cov)
+
+    @classmethod
+    def convex_least_squares(
+        cls,
+        matrix,
+        rhs,
+        constraint_fn: Callable[[cp.Variable], Sequence],
+        warm_start_initial_guess: Optional[np.ndarray] = None,
+        inverse: str = "pseudo",
+    ) -> Optional["MultivariateNormal"]:
+        """
+        Least-squares estimation: mean and covariance.
+        """
+        if inverse == "exact":
+            inverse_op = linalg.inv
+        elif inverse == "pseudo":
+            inverse_op = linalg.pinv
+        else:
+            raise ValueError(f"Unknown inverse: {inverse}")
+
+        coeff = solve_convex_least_squares(
+            matrix=matrix,
+            rhs=rhs,
+            constraint_fn=constraint_fn,
+            warm_start_initial_guess=warm_start_initial_guess,
+        )
         try:
             # Σᵦ = (Σᵦ^-1 + X'X)^-1 * σ²
             # Sigma^2 is the variance of the error term
@@ -190,6 +228,11 @@ def proj_obs_to_rwest_vec(buffer, sample_size: int):
 
 
 def solve_least_squares(matrix: np.ndarray, rhs: np.ndarray) -> np.ndarray:
+    """
+    Solves a least-squares problem Ax = b.
+    `A` is matrix.
+    `b` is rhs (right-hand side).
+    """
     try:
         solution, _, _, _ = np.linalg.lstsq(a=matrix, b=rhs, rcond=None)
         return solution  # type: ignore
@@ -199,6 +242,33 @@ def solve_least_squares(matrix: np.ndarray, rhs: np.ndarray) -> np.ndarray:
 
 
 def solve_rwe(env: gym.Env, num_steps: int, sample_size: int, delay: int):
+    """
+    Estimates rewards by collecting trajectory windows,
+    and running least squares.
+    """
     buffer = dataproc.collection_traj_data(env, steps=num_steps)
-    Xd, yd = delay_reward_data(buffer, delay=delay, sample_size=sample_size)
-    return buffer, solve_least_squares(Xd, yd)
+    matrix, rhs = delay_reward_data(buffer, delay=delay, sample_size=sample_size)
+    return buffer, solve_least_squares(matrix=matrix, rhs=rhs)
+
+
+def solve_convex_least_squares(
+    matrix: np.ndarray,
+    rhs: np.ndarray,
+    constraint_fn: Callable[[cp.Variable], Sequence],
+    warm_start_initial_guess: Optional[np.ndarray] = None,
+) -> np.ndarray:
+    """
+    Solves Least Squares with convex optimisation,
+    with added constraints.
+    """
+    solution = cp.Variable(matrix.shape[-1], value=warm_start_initial_guess)
+    objective = cp.Minimize(cp.sum_squares(matrix @ solution - rhs))
+    prob = cp.Problem(objective, constraint_fn(solution))
+
+    try:
+        prob.solve(warm_start=True)
+        if prob.status == cp.OPTIMAL:
+            return solution.value  # type: ignore
+        raise ValueError(f"No Solution. Status: {prob.status}; Sol: {solution.value}")
+    except cvxpy.error.SolverError as err:
+        raise ValueError(f"No Solution. Status {prob.status}") from err

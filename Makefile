@@ -2,18 +2,23 @@ pip-sync:
 	uv sync
 
 format:
-	uv run ruff check --extend-select I --fix src tests
-	uv run ruff format src tests
+	tox -e lint
+	tox -e format
 
 format-nb:
 	uv run ruff check --extend-select I --fix notebooks
 	uv run ruff format notebooks
 
 check: format
-	tox -e lint -e lint-types	
+	tox -e lint-types 
+	tox -e check-formatting	
 
-test-coverage:
-	uv run pytest --cov-report=html --cov=src tests
+test:
+	tox -e test
+
+tox:
+	tox
+
 
 bumpver-patch:
 	uv run bumpver update --patch

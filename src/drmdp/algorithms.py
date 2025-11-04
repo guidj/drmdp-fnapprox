@@ -54,6 +54,7 @@ class SemigradientSARSAFnApprox(FnApproxAlgorithm):
         num_episodes: int,
         monitor: core.EnvMonitor,
     ) -> Iterator[PolicyControlSnapshot]:
+        monitor.clear()
         for episode in range(num_episodes):
             obs, _ = env.reset(seed=self.seeder.get_seed(episode=episode))
             policy_step = self.policy.action(obs, epsilon=self.epsilon)
@@ -240,6 +241,7 @@ class OptionsSemigradientSARSAFnApprox(FnApproxAlgorithm):
         num_episodes: int,
         monitor: core.EnvMonitor,
     ) -> Iterator[PolicyControlSnapshot]:
+        monitor.clear()
         for episode in range(num_episodes):
             obs, info = env.reset(seed=self.seeder.get_seed(episode=episode))
             policy_step = self.policy.action(
@@ -547,6 +549,7 @@ class DropMissingSemigradientSARSAFnApprox(FnApproxAlgorithm):
         num_episodes: int,
         monitor: core.EnvMonitor,
     ) -> Iterator[PolicyControlSnapshot]:
+        monitor.clear()
         for episode in range(num_episodes):
             obs, _ = env.reset(seed=self.seeder.get_seed(episode=episode))
             policy_step = self.policy.action(obs, epsilon=self.epsilon)
