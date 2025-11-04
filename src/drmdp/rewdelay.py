@@ -400,6 +400,7 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         attempt_estimation_episode: int,
         estimation_buffer_mult: Optional[int] = None,
         use_bias: bool = False,
+        require_tall_matrix: bool = False,
     ):
         super().__init__(env)
         if not isinstance(obs_encoding_wrapper.observation_space, gym.spaces.Discrete):
@@ -414,6 +415,7 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self.attempt_estimation_episode = attempt_estimation_episode
         self.estimation_buffer_mult = estimation_buffer_mult
         self.use_bias = use_bias
+        self.require_tall_matrix = require_tall_matrix
 
         self.episodes = 0
         self.nstates = self.obs_wrapper.observation_space.n
@@ -490,7 +492,7 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         """
         # Estimate when there is a tall
         # matrix.
-        if self.est_buffer.size() <= self.mdim:
+        if self.require_tall_matrix and self.est_buffer.size() <= self.mdim:
             return
 
         obs_buffer, rew_buffer = zip(*self.est_buffer.buffer)
@@ -565,6 +567,7 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         attempt_estimation_episode: int,
         estimation_buffer_mult: Optional[int] = None,
         use_bias: bool = False,
+        require_tall_matrix: bool = False,
     ):
         super().__init__(env)
         if not isinstance(obs_encoding_wrapper.observation_space, gym.spaces.Box):
@@ -579,6 +582,7 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self.attempt_estimation_episode = attempt_estimation_episode
         self.estimation_buffer_mult = estimation_buffer_mult
         self.use_bias = use_bias
+        self.require_tall_matrix = require_tall_matrix
 
         self.episodes = 0
         self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
@@ -658,7 +662,7 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         """
         # Estimate when there is a tall
         # matrix.
-        if self.est_buffer.size() <= self.mdim:
+        if self.require_tall_matrix and self.est_buffer.size() <= self.mdim:
             return
 
         obs_buffer, rew_buffer = zip(*self.est_buffer.buffer)
@@ -738,6 +742,7 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         init_attempt_estimation_episode: int = 10,
         estimation_buffer_mult: Optional[int] = None,
         use_bias: bool = False,
+        require_tall_matrix: bool = False,
     ):
         super().__init__(env)
         if not isinstance(obs_encoding_wrapper.observation_space, gym.spaces.Box):
@@ -753,6 +758,7 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self.init_attempt_estimation_episode = init_attempt_estimation_episode
         self.estimation_buffer_mult = estimation_buffer_mult
         self.use_bias = use_bias
+        self.require_tall_matrix = require_tall_matrix
 
         self.windowed_task_schedule = WindowedTaskSchedule(
             mode=self.mode, init_update_ep=self.init_attempt_estimation_episode
@@ -844,7 +850,7 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         """
         # Estimate when there is a tall
         # matrix.
-        if self.est_buffer.size() <= self.mdim:
+        if self.require_tall_matrix and self.est_buffer.size() <= self.mdim:
             return False
 
         obs_buffer, rew_buffer = zip(*self.est_buffer.buffer)
@@ -942,6 +948,7 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         attempt_estimation_episode: int,
         estimation_buffer_mult: Optional[int] = None,
         use_bias: bool = False,
+        require_tall_matrix=False,
         constraints_buffer_limit: Optional[int] = None,
     ):
         super().__init__(env)
@@ -958,6 +965,7 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self.estimation_buffer_mult = estimation_buffer_mult
         self.use_bias = use_bias
         self.constraints_buffer_limit = constraints_buffer_limit
+        self.require_tall_matrix = require_tall_matrix
 
         self.episodes = 0
         self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
@@ -1055,7 +1063,7 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         """
         # Estimate when there is a tall
         # matrix.
-        if self.est_buffer.size() <= self.mdim:
+        if self.require_tall_matrix and self.est_buffer.size() <= self.mdim:
             return
 
         obs_buffer, rew_buffer = zip(*self.est_buffer.buffer)
@@ -1154,6 +1162,7 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         init_attempt_estimation_episode: int = 10,
         estimation_buffer_mult: Optional[int] = None,
         use_bias: bool = False,
+        require_tall_matrix: bool = False,
         constraints_buffer_limit: Optional[int] = None,
     ):
         super().__init__(env)
@@ -1170,6 +1179,7 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self.init_attempt_estimation_episode = init_attempt_estimation_episode
         self.estimation_buffer_mult = estimation_buffer_mult
         self.use_bias = use_bias
+        self.require_tall_matrix = require_tall_matrix
         self.constraints_buffer_limit = constraints_buffer_limit
 
         self.windowed_task_schedule = WindowedTaskSchedule(
@@ -1281,7 +1291,7 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         """
         # Estimate when there is a tall
         # matrix.
-        if self.est_buffer.size() <= self.mdim:
+        if self.require_tall_matrix and self.est_buffer.size() <= self.mdim:
             return False
 
         obs_buffer, rew_buffer = zip(*self.est_buffer.buffer)
