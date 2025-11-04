@@ -3,7 +3,7 @@ import logging
 import random
 import sys
 from enum import Enum
-from typing import Any, Callable, List, Optional, Protocol, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Protocol, Sequence, Tuple
 
 import gymnasium as gym
 import numpy as np
@@ -508,7 +508,7 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
                 axis=1,
             )
         try:
-            self.weights = optsol.solve_least_squares(matrix=matrix, rhs=rewards)
+            weights = optsol.solve_least_squares(matrix=matrix, rhs=rewards)
         except ValueError as err:
             logging.debug(
                 "%s - Failed estimation for %s: \n%s",
@@ -531,6 +531,7 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
             )
 
         else:
+            self.weights = weights
             error = metrics.rmse(
                 v_pred=np.dot(matrix, self.weights), v_true=rewards, axis=0
             )
@@ -678,7 +679,7 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
                 axis=1,
             )
         try:
-            self.weights = optsol.solve_least_squares(matrix=matrix, rhs=rewards)
+            weights = optsol.solve_least_squares(matrix=matrix, rhs=rewards)
         except ValueError as err:
             logging.debug(
                 "%s - Failed estimation for %s: \n%s",
@@ -702,6 +703,7 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
             )
 
         else:
+            self.weights = weights
             error = metrics.rmse(
                 v_pred=np.dot(matrix, self.weights), v_true=rewards, axis=0
             )
@@ -772,7 +774,7 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self.mv_normal_rewards: Optional[optsol.MultivariateNormal] = None
         self._obs_feats = None
         self._segment_features = None
-        self.estimation_meta = {"use_bias": self.use_bias}
+        self.estimation_meta: Dict[str, Any] = {"use_bias": self.use_bias}
         self.est_buffer = DataBuffer(
             max_capacity=self.mdim * self.estimation_buffer_mult
             if self.estimation_buffer_mult
@@ -852,7 +854,8 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         # matrix.
         if self.require_tall_matrix and self.est_buffer.size() <= self.mdim:
             return False
-
+        obs_buffer: Sequence[Any] = []
+        rew_buffer: Sequence[Any] = []
         obs_buffer, rew_buffer = zip(*self.est_buffer.buffer)
         matrix = np.stack(obs_buffer, dtype=np.float64)
         rewards = np.array(rew_buffer, dtype=np.float64)
@@ -869,16 +872,14 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         try:
             if self.mv_normal_rewards is None:
                 # Frequentist prior
-                self.mv_normal_rewards = optsol.MultivariateNormal.least_squares(
+                mv_normal = optsol.MultivariateNormal.least_squares(
                     matrix=matrix, rhs=rewards
                 )
             else:
-                self.mv_normal_rewards = (
-                    optsol.MultivariateNormal.bayes_linear_regression(
-                        matrix=matrix, rhs=rewards, prior=self.mv_normal_rewards
-                    )
+                mv_normal = optsol.MultivariateNormal.bayes_linear_regression(
+                    matrix=matrix, rhs=rewards, prior=self.mv_normal_rewards
                 )
-                self.posterior_updates += 1
+                self.posterior_updates += 1 if mv_normal is not None else 0
 
         except ValueError as err:
             logging.debug(
@@ -901,27 +902,29 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
             )
             return False
         else:
-            error = metrics.rmse(
-                v_pred=np.dot(matrix, self.mv_normal_rewards.mean),
-                v_true=rewards,
-                axis=0,
-            )
-            self.estimation_meta["sample"] = {"size": nexamples}
-            self.estimation_meta["error"] = {"rmse": error}
-            self.estimation_meta["estimate"] = {
-                "weights": self.mv_normal_rewards.mean.tolist(),
-            }
-            logging.info(
-                "%s - %s rewards for %s. RMSE: %f; No. Samples: %d",
-                "Estimated" if self.posterior_updates == 0 else "Updated",
-                self.get_name(),
-                self.get_env_name(),
-                error,
-                nexamples,
-            )
+            if mv_normal is not None:
+                self.mv_normal_rewards = mv_normal
+                error = metrics.rmse(
+                    v_pred=np.dot(matrix, self.mv_normal_rewards.mean),
+                    v_true=rewards,
+                    axis=0,
+                )
+                self.estimation_meta["sample"] = {"size": nexamples}
+                self.estimation_meta["error"] = {"rmse": error}
+                self.estimation_meta["estimate"] = {
+                    "weights": self.mv_normal_rewards.mean.tolist(),
+                }
+                logging.info(
+                    "%s - %s rewards for %s. RMSE: %f; No. Samples: %d",
+                    "Estimated" if self.posterior_updates == 0 else "Updated",
+                    self.get_name(),
+                    self.get_env_name(),
+                    error,
+                    nexamples,
+                )
 
-            # Clear buffers for next data
-            self.est_buffer.clear()
+                # Clear buffers for next data
+                self.est_buffer.clear()
         return True
 
 
@@ -1097,7 +1100,7 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
             def constraint_fn(solution):
                 return [term_state @ solution == 0 for term_state in term_states]
 
-            self.weights = optsol.solve_convex_least_squares(
+            weights = optsol.solve_convex_least_squares(
                 matrix=matrix, rhs=rewards, constraint_fn=constraint_fn
             )
         except ValueError as err:
@@ -1120,6 +1123,7 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
                 nexamples_dropped,
             )
         else:
+            self.weights = weights
             error = metrics.rmse(
                 v_pred=np.dot(matrix, self.weights), v_true=rewards, axis=0
             )
@@ -1194,7 +1198,7 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self.weights: Optional[np.ndarray] = None
         self._obs_feats = None
         self._segment_features = None
-        self.estimation_meta = {"use_bias": self.use_bias}
+        self.estimation_meta: Dict[str, Any] = {"use_bias": self.use_bias}
         self.rng = np.random.default_rng()
         self.est_buffer = DataBuffer(
             max_capacity=self.mdim * self.estimation_buffer_mult
@@ -1294,13 +1298,15 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         if self.require_tall_matrix and self.est_buffer.size() <= self.mdim:
             return False
 
+        obs_buffer: Sequence[Any] = []
+        rew_buffer: Sequence[Any] = []
         obs_buffer, rew_buffer = zip(*self.est_buffer.buffer)
         matrix = np.stack(obs_buffer, dtype=np.float64)
         rewards = np.array(rew_buffer, dtype=np.float64)
         term_states = (
             np.stack(self.tst_buffer.buffer, dtype=np.float64)
             if self.tst_buffer.size() > 0
-            else []
+            else np.array([])
         )
         nexamples = rewards.shape[0]
         if self.use_bias:
@@ -1321,22 +1327,16 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
                 )
 
         try:
-            if self.weights is not None:
-                # This is a posterior update,
-                # increment counter.
-                self.posterior_updates += 1
-
             # Construct the problem.
             def constraint_fn(solution):
                 return [term_state @ solution == 0 for term_state in term_states]
 
-            self.weights = optsol.solve_convex_least_squares(
+            weights = optsol.solve_convex_least_squares(
                 matrix=matrix,
                 rhs=rewards,
                 constraint_fn=constraint_fn,
                 warm_start_initial_guess=self.weights,
             )
-
         except ValueError as err:
             logging.debug(
                 "%s - Failed estimation for %s: \n%s",
@@ -1359,6 +1359,12 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
             )
             return False
         else:
+            if self.weights is not None:
+                # This is a posterior update,
+                # increment counter.
+                self.posterior_updates += 1
+            self.weights = weights
+
             error = metrics.rmse(
                 v_pred=np.dot(matrix, self.weights),
                 v_true=rewards,
@@ -1409,4 +1415,4 @@ def drop_samples(
         nexamples - nexamples_to_drop,
         replace=False,
     )
-    return nexamples_to_drop, (array[indices] for array in arrays)
+    return nexamples_to_drop, tuple(array[indices] for array in arrays)

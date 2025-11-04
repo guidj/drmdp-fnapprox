@@ -12,7 +12,7 @@ LEARNING_RATE_SPEC = {
 
 
 def least_specs(
-    attempt_estimation_episode: int, feats_specs: Mapping[str, Any]
+    attempt_estimation_episode: int, feats_specs: Sequence[Mapping[str, Any]]
 ) -> Sequence[Mapping[str, Any]]:
     """
     Least Squares specs.
@@ -42,8 +42,7 @@ def least_specs(
 
 
 def bayes_least_specs(
-    init_attempt_estimation_episode: int,
-    feats_specs: Mapping[str, Any],
+    init_attempt_estimation_episode: int, feats_specs: Sequence[Mapping[str, Any]]
 ) -> Sequence[Mapping[str, Any]]:
     """
     Bayesian linear regression specs.
@@ -73,7 +72,7 @@ def bayes_least_specs(
 
 
 def cvlps_specs(
-    attempt_estimation_episode: int, feats_specs: Mapping[str, Any]
+    attempt_estimation_episode: int, feats_specs: Sequence[Mapping[str, Any]]
 ) -> Sequence[Mapping[str, Any]]:
     """
     Constrained optimisation specs.

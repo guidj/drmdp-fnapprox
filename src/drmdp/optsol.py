@@ -268,7 +268,7 @@ def solve_convex_least_squares(
     try:
         prob.solve(warm_start=True)
         if prob.status == cp.OPTIMAL:
-            return solution.value
+            return solution.value  # type: ignore
         raise ValueError(f"No Solution. Status: {prob.status}; Sol: {solution.value}")
     except cvxpy.error.SolverError as err:
         raise ValueError(f"No Solution. Status {prob.status}") from err

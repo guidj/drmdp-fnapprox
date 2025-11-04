@@ -87,7 +87,7 @@ def policy_control(exp_instance: core.ExperimentInstance):
     env.close()
 
 
-def create_env(name: str, args: Mapping[str, Any]) -> core.ProxiedEnv:
+def create_env(name: str, args: Optional[Mapping[str, Any]]) -> core.ProxiedEnv:
     """
     Creates an env and a proxy.
     """
