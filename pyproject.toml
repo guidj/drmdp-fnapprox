@@ -23,7 +23,7 @@ dependencies = [
     "scipy>=1.14.1",
     "numpy>=1.23.5",
     "rlplg==0.21.8",
-    "ray[data,default,tune]==2.23.0",
+    "ray[data,default,tune]==2.48",
     "tensorflow>=2.11.1",
     "cvxpy>=1.5.3,<1.6",
     "stable-baselines3>=2.4.1",
@@ -89,7 +89,7 @@ allowlist_externals = ["uv"]
 
 [tool.tox.env.test]
 deps = []
-commands = [["uv", "run", "pytest", "{posargs}", "-v", "--cov=daaf", "--cov-report=xml:cobertura/coverage.xml", "--cov-report=term-missing", "--junitxml=junit.xml"]]
+commands = [["uv", "run", "pytest", "{posargs}", "-v", "--cov=drmdp", "--cov-report=xml:cobertura/coverage.xml", "--cov-report=term-missing", "--junitxml=junit.xml"]]
 
 [tool.tox.env.docs]
 deps = []
@@ -109,7 +109,7 @@ commands = [["uv", "run", "ruff", "format", "{toxinidir}/src", "{toxinidir}/test
 
 [tool.tox.env.lint]
 deps = []
-commands = [["uv", "run", "ruff", "check"]]
+commands = [["uv", "run", "ruff", "check", "--extend-select",  "I", "{toxinidir}/src", "{toxinidir}/tests"]]
 
 [tool.tox.env.lint-types]
 # due to version conflicts, we specify these deps
