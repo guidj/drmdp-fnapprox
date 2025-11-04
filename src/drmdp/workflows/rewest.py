@@ -291,14 +291,6 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                     {"name": "tiles", "args": {"tiling_dim": 3}},
                     {"name": "tiles", "args": {"tiling_dim": 6}},
                 ],
-            )
-            + bayes_cvlps_specs(
-                init_attempt_estimation_episodes=(10,),
-                feat_specs=[
-                    {"name": "scale", "args": None},
-                    {"name": "tiles", "args": {"tiling_dim": 3}},
-                    {"name": "tiles", "args": {"tiling_dim": 6}},
-                ],
             ),
             "epochs": 1,
         },
@@ -341,14 +333,6 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                     {"name": "tiles", "args": {"tiling_dim": 3}},
                     {"name": "tiles", "args": {"tiling_dim": 6}},
                 ],
-            )
-            + bayes_cvlps_specs(
-                init_attempt_estimation_episodes=(10,),
-                feat_specs=[
-                    {"name": "scale", "args": None},
-                    {"name": "tiles", "args": {"tiling_dim": 3}},
-                    {"name": "tiles", "args": {"tiling_dim": 6}},
-                ],
             ),
             "epochs": 1,
         },
@@ -385,14 +369,6 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 ],
             )
             + bayes_least_specs(
-                init_attempt_estimation_episodes=(10,),
-                feat_specs=[
-                    {"name": "scale", "args": None},
-                    {"name": "tiles", "args": {"tiling_dim": 3}},
-                    {"name": "tiles", "args": {"tiling_dim": 6}},
-                ],
-            )
-            + bayes_cvlps_specs(
                 init_attempt_estimation_episodes=(10,),
                 feat_specs=[
                     {"name": "scale", "args": None},
@@ -435,14 +411,6 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 ],
             )
             + bayes_least_specs(
-                init_attempt_estimation_episodes=(10,),
-                feat_specs=[
-                    {"name": "scale", "args": None},
-                    {"name": "tiles", "args": {"tiling_dim": 3}},
-                    {"name": "tiles", "args": {"tiling_dim": 6}},
-                ],
-            )
-            + bayes_cvlps_specs(
                 init_attempt_estimation_episodes=(10,),
                 feat_specs=[
                     {"name": "scale", "args": None},
@@ -495,14 +463,6 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                     {"name": "tiles", "args": {"tiling_dim": 3}},
                     {"name": "tiles", "args": {"tiling_dim": 6}},
                 ],
-            )
-            + bayes_cvlps_specs(
-                init_attempt_estimation_episodes=(10,),
-                feat_specs=[
-                    {"name": "scale", "args": None},
-                    {"name": "tiles", "args": {"tiling_dim": 3}},
-                    {"name": "tiles", "args": {"tiling_dim": 6}},
-                ],
             ),
             "epochs": 1,
         },
@@ -545,14 +505,6 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                     {"name": "tiles", "args": {"tiling_dim": 3}},
                     {"name": "tiles", "args": {"tiling_dim": 6}},
                 ],
-            )
-            + bayes_cvlps_specs(
-                init_attempt_estimation_episodes=(10,),
-                feat_specs=[
-                    {"name": "scale", "args": None},
-                    {"name": "tiles", "args": {"tiling_dim": 3}},
-                    {"name": "tiles", "args": {"tiling_dim": 6}},
-                ],
             ),
             "epochs": 1,
         },
@@ -581,13 +533,6 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 ],
             )
             + bayes_least_specs(
-                init_attempt_estimation_episodes=(10,),
-                feat_specs=[
-                    {"name": "tiles", "args": {"tiling_dim": 3}},
-                    {"name": "tiles", "args": {"tiling_dim": 6}},
-                ],
-            )
-            + bayes_cvlps_specs(
                 init_attempt_estimation_episodes=(10,),
                 feat_specs=[
                     {"name": "tiles", "args": {"tiling_dim": 3}},
@@ -631,13 +576,6 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                     {"name": "tiles", "args": {"tiling_dim": 3}},
                     {"name": "tiles", "args": {"tiling_dim": 6}},
                 ],
-            )
-            + bayes_cvlps_specs(
-                init_attempt_estimation_episodes=(10,),
-                feat_specs=[
-                    {"name": "tiles", "args": {"tiling_dim": 3}},
-                    {"name": "tiles", "args": {"tiling_dim": 6}},
-                ],
             ),
             "epochs": 10,
         },
@@ -671,13 +609,6 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                     {"name": "tiles", "args": {"tiling_dim": 3}},
                     {"name": "tiles", "args": {"tiling_dim": 6}},
                 ],
-            )
-            + bayes_cvlps_specs(
-                init_attempt_estimation_episodes=(10,),
-                feat_specs=[
-                    {"name": "tiles", "args": {"tiling_dim": 3}},
-                    {"name": "tiles", "args": {"tiling_dim": 6}},
-                ],
             ),
             "epochs": 10,
         },
@@ -694,6 +625,8 @@ def run_reward_estimation_study(specs, turns: int, num_episodes: int, output_pat
         for feats_spec, rewest_spec in itertools.product(
             spec["feats_specs"], spec["rewest"]
         ):
+            if not (spec["name"] == "IceWorld-v0" and reward_delay == 6 and turn == 0):
+                continue
             job_spec = JobSpec(
                 env_name=spec["name"],
                 env_args=spec["args"],
