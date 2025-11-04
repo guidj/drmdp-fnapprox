@@ -120,7 +120,7 @@ class RewardStoreWrapper(gym.Wrapper):
 def discrete_least_specs(
     attempt_estimation_episodes: Sequence[int],
     feat_specs: Sequence[Mapping[str, Any]],
-    estimation_buffer_multiples: Sequence[Optional[int]] = (2, 10, 25, None),
+    estimation_buffer_multiples: Sequence[Optional[int]] = (10, 25, None),
 ):
     """
     Discretised Least Squares specs.
@@ -145,7 +145,7 @@ def discrete_least_specs(
 def least_specs(
     attempt_estimation_episodes: Sequence[int],
     feat_specs: Sequence[Mapping[str, Any]],
-    estimation_buffer_multiples: Sequence[Optional[int]] = (2, 10, 25, None),
+    estimation_buffer_multiples: Sequence[Optional[int]] = (10, 25, None),
 ):
     """
     Least Squares specs.
@@ -170,7 +170,7 @@ def least_specs(
 def bayes_least_specs(
     init_attempt_estimation_episodes: Sequence[int],
     feat_specs: Sequence[Mapping[str, Any]],
-    estimation_buffer_multiples: Sequence[Optional[int]] = (2, 10, 25, None),
+    estimation_buffer_multiples: Sequence[Optional[int]] = (10, 25, None),
 ):
     """
     Bayesian linear regression specs.
@@ -196,7 +196,7 @@ def bayes_least_specs(
 def cvlps_specs(
     attempt_estimation_episodes: Sequence[int],
     feat_specs: Sequence[Mapping[str, Any]],
-    estimation_buffer_multiples: Sequence[Optional[int]] = (2, 10, 25, None),
+    estimation_buffer_multiples: Sequence[Optional[int]] = (10, 25, None),
     constraints_buffer_limit: Optional[int] = 100,
 ):
     """
@@ -223,7 +223,7 @@ def cvlps_specs(
 def bayes_cvlps_specs(
     init_attempt_estimation_episodes: Sequence[int],
     feat_specs: Sequence[Mapping[str, Any]],
-    estimation_buffer_multiples: Sequence[Optional[int]] = (2, 10, 25, None),
+    estimation_buffer_multiples: Sequence[Optional[int]] = (10, 25, None),
     constraints_buffer_limit: Optional[int] = 100,
 ):
     """
