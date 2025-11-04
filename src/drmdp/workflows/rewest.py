@@ -539,7 +539,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                     {"name": "tiles", "args": {"tiling_dim": 6}},
                 ],
             ),
-            "epochs": 10,
+            "epochs": 5,
         },
         {
             "name": "MountainCar-v0",
@@ -577,7 +577,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                     {"name": "tiles", "args": {"tiling_dim": 6}},
                 ],
             ),
-            "epochs": 10,
+            "epochs": 5,
         },
         {
             "name": "GridWorld-v0",
@@ -610,7 +610,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                     {"name": "tiles", "args": {"tiling_dim": 6}},
                 ],
             ),
-            "epochs": 10,
+            "epochs": 5,
         },
     )
 
