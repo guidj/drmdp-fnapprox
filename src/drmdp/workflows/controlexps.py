@@ -288,29 +288,8 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             "epochs": 1,
         },
         {
-            "name": "RedGreen-v0",
-            "args": None,
-            "feats_specs": [
-                {"name": "tiles", "args": {"tiling_dim": 6}},
-            ],
-            "problem_specs": common_problem_specs()
-            + least_specs(
-                attempt_estimation_episode=50,
-                feats_specs=[{"name": "tiles", "args": {"tiling_dim": 6}}],
-            )
-            + bayes_least_specs(
-                init_attempt_estimation_episode=10,
-                feats_specs=[{"name": "tiles", "args": {"tiling_dim": 6}}],
-            )
-            + cvlps_specs(
-                attempt_estimation_episode=50,
-                feats_specs=[{"name": "tiles", "args": {"tiling_dim": 6}}],
-            ),
-            "epochs": 100,
-        },
-        {
             "name": "IceWorld-v0",
-            "args": None,
+            "args": {"map_name": "8x8"},
             "feats_specs": [
                 {"name": "tiles", "args": {"tiling_dim": 6}},
             ],
@@ -327,7 +306,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 attempt_estimation_episode=50,
                 feats_specs=[{"name": "tiles", "args": {"tiling_dim": 6}}],
             ),
-            "epochs": 100,
+            "epochs": 10,
         },
         {
             "name": "MountainCar-v0",

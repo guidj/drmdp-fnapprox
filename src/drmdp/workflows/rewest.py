@@ -557,48 +557,8 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             "epochs": 1,
         },
         {
-            "name": "RedGreen-v0",
-            "args": None,
-            "feats_specs": [
-                {"name": "tiles", "args": {"tiling_dim": 6}},
-            ],
-            "rewest": discrete_least_specs(
-                attempt_estimation_episodes=(50,),
-                feat_specs=[{"name": "flat-grid-coord", "args": None}],
-            )
-            + least_specs(
-                attempt_estimation_episodes=(50,),
-                feat_specs=[
-                    {"name": "tiles", "args": {"tiling_dim": 3}},
-                    {"name": "tiles", "args": {"tiling_dim": 6}},
-                ],
-            )
-            + cvlps_specs(
-                attempt_estimation_episodes=(50,),
-                feat_specs=[
-                    {"name": "tiles", "args": {"tiling_dim": 3}},
-                    {"name": "tiles", "args": {"tiling_dim": 6}},
-                ],
-            )
-            + bayes_least_specs(
-                init_attempt_estimation_episodes=(10,),
-                feat_specs=[
-                    {"name": "tiles", "args": {"tiling_dim": 3}},
-                    {"name": "tiles", "args": {"tiling_dim": 6}},
-                ],
-            )
-            + bayes_cvlps_specs(
-                init_attempt_estimation_episodes=(10,),
-                feat_specs=[
-                    {"name": "tiles", "args": {"tiling_dim": 3}},
-                    {"name": "tiles", "args": {"tiling_dim": 6}},
-                ],
-            ),
-            "epochs": 100,
-        },
-        {
             "name": "IceWorld-v0",
-            "args": None,
+            "args": {"map_name": "8x8"},
             "feats_specs": [
                 {"name": "tiles", "args": {"tiling_dim": 6}},
             ],
@@ -634,7 +594,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                     {"name": "tiles", "args": {"tiling_dim": 6}},
                 ],
             ),
-            "epochs": 100,
+            "epochs": 10,
         },
         {
             "name": "MountainCar-v0",

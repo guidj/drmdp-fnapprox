@@ -231,7 +231,7 @@ def reward_mapper(env: gym.Env, proxy_env: gym.Env, mapping_spec: Mapping[str, A
     Creates a mapper for handling missing rewards.
     """
     name = mapping_spec["name"]
-    m_args = dict(**mapping_spec["args"])
+    m_args = dict(**(mapping_spec["args"] or {}))
     enc_feats_spec = m_args.pop("feats_spec") if "feats_spec" in m_args else None
     observation_enc = observation_encoder(proxy_env, feats_spec=enc_feats_spec)
 

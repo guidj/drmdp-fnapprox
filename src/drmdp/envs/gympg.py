@@ -28,7 +28,7 @@ class GridWorldObsAsVectorWrapper(gym.ObservationWrapper):
         )
 
     def observation(self, observation: ObsType):
-        return np.array(observation["agent"])
+        return np.array(observation["agent"], dtype=np.int64)
 
 
 class IceworldObsAsVectorWrapper(gym.ObservationWrapper):
@@ -46,7 +46,7 @@ class IceworldObsAsVectorWrapper(gym.ObservationWrapper):
         )
 
     def observation(self, observation: ObsType):
-        return np.array(observation["agent"])
+        return np.array(observation["agent"], dtype=np.int64)
 
 
 class RedgreenObsAsVectorWrapper(gym.ObservationWrapper):
@@ -54,7 +54,7 @@ class RedgreenObsAsVectorWrapper(gym.ObservationWrapper):
         super().__init__(env)
         self.observation_space = gym.spaces.Box(
             high=np.array([env.observation_space["pos"].n]),
-            low=np.array([0]),
+            low=np.zeros(shape=1),
             dtype=np.int64,
         )
 
@@ -93,6 +93,9 @@ def make(env_name: str, wrapper: Optional[str] = None, **kwargs) -> gym.Env:
 
 
 def episode_steps_limit(env: gym.Env, max_episode_steps: Optional[int] = None):
+    """
+    Applies a `TimeLimit` wrapper, if `max_episode_steps` is defined.
+    """
     if max_episode_steps:
         return gym.wrappers.TimeLimit(env, max_episode_steps=max_episode_steps)
     return env
