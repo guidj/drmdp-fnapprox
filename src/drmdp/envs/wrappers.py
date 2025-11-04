@@ -163,6 +163,11 @@ class FlatGridCoordObsWrapper(gym.ObservationWrapper):
                 f"Env should be a 1D array. Got {env.observation_space.shape}"
             )
 
+        if not np.issubdtype(env.observation_space.dtype, np.integer):
+            raise TypeError(
+                f"Env observation_space must be of `int` type. Got {env.observation_space.dtype}"
+            )
+
         shape = env.observation_space.shape
         self.dim = (
             shape[0] if isinstance(env.observation_space.shape, Sequence) else shape
