@@ -96,7 +96,7 @@ class RewardStoreWrapper(gym.Wrapper):
     def __init__(self, env, buffer_size: int):
         super().__init__(env)
         self.buffer_size = buffer_size
-        self.buffer = []
+        self.buffer: List[float] = []
         self.solver_state = {"solution_found_step": None}
         self.steps_counter = 0
 
@@ -120,7 +120,7 @@ class RewardStoreWrapper(gym.Wrapper):
 def discrete_least_specs(
     attempt_estimation_episodes: Sequence[int],
     feat_specs: Sequence[Mapping[str, Any]],
-    estimation_buffer_multiples: Sequence[int] = (2, 10, 25, None),
+    estimation_buffer_multiples: Sequence[Optional[int]] = (2, 10, 25, None),
 ):
     """
     Discretised Least Squares specs.
@@ -145,7 +145,7 @@ def discrete_least_specs(
 def least_specs(
     attempt_estimation_episodes: Sequence[int],
     feat_specs: Sequence[Mapping[str, Any]],
-    estimation_buffer_multiples: Sequence[int] = (2, 10, 25, None),
+    estimation_buffer_multiples: Sequence[Optional[int]] = (2, 10, 25, None),
 ):
     """
     Least Squares specs.
@@ -170,7 +170,7 @@ def least_specs(
 def bayes_least_specs(
     init_attempt_estimation_episodes: Sequence[int],
     feat_specs: Sequence[Mapping[str, Any]],
-    estimation_buffer_multiples: Sequence[int] = (2, 10, 25, None),
+    estimation_buffer_multiples: Sequence[Optional[int]] = (2, 10, 25, None),
 ):
     """
     Bayesian linear regression specs.
@@ -196,7 +196,7 @@ def bayes_least_specs(
 def cvlps_specs(
     attempt_estimation_episodes: Sequence[int],
     feat_specs: Sequence[Mapping[str, Any]],
-    estimation_buffer_multiples: Sequence[int] = (2, 10, 25, None),
+    estimation_buffer_multiples: Sequence[Optional[int]] = (2, 10, 25, None),
     constraints_buffer_limit: Optional[int] = 100,
 ):
     """
@@ -223,7 +223,7 @@ def cvlps_specs(
 def bayes_cvlps_specs(
     init_attempt_estimation_episodes: Sequence[int],
     feat_specs: Sequence[Mapping[str, Any]],
-    estimation_buffer_multiples: Sequence[int] = (2, 10, 25, None),
+    estimation_buffer_multiples: Sequence[Optional[int]] = (2, 10, 25, None),
     constraints_buffer_limit: Optional[int] = 100,
 ):
     """
@@ -625,8 +625,6 @@ def run_reward_estimation_study(specs, turns: int, num_episodes: int, output_pat
         for feats_spec, rewest_spec in itertools.product(
             spec["feats_specs"], spec["rewest"]
         ):
-            if not (spec["name"] == "IceWorld-v0" and reward_delay == 6 and turn == 0):
-                continue
             job_spec = JobSpec(
                 env_name=spec["name"],
                 env_args=spec["args"],
@@ -644,7 +642,7 @@ def run_reward_estimation_study(specs, turns: int, num_episodes: int, output_pat
 
     with ray.init() as context:
         logging.info("Starting ray task: %s", context)
-        result_writer = ResultWriter.remote(output_path=output_path)
+        result_writer = ResultWriter.remote(output_path=output_path)  # type: ignore
         results_refs = [run_fn.remote(job) for job in jobs]
         write_result_refs = []
         for completed_result_ref in yield_as_completed(
