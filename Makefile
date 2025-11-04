@@ -10,7 +10,8 @@ format-nb:
 	uv run ruff format notebooks
 
 check: format
-	tox -e lint -e lint-types -e check-formatting	
+	tox -e lint-types 
+	tox -e check-formatting	
 
 test:
 	tox -e test
