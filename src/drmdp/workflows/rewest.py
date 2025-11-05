@@ -21,6 +21,14 @@ from drmdp import core, envs, feats, logger, mathutils, metrics, rewdelay, task
 MAX_STEPS = 200
 REWARD_DELAYS = (2, 4, 6)
 REWARD_EVAL_SAMPLES = 25_000
+MINES_GW_GRID = [
+    "ooooxooooooo",
+    "oooooooooxoo",
+    "oxoooooxoooo",
+    "oooooxoooooo",
+    "ooxooooooxoo",
+    "sxxxxxxxxxxg",
+]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -581,7 +589,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
         },
         {
             "name": "GridWorld-v0",
-            "args": {"max_episode_steps": MAX_STEPS},
+            "args": {"grid": MINES_GW_GRID, "max_episode_steps": MAX_STEPS},
             "feats_specs": [
                 {"name": "tiles", "args": {"tiling_dim": 8}},
             ],
