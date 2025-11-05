@@ -9,6 +9,14 @@ LEARNING_RATE_SPEC = {
     "name": "constant",
     "args": {"initial_lr": 0.01},
 }
+MINES_GW_GRID = [
+    "ooooxooooooo",
+    "oooooooooxoo",
+    "oxoooooxoooo",
+    "oooooxoooooo",
+    "ooxooooooxoo",
+    "sxxxxxxxxxxg",
+]
 
 
 def discrete_least_specs(
@@ -211,16 +219,20 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             },
             "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 4}}],
             "problem_specs": common_problem_specs()
+            + discrete_least_specs(
+                attempt_estimation_episode=50,
+                feats_specs=[{"name": "cluster-c", "args": {"num_clusters": 100}}],
+            )
             + least_specs(
+                attempt_estimation_episode=50,
+                feats_specs=[{"name": "scale", "args": None}],
+            )
+            + cvlps_specs(
                 attempt_estimation_episode=50,
                 feats_specs=[{"name": "scale", "args": None}],
             )
             + bayes_least_specs(
                 init_attempt_estimation_episode=10,
-                feats_specs=[{"name": "scale", "args": None}],
-            )
-            + cvlps_specs(
-                attempt_estimation_episode=50,
                 feats_specs=[{"name": "scale", "args": None}],
             ),
             "epochs": 1,
@@ -236,7 +248,18 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             },
             "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
             "problem_specs": common_problem_specs()
+            + discrete_least_specs(
+                attempt_estimation_episode=50,
+                feats_specs=[{"name": "cluster-c", "args": {"num_clusters": 100}}],
+            )
             + least_specs(
+                attempt_estimation_episode=50,
+                feats_specs=[
+                    {"name": "scale", "args": None},
+                    {"name": "tiles", "args": {"tiling_dim": 6}},
+                ],
+            )
+            + cvlps_specs(
                 attempt_estimation_episode=50,
                 feats_specs=[
                     {"name": "scale", "args": None},
@@ -245,13 +268,6 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             )
             + bayes_least_specs(
                 init_attempt_estimation_episode=10,
-                feats_specs=[
-                    {"name": "scale", "args": None},
-                    {"name": "tiles", "args": {"tiling_dim": 6}},
-                ],
-            )
-            + cvlps_specs(
-                attempt_estimation_episode=50,
                 feats_specs=[
                     {"name": "scale", "args": None},
                     {"name": "tiles", "args": {"tiling_dim": 6}},
@@ -270,7 +286,18 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             },
             "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 3}}],
             "problem_specs": common_problem_specs()
+            + discrete_least_specs(
+                attempt_estimation_episode=50,
+                feats_specs=[{"name": "cluster-c", "args": {"num_clusters": 100}}],
+            )
             + least_specs(
+                attempt_estimation_episode=50,
+                feats_specs=[
+                    {"name": "scale", "args": None},
+                    {"name": "tiles", "args": {"tiling_dim": 6}},
+                ],
+            )
+            + cvlps_specs(
                 attempt_estimation_episode=50,
                 feats_specs=[
                     {"name": "scale", "args": None},
@@ -279,13 +306,6 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             )
             + bayes_least_specs(
                 init_attempt_estimation_episode=10,
-                feats_specs=[
-                    {"name": "scale", "args": None},
-                    {"name": "tiles", "args": {"tiling_dim": 6}},
-                ],
-            )
-            + cvlps_specs(
-                attempt_estimation_episode=50,
                 feats_specs=[
                     {"name": "scale", "args": None},
                     {"name": "tiles", "args": {"tiling_dim": 6}},
@@ -304,7 +324,18 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             },
             "feats_specs": [{"name": "scale", "args": None}],
             "problem_specs": common_problem_specs()
+            + discrete_least_specs(
+                attempt_estimation_episode=50,
+                feats_specs=[{"name": "cluster-c", "args": {"num_clusters": 100}}],
+            )
             + least_specs(
+                attempt_estimation_episode=50,
+                feats_specs=[
+                    {"name": "scale", "args": None},
+                    {"name": "tiles", "args": {"tiling_dim": 6}},
+                ],
+            )
+            + cvlps_specs(
                 attempt_estimation_episode=50,
                 feats_specs=[
                     {"name": "scale", "args": None},
@@ -313,13 +344,6 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             )
             + bayes_least_specs(
                 init_attempt_estimation_episode=10,
-                feats_specs=[
-                    {"name": "scale", "args": None},
-                    {"name": "tiles", "args": {"tiling_dim": 6}},
-                ],
-            )
-            + cvlps_specs(
-                attempt_estimation_episode=50,
                 feats_specs=[
                     {"name": "scale", "args": None},
                     {"name": "tiles", "args": {"tiling_dim": 6}},
@@ -338,7 +362,18 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             },
             "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
             "problem_specs": common_problem_specs()
+            + discrete_least_specs(
+                attempt_estimation_episode=50,
+                feats_specs=[{"name": "flat-grid-coord", "args": None}],
+            )
             + least_specs(
+                attempt_estimation_episode=50,
+                feats_specs=[
+                    {"name": "scale", "args": None},
+                    {"name": "tiles", "args": {"tiling_dim": 6}},
+                ],
+            )
+            + cvlps_specs(
                 attempt_estimation_episode=50,
                 feats_specs=[
                     {"name": "scale", "args": None},
@@ -347,13 +382,6 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             )
             + bayes_least_specs(
                 init_attempt_estimation_episode=10,
-                feats_specs=[
-                    {"name": "scale", "args": None},
-                    {"name": "tiles", "args": {"tiling_dim": 6}},
-                ],
-            )
-            + cvlps_specs(
-                attempt_estimation_episode=50,
                 feats_specs=[
                     {"name": "scale", "args": None},
                     {"name": "tiles", "args": {"tiling_dim": 6}},
@@ -368,60 +396,45 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 {"name": "tiles", "args": {"tiling_dim": 6}},
             ],
             "problem_specs": common_problem_specs()
+            + discrete_least_specs(
+                attempt_estimation_episode=50,
+                feats_specs=[{"name": "flat-grid-coord", "args": None}],
+            )
             + least_specs(
                 attempt_estimation_episode=50,
-                feats_specs=[{"name": "tiles", "args": {"tiling_dim": 6}}],
-            )
-            + bayes_least_specs(
-                init_attempt_estimation_episode=10,
                 feats_specs=[{"name": "tiles", "args": {"tiling_dim": 6}}],
             )
             + cvlps_specs(
                 attempt_estimation_episode=50,
                 feats_specs=[{"name": "tiles", "args": {"tiling_dim": 6}}],
-            ),
-            "epochs": 5,
-        },
-        {
-            "name": "MountainCar-v0",
-            "args": {
-                "max_episode_steps": 2500,
-            },
-            "feats_specs": [
-                {"name": "tiles", "args": {"tiling_dim": 6}},
-            ],
-            "problem_specs": common_problem_specs()
-            + least_specs(
-                attempt_estimation_episode=50,
-                feats_specs=[{"name": "tiles", "args": {"tiling_dim": 6}}],
             )
             + bayes_least_specs(
                 init_attempt_estimation_episode=10,
-                feats_specs=[{"name": "tiles", "args": {"tiling_dim": 6}}],
-            )
-            + cvlps_specs(
-                attempt_estimation_episode=50,
                 feats_specs=[{"name": "tiles", "args": {"tiling_dim": 6}}],
             ),
             "epochs": 5,
         },
         {
             "name": "GridWorld-v0",
-            "args": {"max_episode_steps": 200},
+            "args": {"grid": MINES_GW_GRID, "max_episode_steps": 200},
             "feats_specs": [
                 {"name": "tiles", "args": {"tiling_dim": 8}},
             ],
             "problem_specs": common_problem_specs()
+            + discrete_least_specs(
+                attempt_estimation_episode=50,
+                feats_specs=[{"name": "flat-grid-coord", "args": None}],
+            )
             + least_specs(
+                attempt_estimation_episode=50,
+                feats_specs=[{"name": "tiles", "args": {"tiling_dim": 8}}],
+            )
+            + cvlps_specs(
                 attempt_estimation_episode=50,
                 feats_specs=[{"name": "tiles", "args": {"tiling_dim": 8}}],
             )
             + bayes_least_specs(
                 init_attempt_estimation_episode=10,
-                feats_specs=[{"name": "tiles", "args": {"tiling_dim": 8}}],
-            )
-            + cvlps_specs(
-                attempt_estimation_episode=50,
                 feats_specs=[{"name": "tiles", "args": {"tiling_dim": 8}}],
             ),
             "epochs": 5,
@@ -437,16 +450,22 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             },
             "feats_specs": [{"name": "scale", "args": None}],
             "problem_specs": common_problem_specs()
+            + discrete_least_specs(
+                attempt_estimation_episode=50,
+                feats_specs=[
+                    {"name": "cluster-c", "args": {"num_clusters": 100}},
+                ],
+            )
             + least_specs(
+                attempt_estimation_episode=50,
+                feats_specs=[{"name": "scale", "args": None}],
+            )
+            + cvlps_specs(
                 attempt_estimation_episode=50,
                 feats_specs=[{"name": "scale", "args": None}],
             )
             + bayes_least_specs(
                 init_attempt_estimation_episode=10,
-                feats_specs=[{"name": "scale", "args": None}],
-            )
-            + cvlps_specs(
-                attempt_estimation_episode=50,
                 feats_specs=[{"name": "scale", "args": None}],
             ),
             "epochs": 1,
@@ -460,9 +479,21 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 "max_episode_steps": MAX_STEPS_PER_EPISODE_GEM,
                 "emit_state": True,
             },
-            "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
+            "feats_specs": [{"name": "scale", "args": None}],
             "problem_specs": common_problem_specs()
+            + discrete_least_specs(
+                attempt_estimation_episode=50,
+                feats_specs=[
+                    {"name": "cluster-c", "args": {"num_clusters": 100}},
+                ],
+            )
             + least_specs(
+                attempt_estimation_episode=50,
+                feats_specs=[
+                    {"name": "scale", "args": None},
+                ],
+            )
+            + cvlps_specs(
                 attempt_estimation_episode=50,
                 feats_specs=[
                     {"name": "scale", "args": None},
@@ -470,12 +501,6 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             )
             + bayes_least_specs(
                 init_attempt_estimation_episode=10,
-                feats_specs=[
-                    {"name": "scale", "args": None},
-                ],
-            )
-            + cvlps_specs(
-                attempt_estimation_episode=50,
                 feats_specs=[
                     {"name": "scale", "args": None},
                 ],
@@ -493,7 +518,19 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             },
             "feats_specs": [{"name": "scale", "args": None}],
             "problem_specs": common_problem_specs()
+            + discrete_least_specs(
+                attempt_estimation_episode=50,
+                feats_specs=[
+                    {"name": "cluster-c", "args": {"num_clusters": 100}},
+                ],
+            )
             + least_specs(
+                attempt_estimation_episode=50,
+                feats_specs=[
+                    {"name": "scale", "args": None},
+                ],
+            )
+            + cvlps_specs(
                 attempt_estimation_episode=50,
                 feats_specs=[
                     {"name": "scale", "args": None},
@@ -501,12 +538,6 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             )
             + bayes_least_specs(
                 init_attempt_estimation_episode=10,
-                feats_specs=[
-                    {"name": "scale", "args": None},
-                ],
-            )
-            + cvlps_specs(
-                attempt_estimation_episode=50,
                 feats_specs=[
                     {"name": "scale", "args": None},
                 ],
@@ -524,7 +555,19 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             },
             "feats_specs": [{"name": "scale", "args": None}],
             "problem_specs": common_problem_specs()
+            + discrete_least_specs(
+                attempt_estimation_episode=50,
+                feats_specs=[
+                    {"name": "cluster-c", "args": {"num_clusters": 100}},
+                ],
+            )
             + least_specs(
+                attempt_estimation_episode=50,
+                feats_specs=[
+                    {"name": "scale", "args": None},
+                ],
+            )
+            + cvlps_specs(
                 attempt_estimation_episode=50,
                 feats_specs=[
                     {"name": "scale", "args": None},
@@ -532,12 +575,6 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             )
             + bayes_least_specs(
                 init_attempt_estimation_episode=10,
-                feats_specs=[
-                    {"name": "scale", "args": None},
-                ],
-            )
-            + cvlps_specs(
-                attempt_estimation_episode=50,
                 feats_specs=[
                     {"name": "scale", "args": None},
                 ],
@@ -555,7 +592,19 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             },
             "feats_specs": [{"name": "scale", "args": None}],
             "problem_specs": common_problem_specs()
+            + discrete_least_specs(
+                attempt_estimation_episode=50,
+                feats_specs=[
+                    {"name": "cluster-c", "args": {"num_clusters": 100}},
+                ],
+            )
             + least_specs(
+                attempt_estimation_episode=50,
+                feats_specs=[
+                    {"name": "scale", "args": None},
+                ],
+            )
+            + cvlps_specs(
                 attempt_estimation_episode=50,
                 feats_specs=[
                     {"name": "scale", "args": None},
@@ -563,12 +612,6 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             )
             + bayes_least_specs(
                 init_attempt_estimation_episode=10,
-                feats_specs=[
-                    {"name": "scale", "args": None},
-                ],
-            )
-            + cvlps_specs(
-                attempt_estimation_episode=50,
                 feats_specs=[
                     {"name": "scale", "args": None},
                 ],

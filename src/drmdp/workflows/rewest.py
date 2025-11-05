@@ -272,9 +272,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 4}}],
             "rewest": discrete_least_specs(
                 attempt_estimation_episodes=(50,),
-                feat_specs=[
-                    {"name": "cluster-c", "args": {"num_clusters": 100}},
-                ],
+                feat_specs=[{"name": "cluster-c", "args": {"num_clusters": 100}}],
             )
             + least_specs(
                 attempt_estimation_episodes=(50,),
@@ -314,51 +312,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
             "rewest": discrete_least_specs(
                 attempt_estimation_episodes=(50,),
-                feat_specs=[
-                    {"name": "cluster-c", "args": {"num_clusters": 100}},
-                ],
-            )
-            + least_specs(
-                attempt_estimation_episodes=(50,),
-                feat_specs=[
-                    {"name": "scale", "args": None},
-                    {"name": "tiles", "args": {"tiling_dim": 3}},
-                    {"name": "tiles", "args": {"tiling_dim": 6}},
-                ],
-            )
-            + cvlps_specs(
-                attempt_estimation_episodes=(50,),
-                feat_specs=[
-                    {"name": "scale", "args": None},
-                    {"name": "tiles", "args": {"tiling_dim": 3}},
-                    {"name": "tiles", "args": {"tiling_dim": 6}},
-                ],
-            )
-            + bayes_least_specs(
-                init_attempt_estimation_episodes=(10,),
-                feat_specs=[
-                    {"name": "scale", "args": None},
-                    {"name": "tiles", "args": {"tiling_dim": 3}},
-                    {"name": "tiles", "args": {"tiling_dim": 6}},
-                ],
-            ),
-            "epochs": 1,
-        },
-        {
-            "name": "Finite-CC-ShuntDc-v0",
-            "args": {
-                "reward_fn": "pos-enf",
-                "penalty_gamma": 1.0,
-                "constraint_violation_reward": 0.0,
-                "max_episode_steps": MAX_STEPS,
-                "emit_state": False,
-            },
-            "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
-            "rewest": discrete_least_specs(
-                attempt_estimation_episodes=(50,),
-                feat_specs=[
-                    {"name": "cluster-c", "args": {"num_clusters": 100}},
-                ],
+                feat_specs=[{"name": "cluster-c", "args": {"num_clusters": 100}}],
             )
             + least_specs(
                 attempt_estimation_episodes=(50,),
@@ -398,9 +352,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 3}}],
             "rewest": discrete_least_specs(
                 attempt_estimation_episodes=(50,),
-                feat_specs=[
-                    {"name": "cluster-c", "args": {"num_clusters": 100}},
-                ],
+                feat_specs=[{"name": "cluster-c", "args": {"num_clusters": 100}}],
             )
             + least_specs(
                 attempt_estimation_episodes=(50,),
@@ -444,9 +396,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             ],
             "rewest": discrete_least_specs(
                 attempt_estimation_episodes=(50,),
-                feat_specs=[
-                    {"name": "cluster-c", "args": {"num_clusters": 100}},
-                ],
+                feat_specs=[{"name": "cluster-c", "args": {"num_clusters": 100}}],
             )
             + least_specs(
                 attempt_estimation_episodes=(50,),
@@ -486,9 +436,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
             "rewest": discrete_least_specs(
                 attempt_estimation_episodes=(50,),
-                feat_specs=[
-                    {"name": "cluster-c", "args": {"num_clusters": 100}},
-                ],
+                feat_specs=[{"name": "cluster-c", "args": {"num_clusters": 100}}],
             )
             + least_specs(
                 attempt_estimation_episodes=(50,),
@@ -596,47 +544,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             ],
             "rewest": discrete_least_specs(
                 attempt_estimation_episodes=(50,),
-                feat_specs=[
-                    {"name": "cluster-c", "args": {"num_clusters": 100}},
-                ],
-            )
-            + least_specs(
-                attempt_estimation_episodes=(50,),
-                feat_specs=[
-                    {"name": "scale", "args": None},
-                ],
-            )
-            + cvlps_specs(
-                attempt_estimation_episodes=(50,),
-                feat_specs=[
-                    {"name": "scale", "args": None},
-                ],
-            )
-            + bayes_least_specs(
-                init_attempt_estimation_episodes=(10,),
-                feat_specs=[
-                    {"name": "scale", "args": None},
-                ],
-            ),
-            "epochs": 1,
-        },
-        {
-            "name": "Finite-CC-ShuntDc-v0",
-            "args": {
-                "reward_fn": "pos-enf",
-                "penalty_gamma": 1.0,
-                "constraint_violation_reward": 0.0,
-                "max_episode_steps": MAX_STEPS,
-                "emit_state": True,
-            },
-            "feats_specs": [
-                {"name": "scale", "args": None},
-            ],
-            "rewest": discrete_least_specs(
-                attempt_estimation_episodes=(50,),
-                feat_specs=[
-                    {"name": "cluster-c", "args": {"num_clusters": 100}},
-                ],
+                feat_specs=[{"name": "cluster-c", "args": {"num_clusters": 100}}],
             )
             + least_specs(
                 attempt_estimation_episodes=(50,),
@@ -670,9 +578,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             "feats_specs": [{"name": "scale", "args": None}],
             "rewest": discrete_least_specs(
                 attempt_estimation_episodes=(50,),
-                feat_specs=[
-                    {"name": "cluster-c", "args": {"num_clusters": 100}},
-                ],
+                feat_specs=[{"name": "cluster-c", "args": {"num_clusters": 100}}],
             )
             + least_specs(
                 attempt_estimation_episodes=(50,),
@@ -684,8 +590,6 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 attempt_estimation_episodes=(50,),
                 feat_specs=[
                     {"name": "scale", "args": None},
-                    {"name": "tiles", "args": {"tiling_dim": 3}},
-                    {"name": "tiles", "args": {"tiling_dim": 6}},
                 ],
             )
             + bayes_least_specs(
@@ -708,9 +612,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             "feats_specs": [{"name": "scale", "args": None}],
             "rewest": discrete_least_specs(
                 attempt_estimation_episodes=(50,),
-                feat_specs=[
-                    {"name": "cluster-c", "args": {"num_clusters": 100}},
-                ],
+                feat_specs=[{"name": "cluster-c", "args": {"num_clusters": 100}}],
             )
             + least_specs(
                 attempt_estimation_episodes=(50,),
@@ -746,9 +648,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             ],
             "rewest": discrete_least_specs(
                 attempt_estimation_episodes=(50,),
-                feat_specs=[
-                    {"name": "cluster-c", "args": {"num_clusters": 100}},
-                ],
+                feat_specs=[{"name": "cluster-c", "args": {"num_clusters": 100}}],
             )
             + least_specs(
                 attempt_estimation_episodes=(50,),
@@ -779,12 +679,10 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 "max_episode_steps": MAX_STEPS,
                 "emit_state": True,
             },
-            "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
+            "feats_specs": [{"name": "scale", "args": None}],
             "rewest": discrete_least_specs(
                 attempt_estimation_episodes=(50,),
-                feat_specs=[
-                    {"name": "cluster-c", "args": {"num_clusters": 100}},
-                ],
+                feat_specs=[{"name": "cluster-c", "args": {"num_clusters": 100}}],
             )
             + least_specs(
                 attempt_estimation_episodes=(50,),
