@@ -5,6 +5,7 @@ import gzip
 import itertools
 import json
 import logging
+import math
 import os.path
 import sys
 import tempfile
@@ -29,6 +30,7 @@ MINES_GW_GRID = [
     "ooxooooooxoo",
     "sxxxxxxxxxxg",
 ]
+NUM_TASKS_PER_WRITER = 100
 
 
 @dataclasses.dataclass(frozen=True)
@@ -66,7 +68,8 @@ class ResultWriter:
     Remote task to export results.
     """
 
-    def __init__(self, output_path: str, partition_size: int = 100):
+    def __init__(self, prefix: str, output_path: str, partition_size: int = 100):
+        self.prefix = prefix
         self.output_path = output_path
         self.partition_size = partition_size
         self.results: List[Any] = []
@@ -89,7 +92,9 @@ class ResultWriter:
         """
         if self.results:
             write_records(
-                os.path.join(self.output_path, f"result-{self.partition}.jsonl"),
+                os.path.join(
+                    self.output_path, f"result-{self.prefix}-{self.partition}.jsonl"
+                ),
                 records=self.results,
             )
             self.results = []
@@ -731,26 +736,33 @@ def run_reward_estimation_study(specs, turns: int, num_episodes: int, output_pat
             )
             jobs.append(job_spec)
     np.random.shuffle(jobs)  # type: ignore
-
     with ray.init() as context:
         logging.info("Starting ray task: %s", context)
-        result_writer = ResultWriter.remote(output_path=output_path)  # type: ignore
-        results_refs = [run_fn.remote(job) for job in jobs]
-        write_result_refs = []
-        for completed_result_ref in yield_as_completed(
-            results_refs, "Reward-Estimation"
-        ):
-            write_result_ref = result_writer.write.remote(completed_result_ref)  # type: ignore
-            write_result_refs.append(write_result_ref)
+        logging.info("Parsed %d jobs in total", len(jobs))
+        num_writers = max(math.floor(len(jobs) / NUM_TASKS_PER_WRITER), 1)
+        result_writers = [
+            ResultWriter.remote(prefix=idx, output_path=output_path)
+            for idx in range(num_writers)
+        ]
 
-        # Finish all export tasks.
-        wait_till_completion(write_result_refs, name="Write-Result")
-        # Flush buffer
-        ray.get(result_writer.sync.remote())  # type: ignore
+        results_refs = [
+            run_fn.remote(job, result_writers[idx % num_writers])
+            for idx, job in enumerate(jobs)
+        ]
+        # Finish all estimation tasks.
+        wait_till_completion(results_refs, name="Reward-Estimation")
+        # Flush buffers
+        wait_till_completion(
+            [
+                result_writer.sync.remote()
+                for result_writer in result_writers  # type: ignore
+            ],
+            name="Flush-Buffer",
+        )
 
 
 @ray.remote
-def run_fn(job_spec: JobSpec):
+def run_fn(job_spec: JobSpec, result_writer: ResultWriter):
     """
     Remote task to execute reward estimation
     experiment.
@@ -763,7 +775,7 @@ def run_fn(job_spec: JobSpec):
     except Exception as err:
         raise RuntimeError(f"Task {task_id} `{job_spec}` failed") from err
     logging.info("Completed task %s: %s", task_id, job_spec)
-    return proc_result(result)
+    return result_writer.write.remote(proc_result(result))
 
 
 def proc_result(result: Mapping[str, Any]) -> Mapping[str, Any]:
