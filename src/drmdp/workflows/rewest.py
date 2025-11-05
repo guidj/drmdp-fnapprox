@@ -510,7 +510,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
         },
         {
             "name": "IceWorld-v0",
-            "args": {"map_name": "8x8"},
+            "args": {"map_name": "8x8", "max_episode_steps": MAX_STEPS},
             "feats_specs": [
                 {"name": "tiles", "args": {"tiling_dim": 6}},
             ],
@@ -522,21 +522,21 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 attempt_estimation_episodes=(50,),
                 feat_specs=[
                     {"name": "tiles", "args": {"tiling_dim": 6}},
-                    {"name": "tiles", "args": {"tiling_dim": 8}},
+                    {"name": "tiles", "args": {"tiling_dim": 7}},
                 ],
             )
             + cvlps_specs(
                 attempt_estimation_episodes=(50,),
                 feat_specs=[
                     {"name": "tiles", "args": {"tiling_dim": 6}},
-                    {"name": "tiles", "args": {"tiling_dim": 8}},
+                    {"name": "tiles", "args": {"tiling_dim": 7}},
                 ],
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
                 feat_specs=[
                     {"name": "tiles", "args": {"tiling_dim": 6}},
-                    {"name": "tiles", "args": {"tiling_dim": 8}},
+                    {"name": "tiles", "args": {"tiling_dim": 7}},
                 ],
             ),
             "epochs": 5,
