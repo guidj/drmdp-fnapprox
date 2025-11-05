@@ -1,4 +1,4 @@
 #!/bin/bash
 set -xe
 
-ray start --head --num-cpus=4
+ray start --head --num-cpus=5
