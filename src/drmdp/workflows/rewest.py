@@ -521,22 +521,22 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             + least_specs(
                 attempt_estimation_episodes=(50,),
                 feat_specs=[
-                    {"name": "tiles", "args": {"tiling_dim": 3}},
                     {"name": "tiles", "args": {"tiling_dim": 6}},
+                    {"name": "tiles", "args": {"tiling_dim": 8}},
                 ],
             )
             + cvlps_specs(
                 attempt_estimation_episodes=(50,),
                 feat_specs=[
-                    {"name": "tiles", "args": {"tiling_dim": 3}},
                     {"name": "tiles", "args": {"tiling_dim": 6}},
+                    {"name": "tiles", "args": {"tiling_dim": 8}},
                 ],
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
                 feat_specs=[
-                    {"name": "tiles", "args": {"tiling_dim": 3}},
                     {"name": "tiles", "args": {"tiling_dim": 6}},
+                    {"name": "tiles", "args": {"tiling_dim": 8}},
                 ],
             ),
             "epochs": 5,
@@ -592,22 +592,22 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             + least_specs(
                 attempt_estimation_episodes=(50,),
                 feat_specs=[
-                    {"name": "tiles", "args": {"tiling_dim": 3}},
                     {"name": "tiles", "args": {"tiling_dim": 6}},
+                    {"name": "tiles", "args": {"tiling_dim": 8}},
                 ],
             )
             + cvlps_specs(
                 attempt_estimation_episodes=(50,),
                 feat_specs=[
-                    {"name": "tiles", "args": {"tiling_dim": 3}},
                     {"name": "tiles", "args": {"tiling_dim": 6}},
+                    {"name": "tiles", "args": {"tiling_dim": 8}},
                 ],
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
                 feat_specs=[
-                    {"name": "tiles", "args": {"tiling_dim": 3}},
                     {"name": "tiles", "args": {"tiling_dim": 6}},
+                    {"name": "tiles", "args": {"tiling_dim": 8}},
                 ],
             ),
             "epochs": 5,
