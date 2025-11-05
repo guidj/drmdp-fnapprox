@@ -118,29 +118,61 @@ class PositiveEnforcementWeightedSumOfErrors(reward_functions.WeightedSumOfError
 
 
 class GemObsAsVectorWrapper(gym.ObservationWrapper):
-    def __init__(self, env: gym.Env):
+    """
+    Converts the observation into a vecto with
+    1. The delta between the current and reference state for
+    reference state variables.
+    2. The current state - either in its entirity if `emit_state=True`
+    or just the current reference state.
+    3. A binary flag indicating the constraint violation.
+    4. A free variable.
+    """
+
+    def __init__(self, env: gym.Env, emit_state: bool = False):
         super().__init__(env)
-        self._mask = getattr(env.reference_generator, "referenced_states")
+        self.emit_state = emit_state
+        self._reference_state_mask = getattr(
+            env.reference_generator, "referenced_states"
+        )
         state_obs_space, ref_state_obs_space = env.observation_space
 
-        self._weights = getattr(env.reward_function, "_reward_weights")[self._mask]
-        self._expo = getattr(env.reward_function, "_n")[self._mask]
+        self._weights = getattr(env.reward_function, "_reward_weights")[
+            self._reference_state_mask
+        ]
+        self._expo = getattr(env.reward_function, "_n")[self._reference_state_mask]
         self._bias = getattr(env.reward_function, "_bias")
-        self._denom = (state_obs_space.high - state_obs_space.low)[self._mask]
+        self._denom = (state_obs_space.high - state_obs_space.low)[
+            self._reference_state_mask
+        ]
         self._prev_ref_state = None  # np.zeros_like(state_obs_space.high[self._mask])
 
         bounds = [
-            np.abs(state_obs_space.high[self._mask] - ref_state_obs_space.low),
-            np.abs(state_obs_space.high[self._mask] - ref_state_obs_space.high),
-            np.abs(state_obs_space.low[self._mask] - ref_state_obs_space.high),
-            np.abs(state_obs_space.low[self._mask] - ref_state_obs_space.low),
+            np.abs(
+                state_obs_space.high[self._reference_state_mask]
+                - ref_state_obs_space.low
+            ),
+            np.abs(
+                state_obs_space.high[self._reference_state_mask]
+                - ref_state_obs_space.high
+            ),
+            np.abs(
+                state_obs_space.low[self._reference_state_mask]
+                - ref_state_obs_space.high
+            ),
+            np.abs(
+                state_obs_space.low[self._reference_state_mask]
+                - ref_state_obs_space.low
+            ),
         ]
         obs_space_low = np.concatenate(
             [
                 # delta
-                np.zeros_like(state_obs_space.low[self._mask]) + self._bias,
+                np.zeros_like(state_obs_space.low[self._reference_state_mask])
+                + self._bias,
                 # values
-                state_obs_space.low[self._mask],
+                state_obs_space.low
+                if self.emit_state
+                else state_obs_space.low[self._reference_state_mask],
                 # constraint violation + free variable
                 np.array([0.0, 0.0]),
             ]
@@ -151,7 +183,9 @@ class GemObsAsVectorWrapper(gym.ObservationWrapper):
                 (functools.reduce(np.maximum, bounds) / self._denom) ** self._expo
                 + self._bias,
                 # values
-                state_obs_space.high[self._mask],
+                state_obs_space.high
+                if self.emit_state
+                else state_obs_space.high[self._reference_state_mask],
                 # constraint violation + free variable
                 np.array([1.0, 1.0]),
             ]
@@ -165,16 +199,21 @@ class GemObsAsVectorWrapper(gym.ObservationWrapper):
         prev_ref_state = copy.copy(self._prev_ref_state)
         next_state, ref_state = observation
         cv = self._cvfn(next_state)
-        next_state = next_state[self._mask]
 
         if prev_ref_state is None:
             prev_ref_state = ref_state
 
         wrapped_next_state = np.concatenate(
             [
-                (abs(next_state - prev_ref_state) / self._denom) ** self._expo
+                (
+                    abs(next_state[self._reference_state_mask] - prev_ref_state)
+                    / self._denom
+                )
+                ** self._expo
                 + self._bias,
-                next_state,
+                next_state
+                if self.emit_state
+                else next_state[self._reference_state_mask],
                 # constraint violation + free variable
                 np.array([cv, 1.0]),
             ]
@@ -184,6 +223,10 @@ class GemObsAsVectorWrapper(gym.ObservationWrapper):
 
 
 class DiscretiseActionWrapper(gym.ActionWrapper):
+    """
+    Converts continuous actions into discrete.
+    """
+
     def __init__(self, env):
         super().__init__(env)
 
@@ -218,9 +261,15 @@ def make(
     reward_fn: str,
     constraint_violation_reward: Optional[float] = 0.0,
     penalty_gamma: Optional[float] = 1.0,
+    emit_state: bool = False,
     wrapper: Optional[str] = None,
     **kwargs,
 ) -> gym.Env:
+    """
+    Create a Gym-Electric-Motor environment, with specified
+    wrappers and reward function.
+    """
+
     if reward_fn == "default":
         rf = StrictWeightedSumOfErrors(
             violation_reward=constraint_violation_reward, penalty_gamma=penalty_gamma
@@ -235,7 +284,9 @@ def make(
         raise ValueError(
             f"Unknown reward fn: {reward_fn}. Must be one of: `default`, `pos-enf`, `esp-neg`."
         )
-    env = GemObsAsVectorWrapper(gym_electric_motor.make(env_name, reward_function=rf))
+    env = GemObsAsVectorWrapper(
+        gym_electric_motor.make(env_name, reward_function=rf), emit_state=emit_state
+    )
     env = DiscretiseActionWrapper(env)
     max_episode_steps = kwargs.get("max_episode_steps", None)
     if max_episode_steps:
