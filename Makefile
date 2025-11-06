@@ -9,8 +9,8 @@ format-nb:
 	uv run ruff check --extend-select I --fix notebooks
 	uv run ruff format notebooks
 
-check: format
-	tox -e lint-types 
+check:
+	tox -e check-lint-types 
 	tox -e check-formatting	
 
 test:
