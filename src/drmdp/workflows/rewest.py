@@ -741,7 +741,7 @@ def run_reward_estimation_study(specs, turns: int, num_episodes: int, output_pat
         logging.info("Parsed %d jobs in total", len(jobs))
         num_writers = max(math.floor(len(jobs) / NUM_TASKS_PER_WRITER), 1)
         result_writers = [
-            ResultWriter.remote(prefix=idx, output_path=output_path)
+            ResultWriter.remote(prefix=idx, output_path=output_path)  # type: ignore
             for idx in range(num_writers)
         ]
 
@@ -775,7 +775,7 @@ def run_fn(job_spec: JobSpec, result_writer: ResultWriter):
     except Exception as err:
         raise RuntimeError(f"Task {task_id} `{job_spec}` failed") from err
     logging.info("Completed task %s: %s", task_id, job_spec)
-    return result_writer.write.remote(proc_result(result))
+    return result_writer.write.remote(proc_result(result))  # type: ignore
 
 
 def proc_result(result: Mapping[str, Any]) -> Mapping[str, Any]:

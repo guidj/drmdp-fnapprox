@@ -20,7 +20,7 @@ MINES_GW_GRID = [
 
 
 def discrete_least_specs(
-    attempt_estimation_episodes: int,
+    attempt_estimation_episodes: Sequence[int],
     feats_specs: Sequence[Mapping[str, Any]],
     delays: Sequence[int] = (2, 4, 6),
     discounts: Sequence[float] = (1.0, 0.99),
@@ -54,7 +54,7 @@ def discrete_least_specs(
 
 
 def least_specs(
-    attempt_estimation_episodes: int,
+    attempt_estimation_episodes: Sequence[int],
     feats_specs: Sequence[Mapping[str, Any]],
     delays: Sequence[int] = (2, 4, 6),
     discounts: Sequence[float] = (1.0, 0.99),
@@ -88,7 +88,7 @@ def least_specs(
 
 
 def bayes_least_specs(
-    init_attempt_estimation_episodes: int,
+    init_attempt_estimation_episodes: Sequence[int],
     feats_specs: Sequence[Mapping[str, Any]],
     delays: Sequence[int] = (2, 4, 6),
     discounts: Sequence[float] = (1.0, 0.99),
@@ -122,7 +122,7 @@ def bayes_least_specs(
 
 
 def cvlps_specs(
-    attempt_estimation_episodes: int,
+    attempt_estimation_episodes: Sequence[int],
     feats_specs: Sequence[Mapping[str, Any]],
     delays: Sequence[int] = (2, 4, 6),
     discounts: Sequence[float] = (1.0, 0.99),
