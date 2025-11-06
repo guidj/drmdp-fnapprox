@@ -7,7 +7,7 @@ import dataclasses
 import itertools
 import logging
 import random
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 import ray
 
@@ -33,42 +33,22 @@ class ControlPipelineArgs:
     cluster_uri: Optional[str]
 
 
-def main(args: ControlPipelineArgs):
+def wait_till_completion(tasks_refs):
     """
-    Program entry point.
+    Waits for every ray task to complete.
     """
-
-    ray_env: Dict[str, Any] = {}
-    logging.info("Ray environment: %s", ray_env)
-    with ray.init(args.cluster_uri, runtime_env=ray_env) as context:
-        logging.info("Ray Context: %s", context)
-        logging.info("Ray Nodes: %s", ray.nodes())
-
-        tasks_results_refs = create_tasks(
-            num_runs=args.num_runs,
-            num_episodes=args.num_episodes,
-            output_dir=args.output_dir,
-            task_prefix=args.task_prefix,
-            bundle_size=args.bundle_size,
-            log_episode_frequency=args.log_episode_frequency,
-            use_seed=args.use_seed,
+    unfinished_tasks = tasks_refs
+    while True:
+        finished_tasks, unfinished_tasks = ray.wait(unfinished_tasks)
+        logging.info(
+            "Completed %d task(s). %d left out of %d.",
+            len(finished_tasks),
+            len(unfinished_tasks),
+            len(tasks_refs),
         )
 
-        # since ray tracks objectref items
-        # we swap the key:value
-        results_refs = [result_ref for _, result_ref in tasks_results_refs]
-        unfinished_tasks = results_refs
-        while True:
-            finished_tasks, unfinished_tasks = ray.wait(unfinished_tasks)
-            logging.info(
-                "Completed %d task(s). %d left out of %d.",
-                len(finished_tasks),
-                len(unfinished_tasks),
-                len(results_refs),
-            )
-
-            if len(unfinished_tasks) == 0:
-                break
+        if len(unfinished_tasks) == 0:
+            break
 
 
 def create_tasks(
@@ -76,10 +56,9 @@ def create_tasks(
     num_episodes: int,
     output_dir: str,
     task_prefix: str,
-    bundle_size: int,
     log_episode_frequency: int,
     use_seed: bool,
-) -> Sequence[Tuple[ray.ObjectRef, core.ExperimentInstance]]:
+) -> Sequence[core.ExperimentInstance]:
     """
     Runs numerical experiments on policy evaluation.
     """
@@ -100,18 +79,13 @@ def create_tasks(
         experiment_instances,
         len(experiment_instances),  # type: ignore
     )
-    experiment_batches = task.bundle(experiment_instances, bundle_size=bundle_size)
+
     logging.info(
-        "Parsed %d experiments into %d instances and %d ray tasks",
+        "Parsed %d experiments into %d instances.",
         len(experiments),
         len(experiment_instances),
-        len(experiment_batches),
     )
-    results_refs = []
-    for batch in experiment_batches:
-        result_ref = run_experiments.remote(batch)
-        results_refs.append((batch, result_ref))
-    return results_refs
+    return experiment_instances
 
 
 def parse_experiments(
@@ -162,6 +136,36 @@ def run_experiments(
         ids.append(task_id)
         logging.info("Experiment %s finished", task_id)
     return ids
+
+
+def main(args: ControlPipelineArgs):
+    """
+    Program entry point.
+    """
+
+    ray_env: Dict[str, Any] = {}
+    logging.info("Ray environment: %s", ray_env)
+    experiment_instances = create_tasks(
+        num_runs=args.num_runs,
+        num_episodes=args.num_episodes,
+        output_dir=args.output_dir,
+        task_prefix=args.task_prefix,
+        log_episode_frequency=args.log_episode_frequency,
+        use_seed=args.use_seed,
+    )
+    experiment_batches = task.bundle(experiment_instances, bundle_size=args.bundle_size)
+
+    with ray.init(args.cluster_uri, runtime_env=ray_env) as context:
+        logging.info("Ray Context: %s", context)
+        logging.info("Ray Nodes: %s", ray.nodes())
+
+        logging.info("Submitting %d tasks", len(experiment_batches))
+        results_refs = []
+        for batch in experiment_batches:
+            result_ref = run_experiments.remote(batch)
+            results_refs.append((batch, result_ref))
+
+        wait_till_completion(results_refs)
 
 
 def parse_args() -> ControlPipelineArgs:
