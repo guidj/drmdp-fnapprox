@@ -68,7 +68,11 @@ def test_least_lfa_generative_reward_wrapper_step():
     obs_wrapper = DummyObsWrapper(env)
     delay_wrapper = rewdelay.DelayedRewardWrapper(env, rewdelay.FixedDelay(delay=2))
     wrapped = rewdelay.LeastLfaGenerativeRewardWrapper(
-        delay_wrapper, obs_wrapper, attempt_estimation_episode=2, use_bias=False
+        delay_wrapper,
+        obs_wrapper,
+        attempt_estimation_episode=2,
+        use_bias=False,
+        require_tall_matrix=False,
     )
 
     obs, info = wrapped.reset()
