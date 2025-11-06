@@ -6,8 +6,8 @@ format:
 	tox -e format
 
 format-nb:
-	uv run ruff check --extend-select I --fix notebooks
-	uv run ruff format notebooks
+	ruff check --extend-select I --fix notebooks
+	ruff format notebooks
 
 check:
 	tox -e check-lint-types 
@@ -21,4 +21,4 @@ tox:
 
 
 bumpver-patch:
-	uv run bumpver update --patch
+	bumpver update --patch
