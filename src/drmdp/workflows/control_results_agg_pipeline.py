@@ -130,7 +130,7 @@ def parse_experiment_metadata(paths: Sequence[str]) -> Mapping[str, Any]:
     """
     metadata_files = [os.path.join(path, "experiment-params.json") for path in paths]
     results = {}
-    with ray_mp.Pool() as pool:
+    with ray_mp.Pool(ray_address="auto") as pool:
         for entry in pool.map(read_experiment_metadata, metadata_files):
             path = parse_path_from_filename(entry["path"])
             results[path] = entry
