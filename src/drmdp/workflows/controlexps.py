@@ -17,6 +17,7 @@ MINES_GW_GRID = [
     "ooxooooooxoo",
     "sxxxxxxxxxxg",
 ]
+MAX_OPTIONS_DELAY = 4
 
 
 def discrete_least_specs(
@@ -211,12 +212,13 @@ def common_problem_specs(
         )
 
         for delay in delays:
+            delay_config = poisson_delay_config(delay)
             specs.extend(
                 [
                     {
                         "policy_type": "drop-missing",
                         "reward_mapper": {"name": "identity", "args": None},
-                        "delay_config": poisson_delay_config(delay),
+                        "delay_config": delay_config,
                         "epsilon": EPSILON,
                         "gamma": gamma,
                         "learning_rate_config": LEARNING_RATE_SPEC,
@@ -224,29 +226,36 @@ def common_problem_specs(
                     {
                         "policy_type": "markovian",
                         "reward_mapper": {"name": "zero-impute", "args": None},
-                        "delay_config": poisson_delay_config(delay),
-                        "epsilon": EPSILON,
-                        "gamma": gamma,
-                        "learning_rate_config": LEARNING_RATE_SPEC,
-                    },
-                    {
-                        "policy_type": "options",
-                        "reward_mapper": {"name": "identity", "args": None},
-                        "delay_config": poisson_delay_config(delay),
-                        "epsilon": EPSILON,
-                        "gamma": 1.0,
-                        "learning_rate_config": LEARNING_RATE_SPEC,
-                    },
-                    {
-                        "policy_type": "single-action-options",
-                        "reward_mapper": {"name": "identity", "args": None},
-                        "delay_config": poisson_delay_config(delay),
+                        "delay_config": delay_config,
                         "epsilon": EPSILON,
                         "gamma": gamma,
                         "learning_rate_config": LEARNING_RATE_SPEC,
                     },
                 ]
             )
+            # These configs are memory intensive
+            # even with moderate delays.
+            if delay <= MAX_OPTIONS_DELAY:
+                specs.extend(
+                    [
+                        {
+                            "policy_type": "options",
+                            "reward_mapper": {"name": "identity", "args": None},
+                            "delay_config": delay_config,
+                            "epsilon": EPSILON,
+                            "gamma": 1.0,
+                            "learning_rate_config": LEARNING_RATE_SPEC,
+                        },
+                        {
+                            "policy_type": "single-action-options",
+                            "reward_mapper": {"name": "identity", "args": None},
+                            "delay_config": delay_config,
+                            "epsilon": EPSILON,
+                            "gamma": gamma,
+                            "learning_rate_config": LEARNING_RATE_SPEC,
+                        },
+                    ]
+                )
     return tuple(specs)
 
 
