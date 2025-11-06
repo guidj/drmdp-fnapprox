@@ -327,7 +327,8 @@ class DelayedRewardWrapper(gym.Wrapper, SupportsName):
         segment = self.segment
         segment_step = self.segment_step
         delay = self.delay
-        if self.segment_step == self.delay - 1:
+        final_segment_step = self.segment_step == self.delay - 1
+        if final_segment_step:
             # reset segment
             self.segment += 1
             self.segment_step = -1
@@ -347,6 +348,9 @@ class DelayedRewardWrapper(gym.Wrapper, SupportsName):
                 "delay": delay,
                 "segment": segment,
                 "segment_step": segment_step,
+                # Provide the next delay on the final step
+                # and omit otherwise
+                "next_delay": self.delay if final_segment_step else None,
             },
         )
 
@@ -361,6 +365,9 @@ class DelayedRewardWrapper(gym.Wrapper, SupportsName):
             "delay": self.delay,
             "segment": self.segment,
             "segment_step": self.segment_step,
+            # Provide the next delay on the final step
+            # and omit otherwise
+            "next_delay": self.delay,
         }
 
 
