@@ -230,27 +230,37 @@ def common_problem_specs(
                         "gamma": gamma,
                         "learning_rate_config": LEARNING_RATE_SPEC,
                     },
-                    # These configs are memory intensive
-                    # even with moderate delays.
-                    # Limit upper bound
-                    {
-                        "policy_type": "options",
-                        "reward_mapper": {"name": "identity", "args": None},
-                        "delay_config": poisson_delay_config(delay, max_delay=delay),
-                        "epsilon": EPSILON,
-                        "gamma": 1.0,
-                        "learning_rate_config": LEARNING_RATE_SPEC,
-                    },
-                    {
-                        "policy_type": "single-action-options",
-                        "reward_mapper": {"name": "identity", "args": None},
-                        "delay_config": poisson_delay_config(delay, max_delay=delay),
-                        "epsilon": EPSILON,
-                        "gamma": gamma,
-                        "learning_rate_config": LEARNING_RATE_SPEC,
-                    },
                 ]
             )
+
+            if delay <= MAX_OPTIONS_DELAY:
+                specs.extend(
+                    [
+                        # These configs are memory intensive
+                        # even with moderate delays.
+                        # Limit upper bound
+                        {
+                            "policy_type": "options",
+                            "reward_mapper": {"name": "identity", "args": None},
+                            "delay_config": poisson_delay_config(
+                                delay, max_delay=delay
+                            ),
+                            "epsilon": EPSILON,
+                            "gamma": 1.0,
+                            "learning_rate_config": LEARNING_RATE_SPEC,
+                        },
+                        {
+                            "policy_type": "single-action-options",
+                            "reward_mapper": {"name": "identity", "args": None},
+                            "delay_config": poisson_delay_config(
+                                delay, max_delay=delay
+                            ),
+                            "epsilon": EPSILON,
+                            "gamma": gamma,
+                            "learning_rate_config": LEARNING_RATE_SPEC,
+                        },
+                    ]
+                )
     return tuple(specs)
 
 
@@ -442,9 +452,9 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
         },
         {
             "name": "GridWorld-v0",
-            "args": {"grid": MINES_GW_GRID, "max_episode_steps": 200},
+            "args": {"max_episode_steps": 200},
             "feats_specs": [
-                {"name": "tiles", "args": {"tiling_dim": 7}},
+                {"name": "tiles", "args": {"tiling_dim": 6}},
             ],
             "problem_specs": common_problem_specs()
             + discrete_least_specs(
@@ -453,19 +463,19 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             )
             + least_specs(
                 attempt_estimation_episodes=(50,),
-                feats_specs=[{"name": "tiles", "args": {"tiling_dim": 7}}],
+                feats_specs=[{"name": "tiles", "args": {"tiling_dim": 6}}],
             )
             + cvlps_specs(
                 attempt_estimation_episodes=(50,),
-                feats_specs=[{"name": "tiles", "args": {"tiling_dim": 7}}],
+                feats_specs=[{"name": "tiles", "args": {"tiling_dim": 6}}],
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
-                feats_specs=[{"name": "tiles", "args": {"tiling_dim": 7}}],
+                feats_specs=[{"name": "tiles", "args": {"tiling_dim": 6}}],
             )
             + recurring_cvlps(
                 init_attempt_estimation_episodes=(10,),
-                feats_specs=[{"name": "tiles", "args": {"tiling_dim": 7}}],
+                feats_specs=[{"name": "tiles", "args": {"tiling_dim": 6}}],
             ),
             "epochs": 5,
         },
