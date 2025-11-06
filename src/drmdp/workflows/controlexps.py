@@ -421,7 +421,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             "problem_specs": common_problem_specs()
             + discrete_least_specs(
                 attempt_estimation_episodes=(50,),
-                feats_specs=[{"name": "flat-grid-coord", "args": None}],
+                feats_specs=[{"name": "cluster-c", "args": {"num_clusters": 100}}],
             )
             + least_specs(
                 attempt_estimation_episodes=(50,),
