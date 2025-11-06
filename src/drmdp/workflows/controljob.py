@@ -6,12 +6,12 @@ import argparse
 import dataclasses
 import itertools
 import logging
-import random
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
+import numpy as np
 import ray
 
-from drmdp import constants, core, task
+from drmdp import core, task
 from drmdp.workflows import controlexps
 
 
@@ -27,7 +27,6 @@ class ControlPipelineArgs:
     output_dir: str
     log_episode_frequency: int
     task_prefix: str
-    bundle_size: int
     use_seed: bool
     # ray args
     cluster_uri: Optional[str]
@@ -63,7 +62,7 @@ def create_tasks(
     Runs numerical experiments on policy evaluation.
     """
     experiments = parse_experiments(specs=controlexps.experiment_specs())
-    experiment_instances = tuple(
+    experiment_instances = list(
         task.generate_experiments_instances(
             experiments=experiments,
             num_runs=num_runs,
@@ -75,10 +74,7 @@ def create_tasks(
         )
     )
     # shuffle tasks to balance workload
-    experiment_instances = random.sample(
-        experiment_instances,
-        len(experiment_instances),  # type: ignore
-    )
+    np.random.shuffle(experiment_instances)  # type: ignore
 
     logging.info(
         "Parsed %d experiments into %d instances.",
@@ -114,28 +110,25 @@ def parse_experiments(
 
 
 @ray.remote
-def run_experiments(
-    experiments_batch: Sequence[core.ExperimentInstance],
-) -> Sequence[str]:
+def run_experiment(
+    experiment_instance: core.ExperimentInstance,
+) -> str:
     """
     Run experiments.
     """
-    ids: List[str] = []
-    for experiment_task in experiments_batch:
-        task_id = f"{experiment_task.exp_id}/{experiment_task.instance_id}"
-        logging.info(
-            "Experiment %s starting: %s",
-            task_id,
-            experiment_task,
-        )
-        try:
-            task.policy_control(experiment_task)
-        except Exception as err:
-            logging.error("Error in experiment %s: %s", task_id, err)
-            raise RuntimeError(f"Experiment {experiment_task} failed") from err
-        ids.append(task_id)
-        logging.info("Experiment %s finished", task_id)
-    return ids
+    task_id = f"{experiment_instance.exp_id}/{experiment_instance.instance_id}"
+    logging.info(
+        "Experiment %s starting: %s",
+        task_id,
+        experiment_instance,
+    )
+    try:
+        task.policy_control(experiment_instance)
+    except Exception as err:
+        logging.error("Error in experiment %s: %s", task_id, err)
+        raise RuntimeError(f"Experiment {experiment_instance} failed") from err
+    logging.info("Experiment %s finished", task_id)
+    return task_id
 
 
 def main(args: ControlPipelineArgs):
@@ -153,17 +146,16 @@ def main(args: ControlPipelineArgs):
         log_episode_frequency=args.log_episode_frequency,
         use_seed=args.use_seed,
     )
-    experiment_batches = task.bundle(experiment_instances, bundle_size=args.bundle_size)
 
     with ray.init(args.cluster_uri, runtime_env=ray_env) as context:
         logging.info("Ray Context: %s", context)
         logging.info("Ray Nodes: %s", ray.nodes())
 
-        logging.info("Submitting %d tasks", len(experiment_batches))
+        logging.info("Submitting %d tasks", len(experiment_instances))
         results_refs = []
-        for batch in experiment_batches:
-            result_ref = run_experiments.remote(batch)
-            results_refs.append((batch, result_ref))
+        for experiment_instance in experiment_instances:
+            result_ref = run_experiment.remote(experiment_instance)
+            results_refs.append(result_ref)
 
         wait_till_completion(results_refs)
 
@@ -178,9 +170,6 @@ def parse_args() -> ControlPipelineArgs:
     arg_parser.add_argument("--output-dir", type=str, required=True)
     arg_parser.add_argument("--log-episode-frequency", type=int, required=True)
     arg_parser.add_argument("--task-prefix", type=str, required=True)
-    arg_parser.add_argument(
-        "--bundle-size", type=int, default=constants.DEFAULT_BATCH_SIZE
-    )
     arg_parser.add_argument("--use-seed", action="store_true")
     arg_parser.add_argument("--cluster-uri", type=str, default=None)
     known_args, unknown_args = arg_parser.parse_known_args()
