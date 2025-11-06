@@ -59,13 +59,12 @@ def main(args: ControlPipelineArgs):
         unfinished_tasks = results_refs
         while True:
             finished_tasks, unfinished_tasks = ray.wait(unfinished_tasks)
-            for finished_task in finished_tasks:
-                logging.info(
-                    "Completed task %s, %d left out of %d.",
-                    ray.get(finished_task),
-                    len(unfinished_tasks),
-                    len(results_refs),
-                )
+            logging.info(
+                "Completed %d task(s). %d left out of %d.",
+                len(finished_tasks),
+                len(unfinished_tasks),
+                len(results_refs),
+            )
 
             if len(unfinished_tasks) == 0:
                 break
