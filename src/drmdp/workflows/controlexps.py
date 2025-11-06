@@ -144,6 +144,42 @@ def cvlps_specs(
                         "feats_spec": feats_spec,
                         "use_bias": False,
                         "estimation_buffer_mult": 25,
+                        "constraints_buffer_limit": 100,
+                    },
+                },
+                "delay_config": poisson_delay_config(delay),
+                "epsilon": EPSILON,
+                "gamma": gamma,
+                "learning_rate_config": LEARNING_RATE_SPEC,
+            },
+        )
+    return tuple(specs)
+
+
+def recurring_cvlps(
+    init_attempt_estimation_episodes: Sequence[int],
+    feats_specs: Sequence[Mapping[str, Any]],
+    delays: Sequence[int] = (2, 4, 6),
+    discounts: Sequence[float] = (1.0, 0.99),
+):
+    """
+    Recurring convex linear estimation specs.
+    """
+    specs = []
+    for delay, gamma, feats_spec, init_attempt_estimation_episode in itertools.product(
+        delays, discounts, feats_specs, init_attempt_estimation_episodes
+    ):
+        specs.append(
+            {
+                "policy_type": "markovian",
+                "reward_mapper": {
+                    "name": "recurring-cvlps",
+                    "args": {
+                        "init_attempt_estimation_episode": init_attempt_estimation_episode,
+                        "feats_spec": feats_spec,
+                        "use_bias": False,
+                        "estimation_buffer_mult": 25,
+                        "constraints_buffer_limit": 100,
                     },
                 },
                 "delay_config": poisson_delay_config(delay),
@@ -248,6 +284,10 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "scale", "args": None}],
+            )
+            + recurring_cvlps(
+                init_attempt_estimation_episodes=(10,),
+                feats_specs=[{"name": "scale", "args": None}],
             ),
             "epochs": 1,
         },
@@ -280,9 +320,11 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
-                feats_specs=[
-                    {"name": "scale", "args": None},
-                ],
+                feats_specs=[{"name": "scale", "args": None}],
+            )
+            + recurring_cvlps(
+                init_attempt_estimation_episodes=(10,),
+                feats_specs=[{"name": "scale", "args": None}],
             ),
             "epochs": 1,
         },
@@ -315,9 +357,11 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
-                feats_specs=[
-                    {"name": "scale", "args": None},
-                ],
+                feats_specs=[{"name": "scale", "args": None}],
+            )
+            + recurring_cvlps(
+                init_attempt_estimation_episodes=(10,),
+                feats_specs=[{"name": "scale", "args": None}],
             ),
             "epochs": 1,
         },
@@ -350,9 +394,11 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
-                feats_specs=[
-                    {"name": "scale", "args": None},
-                ],
+                feats_specs=[{"name": "scale", "args": None}],
+            )
+            + recurring_cvlps(
+                init_attempt_estimation_episodes=(10,),
+                feats_specs=[{"name": "scale", "args": None}],
             ),
             "epochs": 1,
         },
@@ -385,9 +431,11 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
-                feats_specs=[
-                    {"name": "scale", "args": None},
-                ],
+                feats_specs=[{"name": "scale", "args": None}],
+            )
+            + recurring_cvlps(
+                init_attempt_estimation_episodes=(10,),
+                feats_specs=[{"name": "scale", "args": None}],
             ),
             "epochs": 1,
         },
@@ -413,6 +461,10 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "tiles", "args": {"tiling_dim": 6}}],
+            )
+            + recurring_cvlps(
+                init_attempt_estimation_episodes=(10,),
+                feats_specs=[{"name": "tiles", "args": {"tiling_dim": 6}}],
             ),
             "epochs": 5,
         },
@@ -436,6 +488,10 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 feats_specs=[{"name": "tiles", "args": {"tiling_dim": 7}}],
             )
             + bayes_least_specs(
+                init_attempt_estimation_episodes=(10,),
+                feats_specs=[{"name": "tiles", "args": {"tiling_dim": 7}}],
+            )
+            + recurring_cvlps(
                 init_attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "tiles", "args": {"tiling_dim": 7}}],
             ),

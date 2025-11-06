@@ -1143,7 +1143,7 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
             )
 
 
-class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
+class RecurringConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
     """
     The aggregate reward windows are used to
     estimate the underlying MDP rewards.
@@ -1152,7 +1152,8 @@ class BayesConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
     Until then, the aggregate rewards are emitted when
     presented, and zero is used otherwise.
 
-    Rewards are estimated with Bayesian Least-Squares.
+    Rewards are estimated convex Least-Squares.
+    Each estimate uses the previous value as an initial guess.
     Rewards are first estimated after `init_attempt_estimation_episode`.
     After that, they are either updated following a doubling
     schedule or at fixed intervals.

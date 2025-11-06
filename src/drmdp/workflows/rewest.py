@@ -233,14 +233,14 @@ def cvlps_specs(
     return specs
 
 
-def bayes_cvlps_specs(
+def recurring_cvlps(
     init_attempt_estimation_episodes: Sequence[int],
     feat_specs: Sequence[Mapping[str, Any]],
     estimation_buffer_multiples: Sequence[Optional[int]] = (10, 25, None),
     constraints_buffer_limit: Optional[int] = 100,
 ):
     """
-    Bayesian linear regression specs.
+    Recurring convex linear estimation specs.
     """
     specs = []
     for iaee, feat_spec, est_buffer_mult in itertools.product(
@@ -248,7 +248,7 @@ def bayes_cvlps_specs(
     ):
         specs.append(
             {
-                "name": "bayes-cvlps",
+                "name": "recurring-cvlps",
                 "args": {
                     "init_attempt_estimation_episode": iaee,
                     "feats_spec": feat_spec,

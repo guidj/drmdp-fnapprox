@@ -266,9 +266,9 @@ def reward_mapper(env: gym.Env, proxy_env: gym.Env, mapping_spec: Mapping[str, A
             obs_encoding_wrapper=observation_enc,
             **m_args,
         )
-    elif name == "bayes-cvlps":
+    elif name == "recurring-cvlps":
         # local copy before pop
-        return rewdelay.BayesConvexSolverGenerativeRewardWrapper(
+        return rewdelay.RecurringConvexSolverGenerativeRewardWrapper(
             env=env,
             obs_encoding_wrapper=observation_enc,
             **m_args,
