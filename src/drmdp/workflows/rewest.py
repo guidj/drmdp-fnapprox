@@ -773,6 +773,7 @@ def run_fn(job_spec: JobSpec, result_writer: ResultWriter):
         output = reward_estimation(job_spec)
         result = {"task_id": task_id, **dataclasses.asdict(job_spec), "meta": output}
     except Exception as err:
+        logging.error("Error in experiment %s: %s", task_id, err)
         raise RuntimeError(f"Task {task_id} `{job_spec}` failed") from err
     logging.info("Completed task %s: %s", task_id, job_spec)
     return result_writer.write.remote(proc_result(result))  # type: ignore

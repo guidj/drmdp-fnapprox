@@ -157,8 +157,8 @@ def run_experiments(
         try:
             task.policy_control(experiment_task)
         except Exception as err:
-            logging.error("Experiment %s failed", experiment_task)
-            raise err
+            logging.error("Error in experiment %s: %s", task_id, err)
+            raise RuntimeError(f"Experiment {experiment_task} failed") from err
         ids.append(task_id)
         logging.info("Experiment %s finished", task_id)
     return ids
