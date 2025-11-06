@@ -270,21 +270,18 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 attempt_estimation_episodes=(50,),
                 feats_specs=[
                     {"name": "scale", "args": None},
-                    {"name": "tiles", "args": {"tiling_dim": 6}},
                 ],
             )
             + cvlps_specs(
                 attempt_estimation_episodes=(50,),
                 feats_specs=[
                     {"name": "scale", "args": None},
-                    {"name": "tiles", "args": {"tiling_dim": 6}},
                 ],
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
                 feats_specs=[
                     {"name": "scale", "args": None},
-                    {"name": "tiles", "args": {"tiling_dim": 6}},
                 ],
             ),
             "epochs": 1,
@@ -308,21 +305,18 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 attempt_estimation_episodes=(50,),
                 feats_specs=[
                     {"name": "scale", "args": None},
-                    {"name": "tiles", "args": {"tiling_dim": 6}},
                 ],
             )
             + cvlps_specs(
                 attempt_estimation_episodes=(50,),
                 feats_specs=[
                     {"name": "scale", "args": None},
-                    {"name": "tiles", "args": {"tiling_dim": 6}},
                 ],
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
                 feats_specs=[
                     {"name": "scale", "args": None},
-                    {"name": "tiles", "args": {"tiling_dim": 6}},
                 ],
             ),
             "epochs": 1,
@@ -346,21 +340,18 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 attempt_estimation_episodes=(50,),
                 feats_specs=[
                     {"name": "scale", "args": None},
-                    {"name": "tiles", "args": {"tiling_dim": 6}},
                 ],
             )
             + cvlps_specs(
                 attempt_estimation_episodes=(50,),
                 feats_specs=[
                     {"name": "scale", "args": None},
-                    {"name": "tiles", "args": {"tiling_dim": 6}},
                 ],
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
                 feats_specs=[
                     {"name": "scale", "args": None},
-                    {"name": "tiles", "args": {"tiling_dim": 6}},
                 ],
             ),
             "epochs": 1,
@@ -384,28 +375,25 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 attempt_estimation_episodes=(50,),
                 feats_specs=[
                     {"name": "scale", "args": None},
-                    {"name": "tiles", "args": {"tiling_dim": 6}},
                 ],
             )
             + cvlps_specs(
                 attempt_estimation_episodes=(50,),
                 feats_specs=[
                     {"name": "scale", "args": None},
-                    {"name": "tiles", "args": {"tiling_dim": 6}},
                 ],
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
                 feats_specs=[
                     {"name": "scale", "args": None},
-                    {"name": "tiles", "args": {"tiling_dim": 6}},
                 ],
             ),
             "epochs": 1,
         },
         {
-            "name": "IceWorld-v0",
-            "args": {"map_name": "8x8"},
+            "name": "GridWorld-v0",
+            "args": {"grid": MINES_GW_GRID, "max_episode_steps": 200},
             "feats_specs": [
                 {"name": "tiles", "args": {"tiling_dim": 6}},
             ],
@@ -429,10 +417,10 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             "epochs": 5,
         },
         {
-            "name": "GridWorld-v0",
-            "args": {"grid": MINES_GW_GRID, "max_episode_steps": 200},
+            "name": "IceWorld-v0",
+            "args": {"map_name": "8x8"},
             "feats_specs": [
-                {"name": "tiles", "args": {"tiling_dim": 8}},
+                {"name": "tiles", "args": {"tiling_dim": 7}},
             ],
             "problem_specs": common_problem_specs()
             + discrete_least_specs(
@@ -441,18 +429,18 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             )
             + least_specs(
                 attempt_estimation_episodes=(50,),
-                feats_specs=[{"name": "tiles", "args": {"tiling_dim": 8}}],
+                feats_specs=[{"name": "tiles", "args": {"tiling_dim": 7}}],
             )
             + cvlps_specs(
                 attempt_estimation_episodes=(50,),
-                feats_specs=[{"name": "tiles", "args": {"tiling_dim": 8}}],
+                feats_specs=[{"name": "tiles", "args": {"tiling_dim": 7}}],
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
-                feats_specs=[{"name": "tiles", "args": {"tiling_dim": 8}}],
+                feats_specs=[{"name": "tiles", "args": {"tiling_dim": 7}}],
             ),
             "epochs": 5,
-        }
+        },
     ]
     return tuple(specs)
 
