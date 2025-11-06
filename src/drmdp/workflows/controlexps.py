@@ -232,10 +232,7 @@ def common_problem_specs(
                     {
                         "policy_type": "options",
                         "reward_mapper": {"name": "identity", "args": None},
-                        "delay_config": {
-                            "name": "clipped-poisson",
-                            "args": {"delay": 2},
-                        },
+                        "delay_config": poisson_delay_config(delay),
                         "epsilon": EPSILON,
                         "gamma": 1.0,
                         "learning_rate_config": LEARNING_RATE_SPEC,
