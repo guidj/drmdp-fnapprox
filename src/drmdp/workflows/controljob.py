@@ -4,6 +4,7 @@ Boostrap and run distributed jobs.
 
 import argparse
 import dataclasses
+import itertools
 import logging
 import random
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
@@ -121,19 +122,20 @@ def parse_experiments(
     """
     experiment_specs: List[core.Experiment] = []
     for spec in specs:
-        for feat_tfx_spec in spec["feats_specs"]:
-            for problem_spec in spec["problem_specs"]:
-                experiment_specs.append(
-                    core.Experiment(
-                        env_spec=core.EnvSpec(
-                            name=spec["name"],
-                            args=spec["args"],
-                            feats_spec=feat_tfx_spec,
-                        ),
-                        problem_spec=core.ProblemSpec(**problem_spec),
-                        epochs=spec["epochs"],
-                    )
+        for feat_tfx_spec, problem_spec in itertools.product(
+            spec["feats_specs"], spec["problem_specs"]
+        ):
+            experiment_specs.append(
+                core.Experiment(
+                    env_spec=core.EnvSpec(
+                        name=spec["name"],
+                        args=spec["args"],
+                        feats_spec=feat_tfx_spec,
+                    ),
+                    problem_spec=core.ProblemSpec(**problem_spec),
+                    epochs=spec["epochs"],
                 )
+            )
     return experiment_specs
 
 
