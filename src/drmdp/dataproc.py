@@ -10,8 +10,13 @@ import ray.data
 MAPPERS_NAMES = {
     "identity": "FR",
     "zero-impute": "IMR",
-    "least-lfa": "L-TRACE",
-    "bayes-least-lfa": "L-TRACE-Bayes",
+    "least-lfa": "L-TDD",
+    "bayes-least-lfa": "L-TDD[B]",
+    # backwards compatibility
+    "least-bayes-lfa": "L-TDD[B]",
+    "cvlps": "L-TDD[CV]",
+    "recurring-cvlps": "L-TDD[CV-R]",
+    "discrete-least-lfa": "LEAST",
 }
 
 POLICY_TYPES = {

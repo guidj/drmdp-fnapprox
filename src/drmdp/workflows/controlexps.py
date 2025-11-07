@@ -452,9 +452,9 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
         },
         {
             "name": "GridWorld-v0",
-            "args": {"max_episode_steps": 200},
+            "args": {"grid": MINES_GW_GRID, "max_episode_steps": 200},
             "feats_specs": [
-                {"name": "tiles", "args": {"tiling_dim": 6}},
+                {"name": "tiles", "args": {"tiling_dim": 7}},
             ],
             "problem_specs": common_problem_specs()
             + discrete_least_specs(
@@ -463,19 +463,19 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             )
             + least_specs(
                 attempt_estimation_episodes=(50,),
-                feats_specs=[{"name": "tiles", "args": {"tiling_dim": 6}}],
+                feats_specs=[{"name": "tiles", "args": {"tiling_dim": 7}}],
             )
             + cvlps_specs(
                 attempt_estimation_episodes=(50,),
-                feats_specs=[{"name": "tiles", "args": {"tiling_dim": 6}}],
+                feats_specs=[{"name": "tiles", "args": {"tiling_dim": 7}}],
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
-                feats_specs=[{"name": "tiles", "args": {"tiling_dim": 6}}],
+                feats_specs=[{"name": "tiles", "args": {"tiling_dim": 7}}],
             )
             + recurring_cvlps(
                 init_attempt_estimation_episodes=(10,),
-                feats_specs=[{"name": "tiles", "args": {"tiling_dim": 6}}],
+                feats_specs=[{"name": "tiles", "args": {"tiling_dim": 7}}],
             ),
             "epochs": 5,
         },
