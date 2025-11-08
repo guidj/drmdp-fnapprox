@@ -11,6 +11,10 @@ from drmdp import constants, dataproc, mathutils, tiles
 
 
 class FeatTransform(abc.ABC):
+    """
+    Encodes state-actions into a single vector output.
+    """
+
     def __init__(self):
         pass
 
@@ -31,6 +35,13 @@ class FeatTransform(abc.ABC):
 
 
 class IdentityFeatTransform(FeatTransform):
+    """
+    Transformation:
+    - Given an input observation of size n, returns an observation
+     of size `n` x num_actions.
+    - The observation is placed in a position corresponding to the action taken.
+    """
+
     def __init__(self, env: gym.Env):
         if not isinstance(env.observation_space, gym.spaces.Box):
             raise ValueError(
@@ -74,6 +85,16 @@ class IdentityFeatTransform(FeatTransform):
 
 
 class RandomBinaryFeatTransform(FeatTransform):
+    """
+    Transformation:
+    - Given an input observation of size n, returns an observation
+     of size `n` x num_actions.
+    - Each observation is a discrete value that gets mapped to a
+    random binary vector.
+    - The random vector is placed in the output array in a position
+    corresponding to the action.
+    """
+
     def __init__(self, env: gym.Env, enc_size: int):
         if not isinstance(env.action_space, gym.spaces.Discrete):
             raise ValueError("env.action_space must be `spaces.Discrete`")
@@ -143,6 +164,16 @@ class RandomBinaryFeatTransform(FeatTransform):
 
 
 class ScaleFeatTransform(FeatTransform):
+    """
+    Transformation:
+    - Given an input observation of size n, returns an observation
+     of size `n` x num_actions.
+    - Each observation scaled according to its bounds so each
+    dimension has a value betwen [0, 1].
+    - The scaled vector is placed in the output array in a position
+    corresponding to the action.
+    """
+
     def __init__(self, env: gym.Env):
         if not isinstance(env.observation_space, gym.spaces.Box):
             raise ValueError(
@@ -189,6 +220,18 @@ class ScaleFeatTransform(FeatTransform):
 
 
 class GaussianMixFeatTransform(FeatTransform):
+    """
+    Transformation:
+    - Given an input observation, returns an observation
+     of size `num_mixtures` x num_actions.
+    - `num_mixtures` is learned through grid-search,
+    using Expectation-Maximisation.
+    - Each observation projected into a basis vectors, where each component
+     represents probability of membership to a distribution.
+    - The basis membership vector is placed in the output array in a position
+    corresponding to the action.
+    """
+
     def __init__(
         self, env: gym.Env, sample_steps: int = constants.DEFAULT_GM_STEPS, **kwargs
     ):
@@ -246,6 +289,15 @@ class GaussianMixFeatTransform(FeatTransform):
 
 
 class TileFeatTransform(FeatTransform):
+    """
+    Transformation:
+    - Given an input observation of size n, returns an observation
+     of size `tiling_dim` x `num_tilings` x `num_actions`.
+    - Each observation is tiled, which yields a vector of binary values. Tiles
+    are coarse, overlapping representations.
+    - The tile vector already encodes both the state and action.
+    """
+
     def __init__(
         self,
         env: gym.Env,
@@ -323,6 +375,15 @@ class TileFeatTransform(FeatTransform):
 
 
 class ActionSplicedTileFeatTransform(FeatTransform):
+    """
+    - Given an input observation of size n, returns an observation
+     of size `tiling_dim` x `num_tilings` x `num_actions`.
+    - Each observation is tiled, which yields a vector of binary values. Tiles
+    are coarse, overlapping representations.
+    - The tile vector is placed in the output array in a position
+    corresponding to the action.
+    """
+
     def __init__(
         self,
         env: gym.Env,
@@ -411,6 +472,10 @@ class ActionSplicedTileFeatTransform(FeatTransform):
 
 
 def create_feat_transformer(env: gym.Env, name: str, args: Mapping[str, Any]):
+    """
+    Creates a FeatTransformer according to the spec.
+    """
+
     if name == constants.IDENTITY:
         return IdentityFeatTransform(env)
     if name == constants.RANDOM:
