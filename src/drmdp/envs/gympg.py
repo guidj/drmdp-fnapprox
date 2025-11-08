@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Callable, Optional, Tuple
 
 import gymnasium as gym
 import numpy as np
@@ -31,8 +31,8 @@ class GridWorldObsAsVectorWrapper(gym.ObservationWrapper):
         self.states_mapping = gridworld.states_mapping(
             size=env._size, cliffs=tuple(env._cliffs)
         )
-        self._get_state_id = gridworld.create_obs_state_id_fn(
-            states=self.states_mapping
+        self._get_state_id: Callable[[Tuple[int, int]], int] = (
+            gridworld.create_obs_state_id_fn(states=self.states_mapping)
         )
         self.num_states = len(self.transition)
 

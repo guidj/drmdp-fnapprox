@@ -519,14 +519,15 @@ class FlatGridCoorFeatTransform(FeatTransform):
         for idx in range(self.obs_dims):
             pos += xs[idx] * self.value_range_prod[idx]
         pos = int(pos)
+        output: np.ndarray = np.zeros(1)
 
         if self.ohe:
             output = np.zeros(shape=(self.nactions, self.nstates))
             output[action, pos] = 1
-        else:
-            output = np.zeros(shape=self.nactions)
-            output[action] = pos
-        return output.flatten()
+            return output.flatten()
+        output = np.zeros(shape=self.nactions)
+        output[action] = pos
+        return output
 
     def batch_transform(
         self, observations: Sequence[ObsType], actions: Sequence[ActType]
