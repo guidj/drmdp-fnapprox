@@ -561,6 +561,7 @@ def poisson_delay_config(lam: int, max_delay: Optional[int] = None):
     2 7 13
     3 8 14
     """
+    return {"name": "fixed", "args": {"delay": lam}}
     lb, _ = mathutils.poisson_exact_confidence_interval(lam)
     return {
         "name": "clipped-poisson",

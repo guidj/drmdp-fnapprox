@@ -1,4 +1,5 @@
 import abc
+import collections
 import logging
 import random
 import sys
@@ -588,9 +589,13 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self.estimation_buffer_mult = estimation_buffer_mult
         self.use_bias = use_bias
 
+        self.cats = collections.defaultdict(int)
+        self.rr = set()
+
         self.episodes = 0
         self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
-        self.mdim = self.obs_dim * self.obs_wrapper.action_space.n + self.obs_dim
+        # self.mdim = self.obs_dim * self.obs_wrapper.action_space.n + self.obs_dim
+        self.mdim = self.obs_dim * self.obs_wrapper.action_space.n
         self.weights = None
         self._obs_feats = None
         self._segment_features = None
@@ -602,16 +607,20 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
             else None
         )
 
+        self.has_term = False
+
     def step(self, action):
         next_obs, reward, term, trunc, info = super().step(action)
         next_obs_feats = self.obs_wrapper.observation(next_obs)
         # Add s to action-specific columns
         # and s' to the last columns.
+        sop = np.argmax(self._obs_feats).item()
+        self.cats[sop] += 1
         start_index = action * self.obs_dim
         self._segment_features[start_index : start_index + self.obs_dim] += (
             self._obs_feats
         )
-        self._segment_features[-self.obs_dim :] += next_obs_feats
+        # self._segment_features[-self.obs_dim :] += next_obs_feats
 
         if self.weights is not None:
             # estimate
@@ -619,6 +628,7 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
             if self.use_bias:
                 feats = np.concatenate([feats, np.array([1.0])])
             reward = np.dot(feats, self.weights)
+            self.rr.add(np.around(reward))
             # reset for the next example
             self._segment_features = np.zeros(shape=(self.mdim))
             est_state = OptState.SOLVED
@@ -634,11 +644,27 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
                 reward = 0.0
             est_state = OptState.UNSOLVED
 
+        if term and self.weights is None and self.est_buffer.size() > 0:
+            bsize = self.est_buffer.size()
+            for ts_action in range(self.obs_wrapper.action_space.n):
+                term_state = np.zeros(shape=(self.mdim))
+                ts_idx = ts_action * self.obs_dim
+                # To simplify the problem for the convex solver
+                # we encode the (S,A) - not S'
+                term_state[ts_idx : ts_idx + self.obs_dim] += next_obs_feats
+
+                # Add terminal state visition to a random state
+                example_idx = random.randint(0, bsize)
+                lhs, rhs = self.est_buffer.buffer[example_idx]
+                self.est_buffer.add((lhs + term_state, rhs))
+            self.has_term = True
+
         if term or trunc:
             self.episodes += 1
             if (
                 self.weights is None
                 and self.episodes >= self.attempt_estimation_episode
+                and self.has_term
             ):
                 # estimate rewards
                 self.estimate_rewards()
@@ -673,6 +699,7 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         matrix = np.stack(obs_buffer, dtype=np.float64)
         rewards = np.array(rew_buffer, dtype=np.float64)
         nexamples = rewards.shape[0]
+
         if self.use_bias:
             matrix = np.concatenate(
                 [
@@ -954,7 +981,6 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         attempt_estimation_episode: int,
         estimation_buffer_mult: Optional[int] = None,
         use_bias: bool = False,
-        require_tall_matrix=False,
         constraints_buffer_limit: Optional[int] = None,
     ):
         super().__init__(env)

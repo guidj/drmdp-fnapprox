@@ -57,11 +57,6 @@ def process_data(df_raw):
     policy identifier.
     """
 
-    def filter(meta):
-        return meta["experiment"]["env_spec"]["name"] not in set(
-            ["Finite-TC-ShuntDc-v0"]
-        )
-
     def simplify_meta(meta):
         new_meta = dict(**meta, **meta["experiment"])
         new_meta["reward_mapper"] = MAPPERS_NAMES[
@@ -77,10 +72,13 @@ def process_data(df_raw):
         else:
             return meta["reward_mapper"]
 
+    def filter_method(method):
+        return method not in (["L-TDD[CV]", "L-TDD[CV-R]", "LEAST", "OP-S"])
+
     df_proc = copy.deepcopy(df_raw)
-    df_proc = df_proc[df_proc["meta"].apply(filter)]
     df_proc["meta"] = df_proc["meta"].apply(simplify_meta)
     df_proc["method"] = df_proc["meta"].apply(get_method)
+    df_proc = df_proc[df_proc["method"].apply(filter_method)]
     return df_proc
 
 

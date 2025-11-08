@@ -272,3 +272,12 @@ def solve_convex_least_squares(
         raise ValueError(f"No Solution. Status: {prob.status}; Sol: {solution.value}")
     except cvxpy.error.SolverError as err:
         raise ValueError(f"No Solution. Status {prob.status}") from err
+
+
+def matrix_factors_rank(matrix: np.ndarray) -> bool:
+    """
+    Checks values are present in every column.
+    """
+    factors_sum = np.sum(matrix, axis=0)
+    factors_present = np.sum(factors_sum > 0).astype(np.int64)
+    return factors_present == matrix.shape[1]
