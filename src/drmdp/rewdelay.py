@@ -696,7 +696,9 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
             if self.drop_tsc == -1:
                 matrix = matrix[:, :, : self.drop_tsc]
             else:
-                matrix = np.concatenate([matrix[:, :, : self.drop_tsc], matrix[:, :, self.drop_tsc+1:]])
+                matrix = np.concatenate(
+                    [matrix[:, :, : self.drop_tsc], matrix[:, :, self.drop_tsc + 1 :]]
+                )
             matrix = matrix.reshape(matrix.shape[0], -1)
 
         if self.check_factors:
