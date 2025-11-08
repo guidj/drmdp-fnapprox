@@ -274,10 +274,10 @@ def solve_convex_least_squares(
         raise ValueError(f"No Solution. Status {prob.status}") from err
 
 
-def matrix_factors_rank(matrix: np.ndarray) -> bool:
+def matrix_factors_rank(matrix: np.ndarray) -> int:
     """
-    Checks values are present in every column.
+    Calculates factors present in coluns.
     """
     factors_sum = np.sum(matrix, axis=0)
-    factors_present = np.sum(factors_sum > 0).astype(np.int64)
-    return factors_present == matrix.shape[1]
+    factors_present: int = np.sum(factors_sum > 0).astype(np.int64)
+    return factors_present
