@@ -89,7 +89,7 @@ allowlist_externals = ["uv", "ruff", "pytest"]
 
 [tool.tox.env.test]
 deps = []
-commands = [["pytest", "{posargs}", "-v", "--cov=drmdp", "--cov-report=xml:cobertura/coverage.xml", "--cov-report=term-missing", "--junitxml=junit.xml"]]
+commands = [["pytest", "-r{toxinidir}/tests", "-v", "--cov=drmdp", "--cov-report=xml:cobertura/coverage.xml", "--cov-report=term-missing", "--junitxml=junit.xml"]]
 
 [tool.tox.env.docs]
 deps = []
