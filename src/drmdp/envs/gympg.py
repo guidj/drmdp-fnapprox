@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Callable, Optional, Tuple
 
 import gymnasium as gym
 import numpy as np
@@ -14,7 +14,7 @@ DEFAULT_MC_MAX_EPISODE_STEPS = 10000
 
 
 class GridWorldObsAsVectorWrapper(gym.ObservationWrapper):
-    def __init__(self, env):
+    def __init__(self, env: gridworld.GridWorld):
         super().__init__(env)
         self.observation_space = gym.spaces.Box(
             high=np.array(
@@ -27,8 +27,23 @@ class GridWorldObsAsVectorWrapper(gym.ObservationWrapper):
             dtype=np.int64,
         )
 
+        self.transition = env.transition
+        self.states_mapping = gridworld.states_mapping(
+            size=env._size, cliffs=tuple(env._cliffs)
+        )
+        self._get_state_id: Callable[[Tuple[int, int]], int] = (
+            gridworld.create_obs_state_id_fn(states=self.states_mapping)
+        )
+        self.num_states = len(self.transition)
+
     def observation(self, observation: ObsType):
         return np.array(observation["agent"], dtype=np.int64)
+
+    def get_state_id(self, pos: np.ndarray) -> int:
+        """
+        Map grid pos to an int.
+        """
+        return self._get_state_id((pos[0], pos[1]))
 
 
 class IceworldObsAsVectorWrapper(gym.ObservationWrapper):

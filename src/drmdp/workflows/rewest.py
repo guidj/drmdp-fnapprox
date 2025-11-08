@@ -10,7 +10,7 @@ import os.path
 import sys
 import tempfile
 import uuid
-from typing import Any, List, Mapping, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 import gymnasium as gym
 import numpy as np
@@ -233,14 +233,14 @@ def cvlps_specs(
     return specs
 
 
-def bayes_cvlps_specs(
+def recurring_cvlps(
     init_attempt_estimation_episodes: Sequence[int],
     feat_specs: Sequence[Mapping[str, Any]],
     estimation_buffer_multiples: Sequence[Optional[int]] = (10, 25, None),
     constraints_buffer_limit: Optional[int] = 100,
 ):
     """
-    Bayesian linear regression specs.
+    Recurring convex linear estimation specs.
     """
     specs = []
     for iaee, feat_spec, est_buffer_mult in itertools.product(
@@ -248,7 +248,7 @@ def bayes_cvlps_specs(
     ):
         specs.append(
             {
-                "name": "bayes-cvlps",
+                "name": "recurring-cvlps",
                 "args": {
                     "init_attempt_estimation_episode": iaee,
                     "feats_spec": feat_spec,
@@ -773,6 +773,7 @@ def run_fn(job_spec: JobSpec, result_writer: ResultWriter):
         output = reward_estimation(job_spec)
         result = {"task_id": task_id, **dataclasses.asdict(job_spec), "meta": output}
     except Exception as err:
+        logging.error("Error in experiment %s: %s", task_id, err)
         raise RuntimeError(f"Task {task_id} `{job_spec}` failed") from err
     logging.info("Completed task %s: %s", task_id, job_spec)
     return result_writer.write.remote(proc_result(result))  # type: ignore
@@ -816,9 +817,10 @@ def wait_till_completion(tasks_refs, name: Optional[str] = None):
     """
     unfinished_tasks = tasks_refs
     while True:
-        _, unfinished_tasks = ray.wait(unfinished_tasks)
+        finished_tasks, unfinished_tasks = ray.wait(unfinished_tasks)
         logging.info(
-            "Completed task %s. %d left out of %d.",
+            "Completed %d %s task(s). %d left out of %d.",
+            len(finished_tasks),
             name,
             len(unfinished_tasks),
             len(tasks_refs),
@@ -837,7 +839,8 @@ def yield_as_completed(tasks_refs, name: Optional[str] = None):
     while True:
         finished_tasks, unfinished_tasks = ray.wait(unfinished_tasks)
         logging.info(
-            "Yielding task %s. %d left out of %d.",
+            "Yielding %d %s task(s). %d left out of %d.",
+            len(finished_tasks),
             name,
             len(unfinished_tasks),
             len(tasks_refs),
@@ -958,7 +961,7 @@ def setup_experiment(exp_instance: core.ExperimentInstance):
     """
     Sets up an experiment run given an instance.
     """
-    opt_logs = {}
+    opt_logs: Dict[str, Any] = {}
     env_spec = exp_instance.experiment.env_spec
     problem_spec = exp_instance.experiment.problem_spec
     env = envs.make(

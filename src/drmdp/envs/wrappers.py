@@ -151,7 +151,7 @@ class FlatGridCoordObsWrapper(gym.ObservationWrapper):
     single value.
     """
 
-    def __init__(self, env: gym.Env):
+    def __init__(self, env: gym.Env, ohe: bool = False):
         super().__init__(env)
         if not isinstance(env.observation_space, gym.spaces.Box):
             raise ValueError(
@@ -163,8 +163,9 @@ class FlatGridCoordObsWrapper(gym.ObservationWrapper):
                 f"Env should be a 1D array. Got {env.observation_space.shape}"
             )
 
+        self.ohe = ohe
         shape = env.observation_space.shape
-        self.dim = (
+        self.ndims = (
             shape[0] if isinstance(env.observation_space.shape, Sequence) else shape
         )
         value_ranges = env.observation_space.high - env.observation_space.low
@@ -173,19 +174,51 @@ class FlatGridCoordObsWrapper(gym.ObservationWrapper):
             raise ValueError(
                 f"Bad value range: {env.observation_space}. Make sure all values are integers."
             )
+
+        # The obs space doesn't map to states, i.e. some coordinates
+        # don't actually exist.
+        # This will overspecify matricies.
+        self._state_ops = {}
+        if self.has_wrapper_attr("transition") and self.has_wrapper_attr(
+            "get_state_id"
+        ):
+            self._state_ops["transition"] = self.get_wrapper_attr("transition")
+            self._state_ops["get_state_id"] = self.get_wrapper_attr("get_state_id")
+
         # num coordinates
-        self.nstates = int(np.prod(self.value_ranges))
-        self.observation_space = gym.spaces.Discrete(self.nstates)
+        self.nstates = (
+            len(self._state_ops["transition"])
+            if self._state_ops
+            else int(np.prod(self.value_ranges))
+        )
+        # Cache op
+        self.value_range_prod = [
+            np.prod(self.value_ranges[idx + 1 :]) for idx in range(self.ndims)
+        ]
+        self.output_size = self.nstates if self.ohe else 1
+        self.observation_space = (
+            gym.spaces.Box(low=np.zeros(self.nstates), high=np.ones(self.nstates))
+            if self.ohe
+            else gym.spaces.Discrete(self.nstates)
+        )
 
     def observation(self, observation: ObsType):
         """
         Returns cluster assignment.
         """
-        xs = np.concatenate([observation, [1]])
-        pos = 0
-        for idx in range(self.dim):
-            pos += xs[idx] * np.prod(self.value_ranges[idx + 1 :])
-        return int(pos)
+        pos: int = 0
+        if self._state_ops:
+            pos = self._state_ops["get_state_id"](observation)
+        else:
+            xs = np.concatenate([observation, [1]])
+            for idx in range(self.ndims):
+                pos += xs[idx] * self.value_range_prod[idx]
+            pos = int(pos)
+        if self.ohe:
+            output = np.zeros(self.nstates)
+            output[pos] = 1
+            return output
+        return pos
 
 
 class TilesObsWrapper(gym.ObservationWrapper):
@@ -248,5 +281,6 @@ def wrap(env: gym.Env, wrapper: Optional[str] = None, **kwargs):
             env, num_clusters=num_clusters, sample_steps=steps
         )
     if wrapper == constants.FLAT_GRID_COORD:
-        return FlatGridCoordObsWrapper(env)
+        ohe = kwargs.get("ohe", False)
+        return FlatGridCoordObsWrapper(env, ohe=ohe)
     raise ValueError(f"Wrapper `{wrapper}` unknown")

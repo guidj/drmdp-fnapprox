@@ -17,7 +17,7 @@ make test-coverage
 ## Bumpversion
 
 ```sh
-uv run bumpver update --patch
+bumpver update --patch
 ```
 
 ## Gym-type Environments

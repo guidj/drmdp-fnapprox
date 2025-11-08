@@ -74,50 +74,11 @@ push = "True"
     '^__version__ = "{version}"$',
 ]
 
-
-[tool.tox]
-requires = ["tox>=4.19"]
-env_list = ["test","manifest","check-formatting","lint","lint-types"]
-no_package = true
-use_develop = true
-
-[tool.tox.env_run_base]
-base_python = ["3.12", "3.11"]
-deps = ["-r{toxinidir}/pyproject.toml"]
-install_command = ["uv", "pip", "install", "{opts}", "{packages}"]
-allowlist_externals = ["uv"]
-
-[tool.tox.env.test]
-deps = []
-commands = [["uv", "run", "pytest", "{posargs}", "-v", "--cov=drmdp", "--cov-report=xml:cobertura/coverage.xml", "--cov-report=term-missing", "--junitxml=junit.xml"]]
-
-[tool.tox.env.docs]
-deps = []
-commands = [["uv", "run", "mkdocs", "build"]]
-
-[tool.tox.env.manifest]
-deps = ["check-manifest"]
-commands = [["check-manifest"]]
-
-[tool.tox.env.check-formatting]
-deps = []
-commands = [["uv", "run", "ruff", "format", "{toxinidir}/src", "{toxinidir}/tests", "--line-length", "88", "--diff", "--check"]]
-
-[tool.tox.env.format]
-deps = []
-commands = [["uv", "run", "ruff", "format", "{toxinidir}/src", "{toxinidir}/tests", "--line-length", "88"]]
-
-[tool.tox.env.lint]
-deps = []
-commands = [["uv", "run", "ruff", "check", "--extend-select",  "I", "{toxinidir}/src", "{toxinidir}/tests"]]
-
-[tool.tox.env.lint-types]
-# due to version conflicts, we specify these deps
-deps = ["mypy==1.10.1","typing-extensions", "numpy"]
-commands = [["uv", "run", "mypy", "{toxinidir}/src", "--install-types"], ["mypy", "{toxinidir}/tests", "--install-types"]]
-
-[tool.tox.env.lint-types.set_env]
-MYPYPATH = "$PYTHONPATH:{toxinidir}/src:{toxinidir}/tests"
+[tool.pytest.ini_options]
+addopts = "-v --cov=drmdp --junitxml=test-results/junit.xml --cov-report=xml:cobertura/coverage.xml --cov-report=term-missing"
+testpaths = [
+    "tests",
+]
 
 [tool.mypy]
 warn_return_any = true

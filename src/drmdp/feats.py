@@ -11,6 +11,10 @@ from drmdp import constants, dataproc, mathutils, tiles
 
 
 class FeatTransform(abc.ABC):
+    """
+    Encodes state-actions into a single vector output.
+    """
+
     def __init__(self):
         pass
 
@@ -31,6 +35,13 @@ class FeatTransform(abc.ABC):
 
 
 class IdentityFeatTransform(FeatTransform):
+    """
+    Transformation:
+    - Given an input observation of size n, returns an observation
+     of size `n` x num_actions.
+    - The observation is placed in a position corresponding to the action taken.
+    """
+
     def __init__(self, env: gym.Env):
         if not isinstance(env.observation_space, gym.spaces.Box):
             raise ValueError(
@@ -74,6 +85,16 @@ class IdentityFeatTransform(FeatTransform):
 
 
 class RandomBinaryFeatTransform(FeatTransform):
+    """
+    Transformation:
+    - Given an input observation of size n, returns an observation
+     of size `n` x num_actions.
+    - Each observation is a discrete value that gets mapped to a
+    random binary vector.
+    - The random vector is placed in the output array in a position
+    corresponding to the action.
+    """
+
     def __init__(self, env: gym.Env, enc_size: int):
         if not isinstance(env.action_space, gym.spaces.Discrete):
             raise ValueError("env.action_space must be `spaces.Discrete`")
@@ -143,6 +164,16 @@ class RandomBinaryFeatTransform(FeatTransform):
 
 
 class ScaleFeatTransform(FeatTransform):
+    """
+    Transformation:
+    - Given an input observation of size n, returns an observation
+     of size `n` x num_actions.
+    - Each observation scaled according to its bounds so each
+    dimension has a value betwen [0, 1].
+    - The scaled vector is placed in the output array in a position
+    corresponding to the action.
+    """
+
     def __init__(self, env: gym.Env):
         if not isinstance(env.observation_space, gym.spaces.Box):
             raise ValueError(
@@ -189,6 +220,18 @@ class ScaleFeatTransform(FeatTransform):
 
 
 class GaussianMixFeatTransform(FeatTransform):
+    """
+    Transformation:
+    - Given an input observation, returns an observation
+     of size `num_mixtures` x num_actions.
+    - `num_mixtures` is learned through grid-search,
+    using Expectation-Maximisation.
+    - Each observation projected into a basis vectors, where each component
+     represents probability of membership to a distribution.
+    - The basis membership vector is placed in the output array in a position
+    corresponding to the action.
+    """
+
     def __init__(
         self, env: gym.Env, sample_steps: int = constants.DEFAULT_GM_STEPS, **kwargs
     ):
@@ -246,6 +289,15 @@ class GaussianMixFeatTransform(FeatTransform):
 
 
 class TileFeatTransform(FeatTransform):
+    """
+    Transformation:
+    - Given an input observation of size n, returns an observation
+     of size `tiling_dim` x `num_tilings` x `num_actions`.
+    - Each observation is tiled, which yields a vector of binary values. Tiles
+    are coarse, overlapping representations.
+    - The tile vector already encodes both the state and action.
+    """
+
     def __init__(
         self,
         env: gym.Env,
@@ -323,6 +375,15 @@ class TileFeatTransform(FeatTransform):
 
 
 class ActionSplicedTileFeatTransform(FeatTransform):
+    """
+    - Given an input observation of size n, returns an observation
+     of size `tiling_dim` x `num_tilings` x `num_actions`.
+    - Each observation is tiled, which yields a vector of binary values. Tiles
+    are coarse, overlapping representations.
+    - The tile vector is placed in the output array in a position
+    corresponding to the action.
+    """
+
     def __init__(
         self,
         env: gym.Env,
@@ -410,7 +471,88 @@ class ActionSplicedTileFeatTransform(FeatTransform):
         )
 
 
+class FlatGridCoorFeatTransform(FeatTransform):
+    """
+    - Given an input observation of size n, returns an observation
+     of size `ndim` x `num_actions`
+    - Each observation is tiled, which yields a vector of binary values. Tiles
+    are coarse, overlapping representations.
+    - The tile vector is placed in the output array in a position
+    corresponding to the action.
+    """
+
+    def __init__(self, env: gym.Env, ohe: bool = False):
+        if not isinstance(env.observation_space, gym.spaces.Box):
+            raise ValueError(
+                f"Source `env` observation space must be of type `Box`. Got {type(env.observation_space)}"
+            )
+        if np.size(env.observation_space.shape) != 1:
+            raise ValueError(
+                f"Env should be a 1D array. Got {env.observation_space.shape}"
+            )
+
+        self.ohe = ohe
+        self.obs_space = env.observation_space
+        self.nactions: int = env.action_space.n
+        self.obs_dims = (
+            self.obs_space.shape[0]
+            if isinstance(env.observation_space.shape, Sequence)
+            else self.obs_space.shape
+        )
+
+        value_ranges = env.observation_space.high - env.observation_space.low
+        self.value_ranges = np.array(value_ranges, dtype=np.int64)
+        if np.sum(value_ranges - self.value_ranges) != 0:
+            raise ValueError(
+                f"Bad value range: {env.observation_space}. Make sure all values are integers."
+            )
+        # num coordinates
+        self.nstates = int(np.prod(self.value_ranges))
+        # Cache op
+        self.value_range_prod = [
+            np.prod(self.value_ranges[idx + 1 :]) for idx in range(self.obs_dims)
+        ]
+
+    def transform(self, observation: ObsType, action: ActType):
+        xs = np.concatenate([observation, [1]])
+        pos = 0
+        for idx in range(self.obs_dims):
+            pos += xs[idx] * self.value_range_prod[idx]
+        pos = int(pos)
+        output: np.ndarray = np.zeros(1)
+
+        if self.ohe:
+            output = np.zeros(shape=(self.nactions, self.nstates))
+            output[action, pos] = 1
+            return output.flatten()
+        output = np.zeros(shape=self.nactions)
+        output[action] = pos
+        return output
+
+    def batch_transform(
+        self, observations: Sequence[ObsType], actions: Sequence[ActType]
+    ):
+        batch_size = len(observations)
+        output = np.zeros((batch_size, self.output_shape))
+
+        # make obs an array if necessary
+        obs = np.asarray(observations)
+        # Fill output array using loop
+        for i, (obs, action) in enumerate(zip(obs, actions)):
+            # idx = self.obs_dim * action
+            output[i] = self.transform(obs, action)
+        return output
+
+    @property
+    def output_shape(self) -> int:
+        return self.nstates * self.nactions if self.ohe else self.nactions
+
+
 def create_feat_transformer(env: gym.Env, name: str, args: Mapping[str, Any]):
+    """
+    Creates a FeatTransformer according to the spec.
+    """
+
     if name == constants.IDENTITY:
         return IdentityFeatTransform(env)
     if name == constants.RANDOM:
@@ -423,4 +565,6 @@ def create_feat_transformer(env: gym.Env, name: str, args: Mapping[str, Any]):
         return TileFeatTransform(env, **args)
     if name == constants.SPLICED_TILES:
         return ActionSplicedTileFeatTransform(env, **args)
+    if name == constants.FLAT_GRID_COORD:
+        return FlatGridCoorFeatTransform(env, **args)
     raise ValueError(f"FeatTransformer `{name}` unknown")

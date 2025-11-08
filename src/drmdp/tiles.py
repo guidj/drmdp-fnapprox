@@ -145,7 +145,7 @@ def tileswrap(
 
 def pow2geq(lb: int) -> int:
     exp = 1
-    rs = 1
+    rs: int = 1
     while True:
         rs = 2**exp
         if rs >= lb:

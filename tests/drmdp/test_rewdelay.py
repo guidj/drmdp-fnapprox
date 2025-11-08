@@ -72,13 +72,12 @@ def test_least_lfa_generative_reward_wrapper_step():
         obs_wrapper,
         attempt_estimation_episode=2,
         use_bias=False,
-        require_tall_matrix=False,
     )
 
     obs, info = wrapped.reset()
 
     np.testing.assert_array_equal(obs, np.array([-1, -1, -1]))
-    assert info == {"delay": 2, "segment": 0, "segment_step": -1}
+    assert info == {"delay": 2, "segment": 0, "segment_step": -1, "next_delay": 2}
 
     # Ep 1, Ep Seg 1, Total Seg 1
     _, rew1, term, trunc, _ = wrapped.step(0)  # First step gets zero reward
@@ -95,10 +94,13 @@ def test_least_lfa_generative_reward_wrapper_step():
     assert (rew4, term, trunc) == (2.0, True, False)
 
     # After `attempt_estimation_episode` segments, should estimate rewards
+    # but matrix isn't tall yet, so we force it after
     buffer = [
         ([0.5, -0.5, 0.5, -0.5, 0.0, 0.0, 1.0, -1.0], 2.0),
         ([0.5, -0.5, 0.0, 0.0, 0.5, -0.5, 1.0, -1.0], 2.0),
     ]
+    assert wrapped.weights is None
+    wrapped.estimate_rewards()
     assert wrapped.weights is not None
     np.testing.assert_equal(wrapped.est_buffer.buffer, buffer)
 
@@ -163,7 +165,7 @@ def test_convex_solver_generative_reward_wrapper_step():
     obs, info = wrapped.reset()
 
     np.testing.assert_array_equal(obs, np.array([-1, -1, -1]))
-    assert info == {"delay": 2, "segment": 0, "segment_step": -1}
+    assert info == {"delay": 2, "segment": 0, "segment_step": -1, "next_delay": 2}
 
     # Ep 1, Ep Seg 1, Total Seg 1
     _, rew1, term, trunc, _ = wrapped.step(0)  # First step gets zero reward
@@ -180,10 +182,13 @@ def test_convex_solver_generative_reward_wrapper_step():
     assert (rew4, term, trunc) == (2.0, True, False)
 
     # After `attempt_estimation_episode` segments, should estimate rewards
+    # but matrix isn't tall yet, so we force it later
     buffer = [
         ([0.5, -0.5, 0.5, -0.5, 0.0, 0.0, 1.0, -1.0], 2.0),
         ([0.5, -0.5, 0.0, 0.0, 0.5, -0.5, 1.0, -1.0], 2.0),
     ]
+    assert wrapped.weights is None
+    wrapped.estimate_rewards()
     assert wrapped.weights is not None
     np.testing.assert_equal(wrapped.est_buffer.buffer, buffer)
 
@@ -224,7 +229,7 @@ def test_convex_solver_generative_reward_wrapper_invalid_spaces():
         )
 
 
-def test_delayed_reward_wrapper_init():
+def test_delayed_reward_wrapper_with_fixed_delay_init():
     env = DummyObsWrapper(DummyEnv())
     wrapped = rewdelay.DelayedRewardWrapper(env, reward_delay=rewdelay.FixedDelay(2))
 
@@ -238,7 +243,7 @@ def test_delayed_reward_wrapper_init():
     assert wrapped.op(range(10)) == sum(range(10))
 
 
-def test_delayed_reward_wrapper_step():
+def test_delayed_reward_wrapper_with_fixed_delay_step():
     env = DummyObsWrapper(DummyEnv(term_steps=4))
     wrapped = rewdelay.DelayedRewardWrapper(env, reward_delay=rewdelay.FixedDelay(2))
 
@@ -247,25 +252,25 @@ def test_delayed_reward_wrapper_step():
     obs, reward, term, trunc, info = wrapped.step(0)
     np.testing.assert_array_equal(obs, np.array([0.5, -0.5]))
     assert (reward, term, trunc) == (None, False, False)
-    assert info == {"delay": 2, "segment": 0, "segment_step": 0}
+    assert info == {"delay": 2, "segment": 0, "segment_step": 0, "next_delay": None}
 
     # Ep 1, Seg 1, Step 2
     obs, reward, term, trunc, info = wrapped.step(0)
     np.testing.assert_array_equal(obs, np.array([0.5, -0.5]))
     assert (reward, term, trunc) == (2.0, False, False)
-    assert info == {"delay": 2, "segment": 0, "segment_step": 1}
+    assert info == {"delay": 2, "segment": 0, "segment_step": 1, "next_delay": 2}
 
     # Ep 1, Seg 2, Step 1
     obs, reward, term, trunc, info = wrapped.step(0)
     np.testing.assert_array_equal(obs, np.array([0.5, -0.5]))
     assert (reward, term, trunc) == (None, False, False)
-    assert info == {"delay": 2, "segment": 1, "segment_step": 0}
+    assert info == {"delay": 2, "segment": 1, "segment_step": 0, "next_delay": None}
 
     # Ep 1, Seg 2, Step 2
     obs, reward, term, trunc, info = wrapped.step(0)
     np.testing.assert_array_equal(obs, np.array([0.5, -0.5]))
     assert (reward, term, trunc) == (2.0, True, False)
-    assert info == {"delay": 2, "segment": 1, "segment_step": 1}
+    assert info == {"delay": 2, "segment": 1, "segment_step": 1, "next_delay": 2}
 
     # Reset after termination
     wrapped.reset()
@@ -274,10 +279,10 @@ def test_delayed_reward_wrapper_step():
     obs, reward, term, trunc, info = wrapped.step(0)
     np.testing.assert_array_equal(obs, np.array([0.5, -0.5]))
     assert (reward, term, trunc) == (None, False, False)
-    assert info == {"delay": 2, "segment": 0, "segment_step": 0}
+    assert info == {"delay": 2, "segment": 0, "segment_step": 0, "next_delay": None}
 
 
-def test_delayed_reward_wrapper_reset():
+def test_delayed_reward_wrapper_with_fixed_delay_reset():
     env = DummyObsWrapper(DummyEnv())
     wrapped = rewdelay.DelayedRewardWrapper(env, reward_delay=rewdelay.FixedDelay(2))
 
@@ -307,6 +312,88 @@ def test_delayed_reward_wrapper_reset():
     assert wrapped.segment == 0
     assert wrapped.segment_step == -1
     assert not wrapped.rewards
+
+
+def test_delayed_reward_wrapper_with_poisson_delay_init():
+    env = DummyObsWrapper(DummyEnv())
+    wrapped = rewdelay.DelayedRewardWrapper(
+        env, reward_delay=rewdelay.ClippedPoissonDelay(2, min_delay=2, max_delay=5)
+    )
+
+    assert isinstance(wrapped.reward_delay, rewdelay.ClippedPoissonDelay)
+    assert wrapped.reward_delay.lam == 2
+    assert wrapped.observation_space == env.observation_space
+    assert wrapped.action_space == env.action_space
+    assert wrapped.segment is None
+    assert wrapped.segment_step is None
+    assert wrapped.delay is None
+    assert wrapped.op(range(10)) == sum(range(10))
+
+
+def test_delayed_reward_wrapper_with_poisson_delay_step(monkeypatch):
+    class MockPoissonRng:
+        def __init__(self, return_value: int):
+            self.return_value = return_value
+
+        def poisson(self, lam: int):
+            del lam
+            return self.return_value
+
+    env = DummyObsWrapper(DummyEnv(term_steps=4))
+    reward_delay = rewdelay.ClippedPoissonDelay(2, min_delay=2, max_delay=5)
+    wrapped = rewdelay.DelayedRewardWrapper(env, reward_delay=reward_delay)
+
+    # Delay of 3
+    monkeypatch.setattr(reward_delay, "rng", MockPoissonRng(3))
+
+    wrapped.reset()
+    # Ep 1, Seg 1, Step 1
+    obs, reward, term, trunc, info = wrapped.step(0)
+    np.testing.assert_array_equal(obs, np.array([0.5, -0.5]))
+    assert (reward, term, trunc) == (None, False, False)
+    assert info == {"delay": 3, "segment": 0, "segment_step": 0, "next_delay": None}
+
+    # # Ep 1, Seg 1, Step 2
+    obs, reward, term, trunc, info = wrapped.step(0)
+    np.testing.assert_array_equal(obs, np.array([0.5, -0.5]))
+    assert (reward, term, trunc) == (None, False, False)
+    assert info == {"delay": 3, "segment": 0, "segment_step": 1, "next_delay": None}
+
+    # Override the sampler for the coming step
+    monkeypatch.setattr(reward_delay, "rng", MockPoissonRng(2))
+
+    # Ep 1, Seg 1, Step 3
+    obs, reward, term, trunc, info = wrapped.step(0)
+    np.testing.assert_array_equal(obs, np.array([0.5, -0.5]))
+    assert (reward, term, trunc) == (3, False, False)
+    assert info == {"delay": 3, "segment": 0, "segment_step": 2, "next_delay": 2}
+
+    # Ep 1, Seg 2, Step 1
+    obs, reward, term, trunc, info = wrapped.step(0)
+    np.testing.assert_array_equal(obs, np.array([0.5, -0.5]))
+    assert (reward, term, trunc) == (None, True, False)
+    assert info == {"delay": 2, "segment": 1, "segment_step": 0, "next_delay": None}
+
+    # Reset after termination
+    wrapped.reset()
+
+    # Ep 2, Seg 1, Step 1
+    obs, reward, term, trunc, info = wrapped.step(0)
+    np.testing.assert_array_equal(obs, np.array([0.5, -0.5]))
+    assert (reward, term, trunc) == (None, False, False)
+    assert info == {"delay": 2, "segment": 0, "segment_step": 0, "next_delay": None}
+
+    # Ep 2, Seg 1, Step 2
+    obs, reward, term, trunc, info = wrapped.step(0)
+    np.testing.assert_array_equal(obs, np.array([0.5, -0.5]))
+    assert (reward, term, trunc) == (2.0, False, False)
+    assert info == {"delay": 2, "segment": 0, "segment_step": 1, "next_delay": 2}
+
+    # Ep 2, Seg 2, Step 1
+    obs, reward, term, trunc, info = wrapped.step(0)
+    np.testing.assert_array_equal(obs, np.array([0.5, -0.5]))
+    assert (reward, term, trunc) == (None, False, False)
+    assert info == {"delay": 2, "segment": 1, "segment_step": 0, "next_delay": None}
 
 
 def test_data_buffer():

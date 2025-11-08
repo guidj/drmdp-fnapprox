@@ -245,7 +245,7 @@ class OptionsSemigradientSARSAFnApprox(FnApproxAlgorithm):
         for episode in range(num_episodes):
             obs, info = env.reset(seed=self.seeder.get_seed(episode=episode))
             policy_step = self.policy.action(
-                obs, epsilon=self.epsilon, policy_state=(info["delay"],)
+                obs, epsilon=self.epsilon, policy_state=(info["next_delay"],)
             )
             state_qvalues, gradients, actions = (
                 policy_step.info["values"],
@@ -277,13 +277,14 @@ class OptionsSemigradientSARSAFnApprox(FnApproxAlgorithm):
                     break
 
                 next_policy_step = self.policy.action(
-                    next_obs, epsilon=self.epsilon, policy_state=(info["delay"],)
+                    next_obs, epsilon=self.epsilon, policy_state=(info["next_delay"],)
                 )
                 next_state_qvalues, next_gradients, next_actions = (
                     next_policy_step.info["values"],
                     next_policy_step.info["gradients"],
                     next_policy_step.info["actions"],
                 )
+
                 scaled_gradients = (
                     self.lr(episode, monitor.step)
                     * (

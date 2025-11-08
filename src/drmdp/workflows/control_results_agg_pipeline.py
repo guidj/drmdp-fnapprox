@@ -33,7 +33,7 @@ class PipelineArgs:
     output_dir: str
 
 
-class ReturnsAggretator(aggregate.AggregateFn):
+class StepSnapshotAggretator(aggregate.AggregateFn):
     """
     Aggregates returns.
     """
@@ -41,7 +41,7 @@ class ReturnsAggretator(aggregate.AggregateFn):
     AggType = Mapping[Tuple[str, int], Any]
     Row = Mapping[str, Any]
 
-    def __init__(self, name: str = "ReturnsAggretator()"):
+    def __init__(self, name: str = "StepSnapshotAggretator()"):
         super().__init__(
             init=self._init,
             merge=self._merge,
@@ -64,11 +64,9 @@ class ReturnsAggretator(aggregate.AggregateFn):
             # Path is a random pick
             # from one of the runs
             del meta["path"]
-            new_acc[row["exp_id"]] = {
-                "meta": meta,
-                "returns": [],
-            }
+            new_acc[row["exp_id"]] = {"meta": meta, "returns": [], "steps": []}
         new_acc[row["exp_id"]]["returns"].append(row["returns"])
+        new_acc[row["exp_id"]]["steps"].append(row["steps"])
         return new_acc
 
     def _merge(self, acc_left: AggType, acc_right: AggType) -> AggType:
@@ -82,6 +80,7 @@ class ReturnsAggretator(aggregate.AggregateFn):
                 acc[key] = copy.deepcopy(value)
             else:
                 acc[key]["returns"].extend(value["returns"])
+                acc[key]["steps"].extend(value["steps"])
         return acc
 
     def _finalize(self, acc: AggType) -> Any:
@@ -130,7 +129,7 @@ def parse_experiment_metadata(paths: Sequence[str]) -> Mapping[str, Any]:
     """
     metadata_files = [os.path.join(path, "experiment-params.json") for path in paths]
     results = {}
-    with ray_mp.Pool() as pool:
+    with ray_mp.Pool(ray_address="auto") as pool:
         for entry in pool.map(read_experiment_metadata, metadata_files):
             path = parse_path_from_filename(entry["path"])
             results[path] = entry
@@ -213,11 +212,11 @@ def pipeline(ds_logs: ray.data.Dataset) -> Mapping[str, ray.data.Dataset]:
     """
     ds_logs = (
         ds_logs.groupby("episode")
-        .aggregate(ReturnsAggretator(name="returns_agg"))
+        .aggregate(StepSnapshotAggretator(name="step_snapshot_agg"))
         .flat_map(
             lambda row: [
                 {"episode": row["episode"], "exp_id": exp_id, **data}
-                for exp_id, data in row["returns_agg"].items()
+                for exp_id, data in row["step_snapshot_agg"].items()
             ]
         )
     )
@@ -239,6 +238,7 @@ def calculate_metrics(ds: ray.data.Dataset) -> ray.data.Dataset:
                     "mean": np.mean(row["returns"]),
                     "std": np.std(row["returns"]),
                 },
+                "steps": {"mean": np.mean(row["steps"]), "std": np.std(row["steps"])},
             },
         }
 

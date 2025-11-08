@@ -4,13 +4,14 @@ Boostrap and run distributed jobs.
 
 import argparse
 import dataclasses
+import itertools
 import logging
-import random
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
+import numpy as np
 import ray
 
-from drmdp import constants, core, task
+from drmdp import core, task
 from drmdp.workflows import controlexps
 
 
@@ -26,49 +27,27 @@ class ControlPipelineArgs:
     output_dir: str
     log_episode_frequency: int
     task_prefix: str
-    bundle_size: int
     use_seed: bool
     # ray args
     cluster_uri: Optional[str]
 
 
-def main(args: ControlPipelineArgs):
+def wait_till_completion(tasks_refs):
     """
-    Program entry point.
+    Waits for every ray task to complete.
     """
-
-    ray_env: Dict[str, Any] = {}
-    logging.info("Ray environment: %s", ray_env)
-    with ray.init(args.cluster_uri, runtime_env=ray_env) as context:
-        logging.info("Ray Context: %s", context)
-        logging.info("Ray Nodes: %s", ray.nodes())
-
-        tasks_results_refs = create_tasks(
-            num_runs=args.num_runs,
-            num_episodes=args.num_episodes,
-            output_dir=args.output_dir,
-            task_prefix=args.task_prefix,
-            bundle_size=args.bundle_size,
-            log_episode_frequency=args.log_episode_frequency,
-            use_seed=args.use_seed,
+    unfinished_tasks = tasks_refs
+    while True:
+        finished_tasks, unfinished_tasks = ray.wait(unfinished_tasks)
+        logging.info(
+            "Completed %d task(s). %d left out of %d.",
+            len(finished_tasks),
+            len(unfinished_tasks),
+            len(tasks_refs),
         )
 
-        # since ray tracks objectref items
-        # we swap the key:value
-        results_refs = [result_ref for _, result_ref in tasks_results_refs]
-        unfinished_tasks = results_refs
-        while True:
-            finished_tasks, unfinished_tasks = ray.wait(unfinished_tasks)
-            for finished_task in finished_tasks:
-                logging.info(
-                    "Completed task %s, %d left out of %d.",
-                    ray.get(finished_task),
-                    len(unfinished_tasks),
-                    len(results_refs),
-                )
-
-            if len(unfinished_tasks) == 0:
-                break
+        if len(unfinished_tasks) == 0:
+            break
 
 
 def create_tasks(
@@ -76,15 +55,14 @@ def create_tasks(
     num_episodes: int,
     output_dir: str,
     task_prefix: str,
-    bundle_size: int,
     log_episode_frequency: int,
     use_seed: bool,
-) -> Sequence[Tuple[ray.ObjectRef, core.ExperimentInstance]]:
+) -> Sequence[core.ExperimentInstance]:
     """
     Runs numerical experiments on policy evaluation.
     """
     experiments = parse_experiments(specs=controlexps.experiment_specs())
-    experiment_instances = tuple(
+    experiment_instances = list(
         task.generate_experiments_instances(
             experiments=experiments,
             num_runs=num_runs,
@@ -96,22 +74,14 @@ def create_tasks(
         )
     )
     # shuffle tasks to balance workload
-    experiment_instances = random.sample(
-        experiment_instances,
-        len(experiment_instances),  # type: ignore
-    )
-    experiment_batches = task.bundle(experiment_instances, bundle_size=bundle_size)
+    np.random.shuffle(experiment_instances)  # type: ignore
+
     logging.info(
-        "Parsed %d experiments into %d instances and %d ray tasks",
+        "Parsed %d experiments into %d instances.",
         len(experiments),
         len(experiment_instances),
-        len(experiment_batches),
     )
-    results_refs = []
-    for batch in experiment_batches:
-        result_ref = run_experiments.remote(batch)
-        results_refs.append((batch, result_ref))
-    return results_refs
+    return experiment_instances
 
 
 def parse_experiments(
@@ -122,45 +92,72 @@ def parse_experiments(
     """
     experiment_specs: List[core.Experiment] = []
     for spec in specs:
-        for feat_tfx_spec in spec["feats_specs"]:
-            for problem_spec in spec["problem_specs"]:
-                experiment_specs.append(
-                    core.Experiment(
-                        env_spec=core.EnvSpec(
-                            name=spec["name"],
-                            args=spec["args"],
-                            feats_spec=feat_tfx_spec,
-                        ),
-                        problem_spec=core.ProblemSpec(**problem_spec),
-                        epochs=spec["epochs"],
-                    )
+        for feat_tfx_spec, problem_spec in itertools.product(
+            spec["feats_specs"], spec["problem_specs"]
+        ):
+            experiment_specs.append(
+                core.Experiment(
+                    env_spec=core.EnvSpec(
+                        name=spec["name"],
+                        args=spec["args"],
+                        feats_spec=feat_tfx_spec,
+                    ),
+                    problem_spec=core.ProblemSpec(**problem_spec),
+                    epochs=spec["epochs"],
                 )
+            )
     return experiment_specs
 
 
 @ray.remote
-def run_experiments(
-    experiments_batch: Sequence[core.ExperimentInstance],
-) -> Sequence[str]:
+def run_experiment(
+    experiment_instance: core.ExperimentInstance,
+) -> str:
     """
     Run experiments.
     """
-    ids: List[str] = []
-    for experiment_task in experiments_batch:
-        task_id = f"{experiment_task.exp_id}/{experiment_task.instance_id}"
-        logging.info(
-            "Experiment %s starting: %s",
-            task_id,
-            experiment_task,
-        )
-        try:
-            task.policy_control(experiment_task)
-        except Exception as err:
-            logging.error("Experiment %s failed", experiment_task)
-            raise err
-        ids.append(task_id)
-        logging.info("Experiment %s finished", task_id)
-    return ids
+    task_id = f"{experiment_instance.exp_id}/{experiment_instance.instance_id}"
+    logging.info(
+        "Experiment %s starting: %s",
+        task_id,
+        experiment_instance,
+    )
+    try:
+        task.policy_control(experiment_instance)
+    except Exception as err:
+        logging.error("Error in experiment %s: %s", task_id, err)
+        raise RuntimeError(f"Experiment {experiment_instance} failed") from err
+    logging.info("Experiment %s finished", task_id)
+    return task_id
+
+
+def main(args: ControlPipelineArgs):
+    """
+    Program entry point.
+    """
+
+    ray_env: Dict[str, Any] = {}
+    logging.info("Ray environment: %s", ray_env)
+    experiment_instances = create_tasks(
+        num_runs=args.num_runs,
+        num_episodes=args.num_episodes,
+        output_dir=args.output_dir,
+        task_prefix=args.task_prefix,
+        log_episode_frequency=args.log_episode_frequency,
+        use_seed=args.use_seed,
+    )
+
+    with ray.init(args.cluster_uri, runtime_env=ray_env) as context:
+        logging.info("Ray Context: %s", context)
+        logging.info("Ray Nodes: %s", ray.nodes())
+
+        logging.info("Submitting %d tasks", len(experiment_instances))
+        results_refs = []
+        for experiment_instance in experiment_instances:
+            result_ref = run_experiment.remote(experiment_instance)
+            results_refs.append(result_ref)
+
+        wait_till_completion(results_refs)
 
 
 def parse_args() -> ControlPipelineArgs:
@@ -173,9 +170,6 @@ def parse_args() -> ControlPipelineArgs:
     arg_parser.add_argument("--output-dir", type=str, required=True)
     arg_parser.add_argument("--log-episode-frequency", type=int, required=True)
     arg_parser.add_argument("--task-prefix", type=str, required=True)
-    arg_parser.add_argument(
-        "--bundle-size", type=int, default=constants.DEFAULT_BATCH_SIZE
-    )
     arg_parser.add_argument("--use-seed", action="store_true")
     arg_parser.add_argument("--cluster-uri", type=str, default=None)
     known_args, unknown_args = arg_parser.parse_known_args()
