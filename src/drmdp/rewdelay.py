@@ -580,11 +580,11 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         super().__init__(env)
         if not isinstance(obs_encoding_wrapper.observation_space, gym.spaces.Box):
             raise ValueError(
-                f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper)}"
+                f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper.observation_space)}"
             )
         if not isinstance(obs_encoding_wrapper.action_space, gym.spaces.Discrete):
             raise ValueError(
-                f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper)}"
+                f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper.action_space)}"
             )
         self.obs_wrapper = obs_encoding_wrapper
         self.attempt_estimation_episode = attempt_estimation_episode
@@ -756,11 +756,11 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         super().__init__(env)
         if not isinstance(obs_encoding_wrapper.observation_space, gym.spaces.Box):
             raise ValueError(
-                f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper)}"
+                f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper.observation_space)}"
             )
         if not isinstance(obs_encoding_wrapper.action_space, gym.spaces.Discrete):
             raise ValueError(
-                f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper)}"
+                f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper.action_space)}"
             )
         self.obs_wrapper = obs_encoding_wrapper
         self.mode = mode
@@ -861,11 +861,13 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         # matrix.
         if self.require_tall_matrix and self.est_buffer.size() <= self.mdim:
             return False
+
         obs_buffer: Sequence[Any] = []
         rew_buffer: Sequence[Any] = []
         obs_buffer, rew_buffer = zip(*self.est_buffer.buffer)
         matrix = np.stack(obs_buffer, dtype=np.float64)
         rewards = np.array(rew_buffer, dtype=np.float64)
+
         nexamples = rewards.shape[0]
         if self.use_bias:
             matrix = np.concatenate(
@@ -964,11 +966,11 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         super().__init__(env)
         if not isinstance(obs_encoding_wrapper.observation_space, gym.spaces.Box):
             raise ValueError(
-                f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper)}"
+                f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper.observation_space)}"
             )
         if not isinstance(obs_encoding_wrapper.action_space, gym.spaces.Discrete):
             raise ValueError(
-                f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper)}"
+                f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper.action_space)}"
             )
         self.obs_wrapper = obs_encoding_wrapper
         self.attempt_estimation_episode = attempt_estimation_episode
@@ -1180,11 +1182,11 @@ class RecurringConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         super().__init__(env)
         if not isinstance(obs_encoding_wrapper.observation_space, gym.spaces.Box):
             raise ValueError(
-                f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper)}"
+                f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper.observation_space)}"
             )
         if not isinstance(obs_encoding_wrapper.action_space, gym.spaces.Discrete):
             raise ValueError(
-                f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper)}"
+                f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper.action_space)}"
             )
         self.obs_wrapper = obs_encoding_wrapper
         self.mode = mode
