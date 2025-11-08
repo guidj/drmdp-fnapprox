@@ -954,7 +954,6 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         attempt_estimation_episode: int,
         estimation_buffer_mult: Optional[int] = None,
         use_bias: bool = False,
-        require_tall_matrix=False,
         constraints_buffer_limit: Optional[int] = None,
     ):
         super().__init__(env)
