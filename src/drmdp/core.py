@@ -236,6 +236,10 @@ class Seeder:
         self.instance = instance
 
     def get_seed(self, episode: int) -> Optional[int]:
+        """
+        For a given instance (seed), generated
+        episode specific seeds consistently.
+        """
         if self.instance is not None:
             return (self.MAX_INS * self.instance + 1) * (self.MAX_EPS + episode + 1)
         return self.instance
