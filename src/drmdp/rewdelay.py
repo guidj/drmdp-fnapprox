@@ -3,7 +3,16 @@ import logging
 import random
 import sys
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Protocol, Sequence, Tuple
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Protocol,
+    Sequence,
+    Tuple,
+)
 
 import gymnasium as gym
 import numpy as np
@@ -574,7 +583,7 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         estimation_buffer_mult: Optional[int] = None,
         use_bias: bool = False,
         use_next_state: bool = True,
-        drop_tsc: Optional[int] = None,
+        drop_tsc: Sequence[int] = tuple(),
         check_factors: bool = False,
     ):
         super().__init__(env)
@@ -586,6 +595,9 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
             raise ValueError(
                 f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper.action_space)}"
             )
+        if any([tsc < 0 for tsc in drop_tsc]):
+            raise ValueError("`drop_tsc` values must be non-negative")
+
         self.obs_wrapper = obs_encoding_wrapper
         self.attempt_estimation_episode = attempt_estimation_episode
         self.estimation_buffer_mult = estimation_buffer_mult
@@ -688,17 +700,22 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         rewards = np.array(rew_buffer, dtype=np.float64)
         nexamples = rewards.shape[0]
 
-        if self.drop_tsc is not None:
+        if self.drop_tsc:
             matrix = matrix.reshape(
                 (matrix.shape[0], int(matrix.shape[1] / self.obs_dim), self.obs_dim)
             )
-            # Drop terminal-state-column (tsc)
-            if self.drop_tsc == -1:
-                matrix = matrix[:, :, : self.drop_tsc]
-            else:
-                matrix = np.concatenate(
-                    [matrix[:, :, : self.drop_tsc], matrix[:, :, self.drop_tsc + 1 :]]
-                )
+
+            # Drop terminal columns (tsc)
+            for tsc in reversed(sorted(self.drop_tsc)):
+                if tsc == (matrix.shape[2] - 1):
+                    # Last column
+                    matrix = matrix[:, :, :-1]
+                else:
+                    # Middle column
+                    left = matrix[:, :, :tsc]
+                    right = matrix[:, :, tsc + 1 :]
+                    matrix = np.concat([left, right], axis=-1)
+
             matrix = matrix.reshape(matrix.shape[0], -1)
 
         if self.check_factors:
@@ -706,7 +723,7 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
             if rank < matrix.shape[1]:
                 return
         if self.use_bias:
-            matrix = np.concatenate(
+            matrix = np.concat(
                 [
                     matrix,
                     np.expand_dims(np.ones(shape=nexamples), axis=-1),
@@ -722,7 +739,7 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
                 self.get_env_name(),
                 err,
             )
-            if self.drop_tsc is not None:
+            if self.drop_tsc:
                 # reset matrix and rewards
                 # before dropping samplings
                 matrix = np.stack(obs_buffer, dtype=np.float64)
@@ -744,23 +761,29 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         else:
             error = metrics.rmse(v_pred=np.dot(matrix, weights), v_true=rewards, axis=0)
 
-            if self.drop_tsc is not None:
+            if self.drop_tsc:
                 # Re-adjust weights
-                nrows = int(matrix.shape[1] / (self.obs_dim - 1))
-                weights_matrix = weights.reshape((nrows, self.obs_dim - 1))
-                if self.drop_tsc == -1:
-                    weights_matrix = np.concat(
-                        [weights_matrix, np.zeros(shape=(nrows, 1))], axis=1
-                    )
-                else:
-                    weights_matrix = np.concat(
-                        [
-                            weights_matrix[:, 0 : self.drop_tsc],
-                            np.zeros(shape=(nrows, 1)),
-                            weights_matrix[:, self.drop_tsc :],
-                        ],
-                        axis=1,
-                    )
+                nrows = int(matrix.shape[1] / (self.obs_dim - len(self.drop_tsc)))
+                weights_matrix = weights.reshape(
+                    (nrows, self.obs_dim - len(self.drop_tsc))
+                )
+
+                for tsc in sorted(self.drop_tsc):
+                    if tsc == weights_matrix.shape[1]:
+                        # Last column
+                        weights_matrix = np.concat(
+                            [weights_matrix, np.zeros(shape=(nrows, 1))], axis=1
+                        )
+                    else:
+                        # Middle column
+                        weights_matrix = np.concat(
+                            [
+                                weights_matrix[:, 0:tsc],
+                                np.zeros(shape=(nrows, 1)),
+                                weights_matrix[:, tsc:],
+                            ],
+                            axis=1,
+                        )
                 weights = weights_matrix.flatten()
 
             self.weights = weights
