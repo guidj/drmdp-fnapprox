@@ -479,6 +479,7 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
             if (
                 self.weights is None
                 and self.episodes >= self.attempt_estimation_episode
+                and self.est_buffer.size() >= self.mdim
             ):
                 # estimate rewards
                 self.estimate_rewards()
@@ -504,11 +505,6 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         """
         Estimate rewards with Least Squares.
         """
-        # Estimate when there is a tall
-        # matrix.
-        if self.est_buffer.size() <= self.mdim:
-            return
-
         obs_buffer, rew_buffer = zip(*self.est_buffer.buffer)
         matrix = np.stack(obs_buffer, dtype=np.float64)
         rewards = np.array(rew_buffer, dtype=np.float64)
@@ -665,6 +661,7 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
             if (
                 self.weights is None
                 and self.episodes >= self.attempt_estimation_episode
+                and self.est_buffer.size() >= self.mdim
             ):
                 # estimate rewards
                 self.estimate_rewards()
@@ -690,11 +687,6 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         """
         Estimate rewards with Least Squares.
         """
-        # Estimate when there is a tall
-        # matrix.
-        if self.est_buffer.size() <= self.mdim:
-            return
-
         obs_buffer, rew_buffer = zip(*self.est_buffer.buffer)
         matrix = np.stack(obs_buffer, dtype=np.float64)
         rewards = np.array(rew_buffer, dtype=np.float64)
@@ -896,7 +888,10 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
             self.episodes += 1
             self.windowed_task_schedule.step(self.episodes)
 
-            if not self.windowed_task_schedule.current_window_done:
+            if (
+                not self.windowed_task_schedule.current_window_done
+                and self.est_buffer.size() >= self.mdim
+            ):
                 outcome = self.estimate_rewards()
                 self.windowed_task_schedule.set_state(succ=outcome)
 
@@ -928,11 +923,6 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         Estimate rewards or update posterior estimate
         of Least Squares.
         """
-        # Estimate when there is a tall
-        # matrix.
-        if self.est_buffer.size() <= self.mdim:
-            return False
-
         obs_buffer: Sequence[Any] = []
         rew_buffer: Sequence[Any] = []
         obs_buffer, rew_buffer = zip(*self.est_buffer.buffer)
@@ -1116,6 +1106,7 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
             if (
                 self.weights is None
                 and self.episodes >= self.attempt_estimation_episode
+                and self.est_buffer.size() >= self.mdim
             ):
                 # estimate rewards
                 self.estimate_rewards()
@@ -1142,11 +1133,6 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         Estimate rewards with convex optimisation
         with constraints.
         """
-        # Estimate when there is a tall
-        # matrix.
-        if self.est_buffer.size() <= self.mdim:
-            return
-
         obs_buffer, rew_buffer = zip(*self.est_buffer.buffer)
         matrix = np.stack(obs_buffer, dtype=np.float64)
         rewards = np.array(rew_buffer, dtype=np.float64)
@@ -1337,7 +1323,10 @@ class RecurringConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
             self.episodes += 1
             self.windowed_task_schedule.step(self.episodes)
 
-            if not self.windowed_task_schedule.current_window_done:
+            if (
+                not self.windowed_task_schedule.current_window_done
+                and self.est_buffer.size() >= self.mdim
+            ):
                 outcome = self.estimate_rewards()
                 self.windowed_task_schedule.set_state(succ=outcome)
 
@@ -1371,11 +1360,6 @@ class RecurringConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         using prior estimate as the initial
         guess.
         """
-        # Estimate when there is a tall
-        # matrix.
-        if self.est_buffer.size() <= self.mdim:
-            return False
-
         obs_buffer: Sequence[Any] = []
         rew_buffer: Sequence[Any] = []
         obs_buffer, rew_buffer = zip(*self.est_buffer.buffer)
