@@ -88,11 +88,11 @@ install_command = ["uv", "pip", "install", "{opts}", "{packages}"]
 allowlist_externals = ["uv", "ruff", "pytest"]
 
 [tool.tox.env.test]
-deps = []
-commands = [["pytest", "-r{toxinidir}/tests", "-v", "--cov=drmdp", "--cov-report=xml:cobertura/coverage.xml", "--cov-report=term-missing", "--junitxml=junit.xml"]]
+deps = ["pytest"]
+commands = [["pytest", "{toxinidir}/tests", "-v", "--cov=drmdp", "--cov-report=xml:cobertura/coverage.xml", "--cov-report=term-missing", "--junitxml=junit.xml"]]
 
 [tool.tox.env.docs]
-deps = []
+deps = ["mkdocs"]
 commands = [["mkdocs", "build"]]
 
 [tool.tox.env.manifest]
@@ -100,20 +100,20 @@ deps = ["check-manifest"]
 commands = [["check-manifest"]]
 
 [tool.tox.env.check-formatting]
-deps = []
+deps = ["ruff"]
 commands = [["ruff", "format", "{toxinidir}/src", "{toxinidir}/tests", "--line-length", "88", "--diff", "--check"]]
 
 [tool.tox.env.format]
-deps = []
+deps = ["ruff"]
 commands = [["ruff", "format", "{toxinidir}/src", "{toxinidir}/tests", "--line-length", "88"]]
 
 [tool.tox.env.lint]
-deps = []
+deps = ["ruff"]
 commands = [["ruff", "check", "--fix", "--extend-select",  "I", "{toxinidir}/src", "{toxinidir}/tests"]]
 
 
 [tool.tox.env.check-lint]
-deps = []
+deps = ["ruff"]
 commands = [["ruff", "check", "--extend-select",  "I", "{toxinidir}/src", "{toxinidir}/tests"]]
 
 
