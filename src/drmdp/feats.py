@@ -471,6 +471,82 @@ class ActionSplicedTileFeatTransform(FeatTransform):
         )
 
 
+class FlatGridCoorFeatTransform(FeatTransform):
+    """
+    - Given an input observation of size n, returns an observation
+     of size `ndim` x `num_actions`
+    - Each observation is tiled, which yields a vector of binary values. Tiles
+    are coarse, overlapping representations.
+    - The tile vector is placed in the output array in a position
+    corresponding to the action.
+    """
+
+    def __init__(self, env: gym.Env, ohe: bool = False):
+        if not isinstance(env.observation_space, gym.spaces.Box):
+            raise ValueError(
+                f"Source `env` observation space must be of type `Box`. Got {type(env.observation_space)}"
+            )
+        if np.size(env.observation_space.shape) != 1:
+            raise ValueError(
+                f"Env should be a 1D array. Got {env.observation_space.shape}"
+            )
+
+        self.ohe = ohe
+        self.obs_space = env.observation_space
+        self.nactions: int = env.action_space.n
+        self.obs_dims = (
+            self.obs_space.shape[0]
+            if isinstance(env.observation_space.shape, Sequence)
+            else self.obs_space.shape
+        )
+
+        value_ranges = env.observation_space.high - env.observation_space.low
+        self.value_ranges = np.array(value_ranges, dtype=np.int64)
+        if np.sum(value_ranges - self.value_ranges) != 0:
+            raise ValueError(
+                f"Bad value range: {env.observation_space}. Make sure all values are integers."
+            )
+        # num coordinates
+        self.nstates = int(np.prod(self.value_ranges))
+        # Cache op
+        self.value_range_prod = [
+            np.prod(self.value_ranges[idx + 1 :]) for idx in range(self.obs_dims)
+        ]
+
+    def transform(self, observation: ObsType, action: ActType):
+        xs = np.concatenate([observation, [1]])
+        pos = 0
+        for idx in range(self.obs_dims):
+            pos += xs[idx] * self.value_range_prod[idx]
+        pos = int(pos)
+
+        if self.ohe:
+            output = np.zeros(shape=(self.nactions, self.nstates))
+            output[action, pos] = 1
+        else:
+            output = np.zeros(shape=self.nactions)
+            output[action] = pos
+        return output.flatten()
+
+    def batch_transform(
+        self, observations: Sequence[ObsType], actions: Sequence[ActType]
+    ):
+        batch_size = len(observations)
+        output = np.zeros((batch_size, self.output_shape))
+
+        # make obs an array if necessary
+        obs = np.asarray(observations)
+        # Fill output array using loop
+        for i, (obs, action) in enumerate(zip(obs, actions)):
+            # idx = self.obs_dim * action
+            output[i] = self.transform(obs, action)
+        return output
+
+    @property
+    def output_shape(self) -> int:
+        return self.nstates * self.nactions if self.ohe else self.nactions
+
+
 def create_feat_transformer(env: gym.Env, name: str, args: Mapping[str, Any]):
     """
     Creates a FeatTransformer according to the spec.
@@ -488,4 +564,6 @@ def create_feat_transformer(env: gym.Env, name: str, args: Mapping[str, Any]):
         return TileFeatTransform(env, **args)
     if name == constants.SPLICED_TILES:
         return ActionSplicedTileFeatTransform(env, **args)
+    if name == constants.FLAT_GRID_COORD:
+        return FlatGridCoorFeatTransform(env, **args)
     raise ValueError(f"FeatTransformer `{name}` unknown")

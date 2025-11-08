@@ -151,7 +151,7 @@ class FlatGridCoordObsWrapper(gym.ObservationWrapper):
     single value.
     """
 
-    def __init__(self, env: gym.Env):
+    def __init__(self, env: gym.Env, ohe: bool = False):
         super().__init__(env)
         if not isinstance(env.observation_space, gym.spaces.Box):
             raise ValueError(
@@ -163,8 +163,9 @@ class FlatGridCoordObsWrapper(gym.ObservationWrapper):
                 f"Env should be a 1D array. Got {env.observation_space.shape}"
             )
 
+        self.ohe = ohe
         shape = env.observation_space.shape
-        self.dim = (
+        self.ndims = (
             shape[0] if isinstance(env.observation_space.shape, Sequence) else shape
         )
         value_ranges = env.observation_space.high - env.observation_space.low
@@ -175,7 +176,16 @@ class FlatGridCoordObsWrapper(gym.ObservationWrapper):
             )
         # num coordinates
         self.nstates = int(np.prod(self.value_ranges))
-        self.observation_space = gym.spaces.Discrete(self.nstates)
+        # Cache op
+        self.value_range_prod = [
+            np.prod(self.value_ranges[idx + 1 :]) for idx in range(self.ndims)
+        ]
+        self.output_size = self.nstates if self.ohe else 1
+        self.observation_space = (
+            gym.spaces.Box(low=np.zeros(self.nstates), high=np.zeros(self.nstates))
+            if self.ohe
+            else gym.spaces.Discrete(self.nstates)
+        )
 
     def observation(self, observation: ObsType):
         """
@@ -183,9 +193,14 @@ class FlatGridCoordObsWrapper(gym.ObservationWrapper):
         """
         xs = np.concatenate([observation, [1]])
         pos = 0
-        for idx in range(self.dim):
-            pos += xs[idx] * np.prod(self.value_ranges[idx + 1 :])
-        return int(pos)
+        for idx in range(self.ndims):
+            pos += xs[idx] * self.value_range_prod[idx]
+        pos = int(pos)
+        if self.ohe:
+            output = np.zeros(self.nstates)
+            output[pos] = 1
+            return output
+        return pos
 
 
 class TilesObsWrapper(gym.ObservationWrapper):
@@ -248,5 +263,6 @@ def wrap(env: gym.Env, wrapper: Optional[str] = None, **kwargs):
             env, num_clusters=num_clusters, sample_steps=steps
         )
     if wrapper == constants.FLAT_GRID_COORD:
-        return FlatGridCoordObsWrapper(env)
+        ohe = kwargs.get("ohe", False)
+        return FlatGridCoordObsWrapper(env, ohe=ohe)
     raise ValueError(f"Wrapper `{wrapper}` unknown")
