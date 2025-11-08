@@ -573,6 +573,9 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         attempt_estimation_episode: int,
         estimation_buffer_mult: Optional[int] = None,
         use_bias: bool = False,
+        use_next_state: bool = True,
+        drop_tsc: Optional[int] = None,
+        check_factors: bool = False,
     ):
         super().__init__(env)
         if not isinstance(obs_encoding_wrapper.observation_space, gym.spaces.Box):
@@ -587,14 +590,24 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self.attempt_estimation_episode = attempt_estimation_episode
         self.estimation_buffer_mult = estimation_buffer_mult
         self.use_bias = use_bias
+        self.use_next_state = use_next_state
+        self.drop_tsc = drop_tsc
+        self.check_factors = check_factors
 
         self.episodes = 0
         self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
-        self.mdim = self.obs_dim * self.obs_wrapper.action_space.n + self.obs_dim
+        self.mdim = self.obs_dim * self.obs_wrapper.action_space.n + (
+            self.obs_dim if self.use_next_state else 0
+        )
         self.weights = None
         self._obs_feats = None
         self._segment_features = None
-        self.estimation_meta = {"use_bias": self.use_bias}
+        self.estimation_meta = {
+            "use_bias": self.use_bias,
+            "use_next_state": self.use_next_state,
+            "drop_tsc": self.drop_tsc,
+            "check_factors": self.check_factors,
+        }
         self.rng = np.random.default_rng()
         self.est_buffer = DataBuffer(
             max_capacity=self.mdim * self.estimation_buffer_mult
@@ -611,7 +624,8 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self._segment_features[start_index : start_index + self.obs_dim] += (
             self._obs_feats
         )
-        self._segment_features[-self.obs_dim :] += next_obs_feats
+        if self.use_next_state:
+            self._segment_features[-self.obs_dim :] += next_obs_feats
 
         if self.weights is not None:
             # estimate
@@ -673,6 +687,22 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         matrix = np.stack(obs_buffer, dtype=np.float64)
         rewards = np.array(rew_buffer, dtype=np.float64)
         nexamples = rewards.shape[0]
+
+        if self.drop_tsc is not None:
+            matrix = matrix.reshape(
+                (matrix.shape[0], int(matrix.shape[1] / self.obs_dim), self.obs_dim)
+            )
+            # Drop terminal-state-column (tsc)
+            if self.drop_tsc == -1:
+                matrix = matrix[:, :, : self.drop_tsc]
+            else:
+                matrix = np.concatenate([matrix[:, :, : self.drop_tsc], matrix[:, :, self.drop_tsc+1:]])
+            matrix = matrix.reshape(matrix.shape[0], -1)
+
+        if self.check_factors:
+            rank = optsol.matrix_factors_rank(matrix)
+            if rank < matrix.shape[1]:
+                return
         if self.use_bias:
             matrix = np.concatenate(
                 [
@@ -690,6 +720,10 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
                 self.get_env_name(),
                 err,
             )
+            if self.drop_tsc is not None:
+                # reset matrix and rewards
+                # before dropping samplings
+                matrix = np.stack(obs_buffer, dtype=np.float64)
 
             # drop latest 5% of samples
             nexamples_dropped, (matrix, rewards) = drop_samples(
@@ -706,10 +740,28 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
             )
 
         else:
+            error = metrics.rmse(v_pred=np.dot(matrix, weights), v_true=rewards, axis=0)
+
+            if self.drop_tsc is not None:
+                # Re-adjust weights
+                nrows = int(matrix.shape[1] / (self.obs_dim - 1))
+                weights_matrix = weights.reshape((nrows, self.obs_dim - 1))
+                if self.drop_tsc == -1:
+                    weights_matrix = np.concat(
+                        [weights_matrix, np.zeros(shape=(nrows, 1))], axis=1
+                    )
+                else:
+                    weights_matrix = np.concat(
+                        [
+                            weights_matrix[:, 0 : self.drop_tsc],
+                            np.zeros(shape=(nrows, 1)),
+                            weights_matrix[:, self.drop_tsc :],
+                        ],
+                        axis=1,
+                    )
+                weights = weights_matrix.flatten()
+
             self.weights = weights
-            error = metrics.rmse(
-                v_pred=np.dot(matrix, self.weights), v_true=rewards, axis=0
-            )
             self.estimation_meta["sample"] = {"size": nexamples}
             self.estimation_meta["error"] = {"rmse": error}
             self.estimation_meta["estimate"] = {
