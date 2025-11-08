@@ -17,6 +17,7 @@ recursive-include assets *.h5
 include pyproject.toml
 include Makefile
 recursive-include src *.typed
+include tox.ini
 
 # deps
 include uv.lock

@@ -10,7 +10,7 @@ import os.path
 import sys
 import tempfile
 import uuid
-from typing import Any, List, Mapping, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 import gymnasium as gym
 import numpy as np
@@ -961,7 +961,7 @@ def setup_experiment(exp_instance: core.ExperimentInstance):
     """
     Sets up an experiment run given an instance.
     """
-    opt_logs = {}
+    opt_logs: Dict[str, Any] = {}
     env_spec = exp_instance.experiment.env_spec
     problem_spec = exp_instance.experiment.problem_spec
     env = envs.make(
