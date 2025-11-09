@@ -111,10 +111,10 @@ class PositiveEnforcementWeightedSumOfErrors(reward_functions.WeightedSumOfError
             if rw_ub != 0:
                 raise ValueError(f"Upper bound should zero: {self.reward_range}")
             self.checked = True
-        return (
-            self._wse_reward(state, reference)
-            + violation_degree * self._violation_reward
-        ) + (2 * abs(self.reward_range[0]))
+        wse_reward = self._wse_reward(state, reference)
+        return (wse_reward + violation_degree * self._violation_reward) + (
+            2 * abs(self.reward_range[0])
+        )
 
 
 class GemObsAsVectorWrapper(gym.ObservationWrapper):
