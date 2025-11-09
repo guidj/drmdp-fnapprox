@@ -1,4 +1,5 @@
 import abc
+import dataclasses
 import logging
 import random
 import sys
@@ -731,6 +732,7 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
                 self.get_env_name(),
                 err,
             )
+
             if self.drop_tsc:
                 # reset matrix and rewards
                 # before dropping samplings
@@ -816,6 +818,9 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         init_attempt_estimation_episode: int = 10,
         estimation_buffer_mult: Optional[int] = None,
         use_bias: bool = False,
+        use_next_state: bool = True,
+        drop_tsc: Sequence[int] = tuple(),
+        check_factors: bool = False,
     ):
         super().__init__(env)
         if not isinstance(obs_encoding_wrapper.observation_space, gym.spaces.Box):
@@ -831,6 +836,9 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self.init_attempt_estimation_episode = init_attempt_estimation_episode
         self.estimation_buffer_mult = estimation_buffer_mult
         self.use_bias = use_bias
+        self.use_next_state = use_next_state
+        self.drop_tsc = drop_tsc
+        self.check_factors = check_factors
 
         self.windowed_task_schedule = WindowedTaskSchedule(
             mode=self.mode, init_update_ep=self.init_attempt_estimation_episode
@@ -840,11 +848,18 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self.posterior_updates = 0
 
         self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
-        self.mdim = self.obs_dim * obs_encoding_wrapper.action_space.n + self.obs_dim
+        self.mdim = self.obs_dim * self.obs_wrapper.action_space.n + (
+            self.obs_dim if self.use_next_state else 0
+        )
         self.mv_normal_rewards: Optional[optsol.MultivariateNormal] = None
         self._obs_feats = None
         self._segment_features = None
-        self.estimation_meta: Dict[str, Any] = {"use_bias": self.use_bias}
+        self.estimation_meta: Dict[str, Any] = {
+            "use_bias": self.use_bias,
+            "use_next_state": self.use_next_state,
+            "drop_tsc": self.drop_tsc,
+            "check_factors": self.check_factors,
+        }
         self.est_buffer = DataBuffer(
             max_capacity=self.mdim * self.estimation_buffer_mult
             if self.estimation_buffer_mult
@@ -860,7 +875,8 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         step_features = np.zeros(shape=(self.mdim))
         start_index = action * self.obs_dim
         step_features[start_index : start_index + self.obs_dim] += self._obs_feats
-        step_features[-self.obs_dim :] += next_obs_feats
+        if self.use_next_state:
+            step_features[-self.obs_dim :] += next_obs_feats
         self._segment_features += step_features
 
         # Add example to buffer and
@@ -928,8 +944,31 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         obs_buffer, rew_buffer = zip(*self.est_buffer.buffer)
         matrix = np.stack(obs_buffer, dtype=np.float64)
         rewards = np.array(rew_buffer, dtype=np.float64)
-
         nexamples = rewards.shape[0]
+
+        if self.drop_tsc:
+            matrix = matrix.reshape(
+                (matrix.shape[0], int(matrix.shape[1] / self.obs_dim), self.obs_dim)
+            )
+
+            # Drop terminal columns (tsc)
+            for tsc in reversed(sorted(self.drop_tsc)):
+                if tsc == (matrix.shape[2] - 1):
+                    # Last column
+                    matrix = matrix[:, :, :-1]
+                else:
+                    # Middle column
+                    left = matrix[:, :, :tsc]
+                    right = matrix[:, :, tsc + 1 :]
+                    matrix = np.concat([left, right], axis=-1)
+
+            matrix = matrix.reshape(matrix.shape[0], -1)
+
+        if self.check_factors:
+            rank = optsol.matrix_factors_rank(matrix)
+            if rank < matrix.shape[1]:
+                return False
+
         if self.use_bias:
             matrix = np.concatenate(
                 [
@@ -958,6 +997,12 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
                 self.get_env_name(),
                 err,
             )
+
+            if self.drop_tsc:
+                # reset matrix and rewards
+                # before dropping samplings
+                matrix = np.stack(obs_buffer, dtype=np.float64)
+
             # drop latest 5% of samples
             nexamples_dropped, (matrix, rewards) = drop_samples(
                 frac=0.05, arrays=[matrix, rewards], rng=self.rng
@@ -973,12 +1018,40 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
             return False
         else:
             if mv_normal is not None:
-                self.mv_normal_rewards = mv_normal
+                weights = mv_normal.mean
                 error = metrics.rmse(
-                    v_pred=np.dot(matrix, self.mv_normal_rewards.mean),
+                    v_pred=np.dot(matrix, weights),
                     v_true=rewards,
                     axis=0,
                 )
+
+                if self.drop_tsc:
+                    # Re-adjust weights
+                    nrows = int(matrix.shape[1] / (self.obs_dim - len(self.drop_tsc)))
+                    weights_matrix = weights.reshape(
+                        (nrows, self.obs_dim - len(self.drop_tsc))
+                    )
+
+                    for tsc in sorted(self.drop_tsc):
+                        if tsc == weights_matrix.shape[1]:
+                            # Last column
+                            weights_matrix = np.concat(
+                                [weights_matrix, np.zeros(shape=(nrows, 1))], axis=1
+                            )
+                        else:
+                            # Middle column
+                            weights_matrix = np.concat(
+                                [
+                                    weights_matrix[:, 0:tsc],
+                                    np.zeros(shape=(nrows, 1)),
+                                    weights_matrix[:, tsc:],
+                                ],
+                                axis=1,
+                            )
+                    weights = weights_matrix.flatten()
+                    mv_normal = dataclasses.replace(mv_normal, mean=weights)
+
+                self.mv_normal_rewards = mv_normal
                 self.estimation_meta["sample"] = {"size": nexamples}
                 self.estimation_meta["error"] = {"rmse": error}
                 self.estimation_meta["estimate"] = {
