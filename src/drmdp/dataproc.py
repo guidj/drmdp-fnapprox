@@ -73,7 +73,7 @@ def process_data(df_raw):
             return meta["reward_mapper"]
 
     def filter_method(method):
-        return method not in (["L-TDD[CV]", "L-TDD[CV-R]", "LEAST", "OP-S"])
+        return method not in (["L-TDD", "L-TDD[CV]", "L-TDD[CV-R]", "LEAST", "OP-S"])
 
     df_proc = copy.deepcopy(df_raw)
     df_proc["meta"] = df_proc["meta"].apply(simplify_meta)
