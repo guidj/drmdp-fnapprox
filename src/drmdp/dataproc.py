@@ -10,10 +10,10 @@ import ray.data
 MAPPERS_NAMES = {
     "identity": "FR",
     "zero-impute": "IMR",
-    "least-lfa": "L-TDD",
-    "bayes-least-lfa": "L-TDD[B]",
+    "least-lfa": "BLADE-TD[N-B]",
+    "bayes-least-lfa": "BLADE-TD",
     # backwards compatibility
-    "least-bayes-lfa": "L-TDD[B]",
+    "least-bayes-lfa": "BLADE-TD",
     "cvlps": "L-TDD[CV]",
     "recurring-cvlps": "L-TDD[CV-R]",
     "discrete-least-lfa": "LEAST",
@@ -73,7 +73,7 @@ def process_data(df_raw):
             return meta["reward_mapper"]
 
     def filter_method(method):
-        return method not in (["L-TDD", "L-TDD[CV]", "L-TDD[CV-R]", "LEAST", "OP-S"])
+        return method not in (["L-TDD[CV]", "L-TDD[CV-R]", "LEAST", "OP-S"])
 
     df_proc = copy.deepcopy(df_raw)
     df_proc["meta"] = df_proc["meta"].apply(simplify_meta)
