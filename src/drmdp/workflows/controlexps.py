@@ -280,7 +280,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             "args": {
                 "reward_fn": "pos-enf",
                 "penalty_gamma": 1.0,
-                "constraint_violation_reward": 0.0,
+                "constraint_violation_reward": -10.0,
                 "max_episode_steps": MAX_STEPS_PER_EPISODE_GEM,
                 "emit_state": False,
             },
@@ -301,7 +301,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             "args": {
                 "reward_fn": "pos-enf",
                 "penalty_gamma": 1.0,
-                "constraint_violation_reward": 0.0,
+                "constraint_violation_reward": -10.0,
                 "max_episode_steps": MAX_STEPS_PER_EPISODE_GEM,
                 "emit_state": False,
             },
@@ -322,7 +322,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             "args": {
                 "reward_fn": "pos-enf",
                 "penalty_gamma": 1.0,
-                "constraint_violation_reward": 0.0,
+                "constraint_violation_reward": -10.0,
                 "max_episode_steps": MAX_STEPS_PER_EPISODE_GEM,
                 "emit_state": False,
             },
@@ -343,9 +343,9 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             "args": {
                 "reward_fn": "pos-enf",
                 "penalty_gamma": 1.0,
-                "constraint_violation_reward": 0.0,
+                "constraint_violation_reward": -10.0,
                 "max_episode_steps": MAX_STEPS_PER_EPISODE_GEM,
-                "emit_state": False,
+                "emit_state": True,
             },
             "feats_specs": [{"name": "scale", "args": None}],
             "problem_specs": common_problem_specs()
@@ -364,7 +364,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             "args": {
                 "reward_fn": "pos-enf",
                 "penalty_gamma": 1.0,
-                "constraint_violation_reward": 0.0,
+                "constraint_violation_reward": -10.0,
                 "max_episode_steps": MAX_STEPS_PER_EPISODE_GEM,
                 "emit_state": False,
             },
@@ -385,7 +385,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             "args": {
                 "reward_fn": "pos-enf",
                 "penalty_gamma": 1.0,
-                "constraint_violation_reward": 0.0,
+                "constraint_violation_reward": -10.0,
                 "max_episode_steps": MAX_STEPS_PER_EPISODE_GEM,
                 "emit_state": False,
             },
