@@ -3,8 +3,8 @@ from typing import Any, Mapping, Optional, Sequence
 
 from drmdp import mathutils
 
-EPSILON = 0.2
-MAX_STEPS_PER_EPISODE_GEM = 200
+EPSILON = 0.1
+MAX_STEPS_PER_EPISODE_GEM = 10000
 LEARNING_RATE_SPEC = {
     "name": "constant",
     "args": {"initial_lr": 0.01},
