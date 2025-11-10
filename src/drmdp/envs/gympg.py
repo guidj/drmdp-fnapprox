@@ -10,7 +10,7 @@ from drmdp.envs import wrappers
 DEFAULT_GW_GRID = ["oooooooooooo", "oooooooooooo", "oooooooooooo", "sxxxxxxxxxxg"]
 DEFAULT_RG_CURE = ["red", "green", "red", "green", "wait", "green"]
 DEFAULT_ICE_MAP = "4x4"
-DEFAULT_MC_MAX_EPISODE_STEPS = 10000
+DEFAULT_MC_MAX_EPISODE_STEPS = 10_000
 
 
 class GridWorldObsAsVectorWrapper(gym.ObservationWrapper):
