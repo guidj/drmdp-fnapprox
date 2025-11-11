@@ -547,7 +547,10 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
                 v_pred=np.dot(matrix, self.weights), v_true=rewards, axis=0
             )
             snapshot = {
-                "sample": {"size": nexamples},
+                "sample": {
+                    "size": nexamples,
+                    "factors_rank": optsol.matrix_factors_rank(matrix),
+                },
                 "error": {"rmse": error},
                 "estimate": {
                     "weights": self.weights.tolist(),
@@ -786,7 +789,10 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
 
             self.weights = weights
             snapshot = {
-                "sample": {"size": nexamples},
+                "sample": {
+                    "size": nexamples,
+                    "factors_rank": optsol.matrix_factors_rank(matrix),
+                },
                 "error": {"rmse": error},
                 "estimate": {
                     "weights": self.weights.tolist(),
@@ -1061,7 +1067,10 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
 
                 self.mv_normal_rewards = mv_normal
                 snapshot = {
-                    "sample": {"size": nexamples},
+                    "sample": {
+                        "size": nexamples,
+                        "factors_rank": optsol.matrix_factors_rank(matrix),
+                    },
                     "error": {"rmse": error},
                     "estimate": {
                         "weights": self.mv_normal_rewards.mean.tolist(),
@@ -1277,7 +1286,10 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
                 v_pred=np.dot(matrix, self.weights), v_true=rewards, axis=0
             )
             snapshot = {
-                "sample": {"size": nexamples},
+                "sample": {
+                    "size": nexamples,
+                    "factors_rank": optsol.matrix_factors_rank(matrix),
+                },
                 "error": {"rmse": error},
                 "estimate": {
                     "weights": self.weights.tolist(),
@@ -1526,7 +1538,10 @@ class RecurringConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
             )
 
             snapshot = {
-                "sample": {"size": nexamples},
+                "sample": {
+                    "size": nexamples,
+                    "factors_rank": optsol.matrix_factors_rank(matrix),
+                },
                 "error": {"rmse": error},
                 "estimate": {
                     "weights": self.weights.tolist(),
