@@ -439,7 +439,7 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self.weights = None
         self._obs_feats = None
         self._segment_features = None
-        self.estimation_meta = {"use_bias": self.use_bias}
+        self.estimation_meta = {"use_bias": self.use_bias, "snapshots": []}
         self.rng = np.random.default_rng()
         self.est_buffer = DataBuffer(
             max_capacity=self.mdim * self.estimation_buffer_mult
@@ -546,11 +546,14 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
             error = metrics.rmse(
                 v_pred=np.dot(matrix, self.weights), v_true=rewards, axis=0
             )
-            self.estimation_meta["sample"] = {"size": nexamples}
-            self.estimation_meta["error"] = {"rmse": error}
-            self.estimation_meta["estimate"] = {
-                "weights": self.weights.tolist(),
+            snapshot = {
+                "sample": {"size": nexamples},
+                "error": {"rmse": error},
+                "estimate": {
+                    "weights": self.weights.tolist(),
+                },
             }
+            self.estimation_meta["snapshots"].append(snapshot)
             logging.info(
                 "%s - Estimated rewards for %s. RMSE: %f; No. Samples: %d",
                 self.get_name(),
@@ -616,6 +619,7 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
             "use_next_state": self.use_next_state,
             "drop_tsc": self.drop_tsc,
             "check_factors": self.check_factors,
+            "snapshots": [],
         }
         self.rng = np.random.default_rng()
         self.est_buffer = DataBuffer(
@@ -781,11 +785,14 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
                 weights = weights_matrix.flatten()
 
             self.weights = weights
-            self.estimation_meta["sample"] = {"size": nexamples}
-            self.estimation_meta["error"] = {"rmse": error}
-            self.estimation_meta["estimate"] = {
-                "weights": self.weights.tolist(),
+            snapshot = {
+                "sample": {"size": nexamples},
+                "error": {"rmse": error},
+                "estimate": {
+                    "weights": self.weights.tolist(),
+                },
             }
+            self.estimation_meta["snapshots"].append(snapshot)
             logging.info(
                 "%s - Estimated rewards for %s. RMSE: %f; No. Samples: %d",
                 self.get_name(),
@@ -859,6 +866,7 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
             "use_next_state": self.use_next_state,
             "drop_tsc": self.drop_tsc,
             "check_factors": self.check_factors,
+            "snapshots": [],
         }
         self.est_buffer = DataBuffer(
             max_capacity=self.mdim * self.estimation_buffer_mult
@@ -1052,11 +1060,15 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
                     mv_normal = dataclasses.replace(mv_normal, mean=weights)
 
                 self.mv_normal_rewards = mv_normal
-                self.estimation_meta["sample"] = {"size": nexamples}
-                self.estimation_meta["error"] = {"rmse": error}
-                self.estimation_meta["estimate"] = {
-                    "weights": self.mv_normal_rewards.mean.tolist(),
+                snapshot = {
+                    "sample": {"size": nexamples},
+                    "error": {"rmse": error},
+                    "estimate": {
+                        "weights": self.mv_normal_rewards.mean.tolist(),
+                    },
                 }
+                self.estimation_meta["snapshots"].append(snapshot)
+
                 logging.info(
                     "%s - %s rewards for %s. RMSE: %f; No. Samples: %d",
                     "Estimated" if self.posterior_updates == 0 else "Updated",
@@ -1117,7 +1129,7 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self.weights = None
         self._obs_feats = None
         self._segment_features = None
-        self.estimation_meta = {"use_bias": self.use_bias}
+        self.estimation_meta = {"use_bias": self.use_bias, "snapshots": []}
         self.rng = np.random.default_rng()
         self.est_buffer = DataBuffer(
             max_capacity=self.mdim * self.estimation_buffer_mult
@@ -1264,12 +1276,16 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
             error = metrics.rmse(
                 v_pred=np.dot(matrix, self.weights), v_true=rewards, axis=0
             )
-            self.estimation_meta["sample"] = {"size": nexamples}
-            self.estimation_meta["error"] = {"rmse": error}
-            self.estimation_meta["estimate"] = {
-                "weights": self.weights.tolist(),
-                "constraints": len(term_states),
+            snapshot = {
+                "sample": {"size": nexamples},
+                "error": {"rmse": error},
+                "estimate": {
+                    "weights": self.weights.tolist(),
+                    "constraints": len(term_states),
+                },
             }
+            self.estimation_meta["snapshots"].append(snapshot)
+
             logging.info(
                 "%s - Estimated rewards for %s. RMSE: %f; No. Samples: %d, # Constraints: %d",
                 self.get_name(),
@@ -1335,7 +1351,10 @@ class RecurringConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self.weights: Optional[np.ndarray] = None
         self._obs_feats = None
         self._segment_features = None
-        self.estimation_meta: Dict[str, Any] = {"use_bias": self.use_bias}
+        self.estimation_meta: Dict[str, Any] = {
+            "use_bias": self.use_bias,
+            "snapshots": [],
+        }
         self.rng = np.random.default_rng()
         self.est_buffer = DataBuffer(
             max_capacity=self.mdim * self.estimation_buffer_mult
@@ -1505,12 +1524,17 @@ class RecurringConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
                 v_true=rewards,
                 axis=0,
             )
-            self.estimation_meta["sample"] = {"size": nexamples}
-            self.estimation_meta["error"] = {"rmse": error}
-            self.estimation_meta["estimate"] = {
-                "weights": self.weights.tolist(),
-                "constraints": len(term_states),
+
+            snapshot = {
+                "sample": {"size": nexamples},
+                "error": {"rmse": error},
+                "estimate": {
+                    "weights": self.weights.tolist(),
+                    "constraints": len(term_states),
+                },
             }
+            self.estimation_meta["snapshots"].append(snapshot)
+
             logging.info(
                 "%s - %s rewards for %s. RMSE: %f; No. Samples: %d, # Constraints: %d",
                 "Estimated" if self.posterior_updates == 0 else "Updated",
