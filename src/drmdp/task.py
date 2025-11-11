@@ -237,8 +237,8 @@ def reward_mapper(env: gym.Env, proxy_env: gym.Env, mapping_spec: Mapping[str, A
 
     if name == "identity":
         return env
-    elif name == "zero-impute":
-        return rewdelay.ZeroImputeMissingRewardWrapper(env)
+    elif name == "impute-missing":
+        return rewdelay.ImputeMissingRewardWrapper(env, **m_args)
     elif name == "discrete-least-lfa":
         return rewdelay.DiscretisedLeastLfaGenerativeRewardWrapper(
             env=env,
