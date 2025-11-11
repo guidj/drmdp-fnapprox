@@ -397,7 +397,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 "emit_state": True,
             },
             "feats_specs": [{"name": "scale", "args": None}],
-            "problem_specs": least_specs(
+            "rewest": least_specs(
                 attempt_estimation_episodes=(10,),
                 feat_specs=[
                     {"name": "scale", "args": None},
