@@ -114,13 +114,14 @@ def main():
         logging.info("Datalogs size: %fMB", ds_logs.size_bytes() / 1024 / 1024)
         ds_logs_and_metadata = join_logs_and_metadata(ds_logs, metadata)
 
-        results: Mapping[str, ray.data.Dataset] = ray.get(
-            pipeline.remote(ds_logs_and_metadata)
-        )
-        for key, ds in results.items():
-            output_path = os.path.join(args.output_dir, key)
-            logging.info("Writing %s to %s", key, output_path)
-            ds.write_parquet(output_path)
+        results_ref = pipeline.remote(ds_logs_and_metadata)
+        write_results_ref = write_results.remote(results_ref, args.output_dir)
+        unfinished_tasks = [write_results_ref]
+
+        while True:
+            _, unfinished_tasks = ray.wait(unfinished_tasks)
+            if len(unfinished_tasks) == 0:
+                break
 
 
 def parse_experiment_metadata(paths: Sequence[str]) -> Mapping[str, Any]:
@@ -222,6 +223,17 @@ def pipeline(ds_logs: ray.data.Dataset) -> Mapping[str, ray.data.Dataset]:
     )
     ds_metrics = calculate_metrics(ds_logs)
     return {"logs": ds_logs, "metrics": ds_metrics}
+
+
+@ray.remote
+def write_results(results_datasets: Mapping[str, ray.data.Dataset], output_dir: str):
+    """
+    Exports results
+    """
+    for key, ds in results_datasets.items():
+        output_path = os.path.join(output_dir, key)
+        logging.info("Writing %s to %s", key, output_path)
+        ds.write_parquet(output_path)
 
 
 def calculate_metrics(ds: ray.data.Dataset) -> ray.data.Dataset:
