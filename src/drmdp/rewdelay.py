@@ -381,20 +381,18 @@ class DelayedRewardWrapper(gym.Wrapper, SupportsName):
         }
 
 
-class ZeroImputeMissingRewardWrapper(gym.RewardWrapper, SupportsName):
+class ImputeMissingRewardWrapper(gym.RewardWrapper, SupportsName):
     """
     Missing rewards (`None`) are replaced with zero.
     """
 
-    def __init__(
-        self,
-        env: gym.Env,
-    ):
+    def __init__(self, env: gym.Env, impute_value: float):
         super().__init__(env)
+        self.impute_value = float(impute_value)
 
     def reward(self, reward):
         if reward is None:
-            return 0.0
+            return self.impute_value
         return reward
 
 
@@ -611,9 +609,7 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
 
         self.episodes = 0
         self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
-        self.mdim = self.obs_dim * self.obs_wrapper.action_space.n + (
-            self.obs_dim if self.use_next_state else 0
-        )
+        self.mdim = self.obs_dim * (2 if self.use_next_state else 1)
         self.weights = None
         self._obs_feats = None
         self._segment_features = None
@@ -636,10 +632,7 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         next_obs_feats = self.obs_wrapper.observation(next_obs)
         # Add s to action-specific columns
         # and s' to the last columns.
-        start_index = action * self.obs_dim
-        self._segment_features[start_index : start_index + self.obs_dim] += (
-            self._obs_feats
-        )
+        self._segment_features[: self.obs_dim] += self._obs_feats
         if self.use_next_state:
             self._segment_features[-self.obs_dim :] += next_obs_feats
 
@@ -861,9 +854,7 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self.posterior_updates = 0
 
         self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
-        self.mdim = self.obs_dim * self.obs_wrapper.action_space.n + (
-            self.obs_dim if self.use_next_state else 0
-        )
+        self.mdim = self.obs_dim * (2 if self.use_next_state else 1)
         self.mv_normal_rewards: Optional[optsol.MultivariateNormal] = None
         self._obs_feats = None
         self._segment_features = None
@@ -886,9 +877,10 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         next_obs_feats = self.obs_wrapper.observation(next_obs)
         # Add s to action-specific columns
         # and s' to the last columns.
+        # We use a separate vector to make predictions
+        # because we continuously collect aggregate data.
         step_features = np.zeros(shape=(self.mdim))
-        start_index = action * self.obs_dim
-        step_features[start_index : start_index + self.obs_dim] += self._obs_feats
+        step_features[: self.obs_dim] += self._obs_feats
         if self.use_next_state:
             step_features[-self.obs_dim :] += next_obs_feats
         self._segment_features += step_features
@@ -1134,7 +1126,7 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
 
         self.episodes = 0
         self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
-        self.mdim = self.obs_dim * self.obs_wrapper.action_space.n + self.obs_dim
+        self.mdim = self.obs_dim * 2
         self.weights = None
         self._obs_feats = None
         self._segment_features = None
@@ -1152,10 +1144,7 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         next_obs_feats = self.obs_wrapper.observation(next_obs)
         # Add s to action-specific columns
         # and s' to the last columns.
-        start_index = action * self.obs_dim
-        self._segment_features[start_index : start_index + self.obs_dim] += (
-            self._obs_feats
-        )
+        self._segment_features[: self.obs_dim] += self._obs_feats
         self._segment_features[-self.obs_dim :] += next_obs_feats
 
         if self.weights is not None:
@@ -1359,7 +1348,7 @@ class RecurringConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self.posterior_updates = 0
 
         self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
-        self.mdim = self.obs_dim * obs_encoding_wrapper.action_space.n + self.obs_dim
+        self.mdim = self.obs_dim * 2
         self.weights: Optional[np.ndarray] = None
         self._obs_feats = None
         self._segment_features = None
@@ -1383,8 +1372,7 @@ class RecurringConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         # Add s to action-specific columns
         # and s' to the last columns.
         step_features = np.zeros(shape=(self.mdim))
-        start_index = action * self.obs_dim
-        step_features[start_index : start_index + self.obs_dim] += self._obs_feats
+        step_features[: self.obs_dim] += self._obs_feats
         step_features[-self.obs_dim :] += next_obs_feats
         self._segment_features += step_features
 
