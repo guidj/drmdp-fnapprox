@@ -279,5 +279,5 @@ def matrix_factors_rank(matrix: np.ndarray) -> int:
     Calculates factors present in coluns.
     """
     factors_sum = np.sum(matrix, axis=0)
-    factors_present: int = np.sum(factors_sum > 0).astype(np.int64)
+    factors_present: int = np.sum(factors_sum > 0).astype(np.int64).item()
     return factors_present
