@@ -21,40 +21,6 @@ MAX_OPTIONS_DELAY = 4
 DEFAULT_IMPUTE_VALUE = 0
 
 
-def discrete_least_specs(
-    attempt_estimation_episodes: Sequence[int],
-    feats_specs: Sequence[Mapping[str, Any]],
-    delays: Sequence[int] = (2, 4, 6, 8),
-    discounts: Sequence[float] = (1.0, 0.99),
-):
-    """
-    Discretised Least Squares specs.
-    """
-    specs = []
-    for delay, gamma, feats_spec, attempt_estimation_episode in itertools.product(
-        delays, discounts, feats_specs, attempt_estimation_episodes
-    ):
-        specs.append(
-            {
-                "policy_type": "markovian",
-                "reward_mapper": {
-                    "name": "discrete-least-lfa",
-                    "args": {
-                        "attempt_estimation_episode": attempt_estimation_episode,
-                        "feats_spec": feats_spec,
-                        "use_bias": False,
-                        "estimation_buffer_mult": 25,
-                    },
-                },
-                "delay_config": poisson_delay_config(delay),
-                "epsilon": EPSILON,
-                "gamma": gamma,
-                "learning_rate_config": LEARNING_RATE_SPEC,
-            },
-        )
-    return tuple(specs)
-
-
 def least_specs(
     attempt_estimation_episodes: Sequence[int],
     feats_specs: Sequence[Mapping[str, Any]],
