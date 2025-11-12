@@ -18,6 +18,7 @@ MINES_GW_GRID = [
     "sxxxxxxxxxxg",
 ]
 MAX_OPTIONS_DELAY = 4
+DEFAULT_IMPUTE_VALUE = 0
 
 
 def discrete_least_specs(
@@ -62,6 +63,7 @@ def least_specs(
     use_next_state: bool = True,
     drop_tsc: Sequence[int] = tuple(),
     check_factors: bool = False,
+    impute_value: float = DEFAULT_IMPUTE_VALUE,
 ) -> Sequence[Mapping[str, Any]]:
     """
     Least Squares specs.
@@ -79,7 +81,7 @@ def least_specs(
                         "attempt_estimation_episode": attempt_estimation_episode,
                         "feats_spec": feats_spec,
                         "use_bias": False,
-                        "impute_value": 1.0,
+                        "impute_value": impute_value,
                         "estimation_buffer_mult": 25,
                         "use_next_state": use_next_state,
                         "drop_tsc": drop_tsc,
@@ -100,6 +102,7 @@ def bayes_least_specs(
     feats_specs: Sequence[Mapping[str, Any]],
     delays: Sequence[int] = (2, 4, 6, 8),
     discounts: Sequence[float] = (1.0, 0.99),
+    impute_value: float = DEFAULT_IMPUTE_VALUE,
 ) -> Sequence[Mapping[str, Any]]:
     """
     Bayesian linear regression specs.
@@ -117,7 +120,7 @@ def bayes_least_specs(
                         "init_attempt_estimation_episode": init_attempt_estimation_episode,
                         "feats_spec": feats_spec,
                         "use_bias": False,
-                        "impute_value": 1.0,
+                        "impute_value": impute_value,
                         "estimation_buffer_mult": 25,
                     },
                 },
@@ -133,7 +136,7 @@ def bayes_least_specs(
 def common_problem_specs(
     delays: Sequence[int] = (2, 4, 6, 8),
     discounts: Sequence[float] = (1.0, 0.99),
-    impute_value: float = 1,
+    impute_value: float = DEFAULT_IMPUTE_VALUE,
 ):
     """
     Specs that apply to every env.
