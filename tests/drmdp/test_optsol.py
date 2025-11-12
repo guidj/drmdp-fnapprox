@@ -79,3 +79,15 @@ def test_proj_obs_to_rwest_vec_invalid_inputs():
     # Test invalid sample size
     with pytest.raises(ValueError):
         optsol.proj_obs_to_rwest_vec(buffer, sample_size=0)
+
+
+def test_streaming_mean_estimator():
+    xs = np.random.rand(100_000)
+    estimator = optsol.StreamingMean()
+    assert estimator.count == 0
+    assert estimator.mean is None
+
+    for val in xs:
+        estimator.add(val)
+    assert estimator.count == 100_000
+    np.testing.assert_almost_equal(estimator.mean, 0.5, decimal=2)

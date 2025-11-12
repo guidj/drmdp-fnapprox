@@ -139,6 +139,28 @@ class ConstantLRSchedule(LearningRateSchedule):
         return self.initial_lr
 
 
+class StreamingMean:
+    """
+    Calculates a mean value in streaming mode.
+    """
+
+    def __init__(self):
+        self.mean: Optional[float] = None
+        self.count: int = 0
+
+    def add(self, value: float) -> float:
+        """
+        Update's the mean with a new value
+        """
+        self.count += 1
+        if self.mean is None:
+            self.mean = value
+        else:
+            delta = value - self.mean
+            self.mean = self.mean + delta / self.count
+        return self.mean
+
+
 def delay_reward_data(buffer, delay: int, sample_size: int):
     if delay < 2:
         raise ValueError(f"`delay` must be greater than one. Got {delay}")
