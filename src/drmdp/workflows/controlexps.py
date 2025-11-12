@@ -191,14 +191,16 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 "emit_state": False,
             },
             "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 4}}],
-            "problem_specs": common_problem_specs()
+            "problem_specs": common_problem_specs(impute_value=0)
             + least_specs(
                 attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "scale", "args": None}],
+                impute_value=0,
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "scale", "args": None}],
+                impute_value=0,
             ),
             "epochs": 1,
         },
@@ -212,14 +214,16 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 "emit_state": False,
             },
             "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
-            "problem_specs": common_problem_specs()
+            "problem_specs": common_problem_specs(impute_value=0)
             + least_specs(
                 attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "scale", "args": None}],
+                impute_value=0,
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "scale", "args": None}],
+                impute_value=0,
             ),
             "epochs": 1,
         },
@@ -233,14 +237,16 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 "emit_state": False,
             },
             "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 3}}],
-            "problem_specs": common_problem_specs()
+            "problem_specs": common_problem_specs(impute_value=2)
             + least_specs(
                 attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "scale", "args": None}],
+                impute_value=2,
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "scale", "args": None}],
+                impute_value=2,
             ),
             "epochs": 1,
         },
@@ -254,14 +260,16 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 "emit_state": True,
             },
             "feats_specs": [{"name": "scale", "args": None}],
-            "problem_specs": common_problem_specs()
+            "problem_specs": common_problem_specs(impute_value=24)
             + least_specs(
                 attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "scale", "args": None}],
+                impute_value=24,
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "scale", "args": None}],
+                impute_value=24,
             ),
             "epochs": 1,
         },
@@ -275,14 +283,16 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 "emit_state": False,
             },
             "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
-            "problem_specs": common_problem_specs()
+            "problem_specs": common_problem_specs(impute_value=0)
             + least_specs(
                 attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "scale", "args": None}],
+                impute_value=0,
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "scale", "args": None}],
+                impute_value=0,
             ),
             "epochs": 1,
         },
@@ -296,14 +306,16 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 "emit_state": True,
             },
             "feats_specs": [{"name": "scale", "args": None}],
-            "problem_specs": common_problem_specs()
+            "problem_specs": common_problem_specs(impute_value=1)
             + least_specs(
                 attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "scale", "args": None}],
+                impute_value=1,
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "scale", "args": None}],
+                impute_value=1,
             ),
             "epochs": 1,
         },
