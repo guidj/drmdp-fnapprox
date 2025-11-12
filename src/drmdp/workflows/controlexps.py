@@ -199,7 +199,9 @@ def recurring_cvlps(
 
 
 def common_problem_specs(
-    delays: Sequence[int] = (2, 4, 6, 8), discounts: Sequence[float] = (1.0, 0.99)
+    delays: Sequence[int] = (2, 4, 6, 8),
+    discounts: Sequence[float] = (1.0, 0.99),
+    impute_value: float = 1,
 ):
     """
     Specs that apply to every env.
@@ -230,7 +232,10 @@ def common_problem_specs(
                     },
                     {
                         "policy_type": "markovian",
-                        "reward_mapper": {"name": "zero-impute", "args": None},
+                        "reward_mapper": {
+                            "name": "impute-missing",
+                            "args": {"impute_value": impute_value},
+                        },
                         "delay_config": poisson_delay_config(delay),
                         "epsilon": EPSILON,
                         "gamma": gamma,

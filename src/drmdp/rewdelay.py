@@ -415,6 +415,7 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         attempt_estimation_episode: int,
         estimation_buffer_mult: Optional[int] = None,
         use_bias: bool = False,
+        impute_value: float = 0.0,
     ):
         super().__init__(env)
         if not isinstance(obs_encoding_wrapper.observation_space, gym.spaces.Discrete):
@@ -429,6 +430,7 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self.attempt_estimation_episode = attempt_estimation_episode
         self.estimation_buffer_mult = estimation_buffer_mult
         self.use_bias = use_bias
+        self.impute_value = impute_value
 
         self.episodes = 0
         self.nstates = self.obs_wrapper.observation_space.n
@@ -469,8 +471,8 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
                 # reset for the next segment
                 self._segment_features = np.zeros(shape=(self.mdim))
             else:
-                # zero impute until rewards are estimated
-                reward = 0.0
+                # impute until rewards are estimated
+                reward = self.impute_value
             est_state = OptState.UNSOLVED
 
         if term or trunc:
@@ -583,6 +585,7 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         attempt_estimation_episode: int,
         estimation_buffer_mult: Optional[int] = None,
         use_bias: bool = False,
+        impute_value: float = 0.0,
         use_next_state: bool = True,
         drop_tsc: Sequence[int] = tuple(),
         check_factors: bool = False,
@@ -603,6 +606,7 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self.attempt_estimation_episode = attempt_estimation_episode
         self.estimation_buffer_mult = estimation_buffer_mult
         self.use_bias = use_bias
+        self.impute_value = impute_value
         self.use_next_state = use_next_state
         self.drop_tsc = drop_tsc
         self.check_factors = check_factors
@@ -653,8 +657,8 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
                 # reset for the next segment
                 self._segment_features = np.zeros(shape=(self.mdim))
             else:
-                # zero impute until rewards are estimated
-                reward = 0.0
+                # impute until rewards are estimated
+                reward = self.impute_value
             est_state = OptState.UNSOLVED
 
         if term or trunc:
@@ -824,6 +828,7 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         init_attempt_estimation_episode: int = 10,
         estimation_buffer_mult: Optional[int] = None,
         use_bias: bool = False,
+        impute_value: float = 0.0,
         use_next_state: bool = True,
         drop_tsc: Sequence[int] = tuple(),
         check_factors: bool = False,
@@ -842,6 +847,7 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self.init_attempt_estimation_episode = init_attempt_estimation_episode
         self.estimation_buffer_mult = estimation_buffer_mult
         self.use_bias = use_bias
+        self.impute_value = impute_value
         self.use_next_state = use_next_state
         self.drop_tsc = drop_tsc
         self.check_factors = check_factors
@@ -900,9 +906,9 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
             reward = np.dot(feats, self.mv_normal_rewards.mean)
             est_state = OptState.SOLVED
         else:
-            # Zero impute until rewards are estimated
+            # impute until rewards are estimated
             if info["segment_step"] != info["delay"] - 1:
-                reward = 0.0
+                reward = self.impute_value
             # else, use aggregate reward
             est_state = OptState.UNSOLVED
 
@@ -1107,6 +1113,7 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         attempt_estimation_episode: int,
         estimation_buffer_mult: Optional[int] = None,
         use_bias: bool = False,
+        impute_value: float = 0.0,
         constraints_buffer_limit: Optional[int] = None,
     ):
         super().__init__(env)
@@ -1122,6 +1129,7 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self.attempt_estimation_episode = attempt_estimation_episode
         self.estimation_buffer_mult = estimation_buffer_mult
         self.use_bias = use_bias
+        self.impute_value = impute_value
         self.constraints_buffer_limit = constraints_buffer_limit
 
         self.episodes = 0
@@ -1164,8 +1172,8 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
                 # reset for the next segment
                 self._segment_features = np.zeros(shape=(self.mdim))
             else:
-                # zero impute until rewards are estimated
-                reward = 0.0
+                # impute until rewards are estimated
+                reward = self.impute_value
 
             est_state = OptState.UNSOLVED
 
@@ -1321,6 +1329,7 @@ class RecurringConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         init_attempt_estimation_episode: int = 10,
         estimation_buffer_mult: Optional[int] = None,
         use_bias: bool = False,
+        impute_value: float = 0.0,
         constraints_buffer_limit: Optional[int] = None,
     ):
         super().__init__(env)
@@ -1337,6 +1346,7 @@ class RecurringConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self.init_attempt_estimation_episode = init_attempt_estimation_episode
         self.estimation_buffer_mult = estimation_buffer_mult
         self.use_bias = use_bias
+        self.impute_value = impute_value
 
         self.constraints_buffer_limit = constraints_buffer_limit
 
@@ -1391,9 +1401,9 @@ class RecurringConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
             reward = np.dot(feats, self.weights)
             est_state = OptState.SOLVED
         else:
-            # zero impute until rewards are estimated
+            # impute until rewards are estimated
             if info["segment_step"] != info["delay"] - 1:
-                reward = 0.0
+                reward = self.impute_value
             # else, use aggregate reward
             est_state = OptState.UNSOLVED
 

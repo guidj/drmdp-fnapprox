@@ -17,7 +17,6 @@ import numpy as np
 import pandas as pd
 import ray
 import ray.data
-import ray.data.datasource
 import tensorflow as tf
 from ray.data import aggregate
 from ray.util import multiprocessing as ray_mp

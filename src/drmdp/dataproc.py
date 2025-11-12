@@ -9,6 +9,8 @@ import ray.data
 
 MAPPERS_NAMES = {
     "identity": "FR",
+    "impute-missing": "IMR",
+    # backwards compatibility
     "zero-impute": "IMR",
     "least-lfa": "BLADE-TD[N-B]",
     "bayes-least-lfa": "BLADE-TD",
@@ -25,6 +27,8 @@ POLICY_TYPES = {
     "options": "OP-A",
     "single-action-options": "OP-S",
 }
+
+ORDERED_METHODS = ["BLADE-TD", "BLADE-TD[N-B]", "IMR", "OP-A", "OP-S", "DMR", "FR"]
 
 
 def collection_traj_data(env: gym.Env, steps: int, seed: Optional[int] = None):
