@@ -79,6 +79,7 @@ def least_specs(
                         "attempt_estimation_episode": attempt_estimation_episode,
                         "feats_spec": feats_spec,
                         "use_bias": False,
+                        "impute_value": 1.0,
                         "estimation_buffer_mult": 25,
                         "use_next_state": use_next_state,
                         "drop_tsc": drop_tsc,
@@ -116,77 +117,8 @@ def bayes_least_specs(
                         "init_attempt_estimation_episode": init_attempt_estimation_episode,
                         "feats_spec": feats_spec,
                         "use_bias": False,
+                        "impute_value": 1.0,
                         "estimation_buffer_mult": 25,
-                    },
-                },
-                "delay_config": poisson_delay_config(delay),
-                "epsilon": EPSILON,
-                "gamma": gamma,
-                "learning_rate_config": LEARNING_RATE_SPEC,
-            },
-        )
-    return tuple(specs)
-
-
-def cvlps_specs(
-    attempt_estimation_episodes: Sequence[int],
-    feats_specs: Sequence[Mapping[str, Any]],
-    delays: Sequence[int] = (2, 4, 6, 8),
-    discounts: Sequence[float] = (1.0, 0.99),
-) -> Sequence[Mapping[str, Any]]:
-    """
-    Constrained optimisation specs.
-    """
-    specs = []
-    for delay, gamma, feats_spec, attempt_estimation_episode in itertools.product(
-        delays, discounts, feats_specs, attempt_estimation_episodes
-    ):
-        specs.append(
-            {
-                "policy_type": "markovian",
-                "reward_mapper": {
-                    "name": "cvlps",
-                    "args": {
-                        "attempt_estimation_episode": attempt_estimation_episode,
-                        "feats_spec": feats_spec,
-                        "use_bias": False,
-                        "estimation_buffer_mult": 25,
-                        "constraints_buffer_limit": 100,
-                    },
-                },
-                "delay_config": poisson_delay_config(delay),
-                "epsilon": EPSILON,
-                "gamma": gamma,
-                "learning_rate_config": LEARNING_RATE_SPEC,
-            },
-        )
-    return tuple(specs)
-
-
-def recurring_cvlps(
-    init_attempt_estimation_episodes: Sequence[int],
-    feats_specs: Sequence[Mapping[str, Any]],
-    delays: Sequence[int] = (2, 4, 6, 8),
-    discounts: Sequence[float] = (1.0, 0.99),
-):
-    """
-    Recurring convex linear estimation specs.
-    """
-    specs = []
-    for delay, gamma, feats_spec, init_attempt_estimation_episode in itertools.product(
-        delays, discounts, feats_specs, init_attempt_estimation_episodes
-    ):
-        specs.append(
-            {
-                "policy_type": "markovian",
-                "reward_mapper": {
-                    "name": "recurring-cvlps",
-                    "args": {
-                        "init_attempt_estimation_episode": init_attempt_estimation_episode,
-                        "feats_spec": feats_spec,
-                        "use_bias": False,
-                        "estimation_buffer_mult": 25,
-                        "constraints_buffer_limit": 100,
                     },
                 },
                 "delay_config": poisson_delay_config(delay),
