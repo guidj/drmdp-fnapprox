@@ -315,6 +315,37 @@ class OptionsSemigradientSARSAFnApprox(FnApproxAlgorithm):
 
 
 class OptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
+    """
+    Options are sequences of multi-step actions, or actions
+    that last longer than one step.
+    Given a delay `d` that represents the number of steps, there are
+    K^{d} possible primitive actions.
+    This policy supports a range of delays [delay_min, delay_max].
+
+    When `action` is called, what the policy returns is a sequence
+    primitive actions, which depends on the delay.
+
+    The way they are encoded here is:
+
+    1. Apply feat_transform to the `observation` usign action=0
+    2. Apply binary encoding of integers, using the first
+    power of 2 that is greater than `num_options[delay_max]`.
+    e.g. if delay_max = 3 and there are 4 actions,
+    the binary encoding size is is 2^7 > 4^{3}.
+    3. Apply one-hot-encoding to the delay, based on the number
+    of delays (delay_max - delay_min + 1).
+
+    The final option encoding is a concatenation of
+    the output of steps 2 and 3
+    option_enc = binary_enc(option) + one_hot(delay)
+    observation_enc = feat_transform.transform(observation)
+    And the action encoding as well, has a max length.
+
+    `option_enc` is generally very small compared to the
+    number of actions.
+    feat_transform depends on the option.
+    """
+
     def __init__(
         self,
         feat_transform: feats.FeatTransform,
@@ -335,22 +366,22 @@ class OptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
         self.options_length_range = options_length_range
 
         lower, upper = self.options_length_range
-        self.delay_options_mapping = {
+        self.delay_num_options_mapping = {
             length: self.num_primitive_actions**length
             for length in range(lower, upper + 1)
         }
         option_enc_size = 1
-        while 2**option_enc_size < self.delay_options_mapping[upper]:
+        while 2**option_enc_size < self.delay_num_options_mapping[upper]:
             option_enc_size += 1  # type: ignore
         self.option_enc_size = option_enc_size
         # seq len + OHE[delay]
         self.options_dim = self.option_enc_size + (upper - lower + 1)
         self.features_dim = self.feat_transform.output_shape + self.options_dim
-        self.options_m = self.options_encoding()
+        self.delay_options_matrix_mapping = self.options_encoding()
         self.weights = np.zeros(self.features_dim, dtype=np.float64)
 
         self.action_space = gym.spaces.Discrete(
-            sum(value for value in self.delay_options_mapping.values())
+            sum(value for value in self.delay_num_options_mapping.values())
         )
 
     def options_encoding(self):
@@ -361,7 +392,7 @@ class OptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
         options_m = {}
         for delay in range(lower, upper + 1):
             options_m[delay] = self.transform_options(
-                range(self.delay_options_mapping[delay]), delay
+                range(self.delay_num_options_mapping[delay]), delay
             )
         return options_m
 
@@ -388,7 +419,7 @@ class OptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
         (delay,) = policy_state
         state_qvalues, gradients = self.action_values_gradients(observation, (delay,))
         if epsilon and self.rng.random() < epsilon:
-            option = self.rng.integers(0, self.delay_options_mapping[delay])
+            option = self.rng.integers(0, self.delay_num_options_mapping[delay])
         else:
             option = self.rng.choice(
                 np.flatnonzero(state_qvalues == state_qvalues.max())
@@ -406,12 +437,12 @@ class OptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
         # observations = [observation] * len(actions)
         (delay,) = actions
         # repeat state m times
-        options_m = self.options_m[delay]
+        options_matrix = self.delay_options_matrix_mapping[delay]
         state_m = np.tile(
-            self.feat_transform.transform(observation, 0), (options_m.shape[0], 1)
+            self.feat_transform.transform(observation, 0), (options_matrix.shape[0], 1)
         )
         # get option representations
-        features_m = np.concatenate([state_m, options_m], axis=1)
+        features_m = np.concatenate([state_m, options_matrix], axis=1)
         return np.dot(features_m, self.weights), features_m
 
     def update(self, scaled_gradients):
