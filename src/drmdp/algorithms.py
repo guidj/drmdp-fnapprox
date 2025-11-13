@@ -77,7 +77,7 @@ class SemigradientSARSAFnApprox(FnApproxAlgorithm):
                         * (reward - state_qvalues[policy_step.action])
                         * gradients[policy_step.action]
                     )
-                    self.policy.update(scaled_gradients)
+                    self.policy.step(policy_step.action, scaled_gradients)
                     break
 
                 next_policy_step = self.policy.action(next_obs, epsilon=self.epsilon)
@@ -94,7 +94,7 @@ class SemigradientSARSAFnApprox(FnApproxAlgorithm):
                     )
                     * gradients[policy_step.action]
                 )
-                self.policy.update(scaled_gradients)
+                self.policy.step(policy_step.action, scaled_gradients)
                 obs = next_obs
                 policy_step = next_policy_step
                 state_qvalues = next_state_qvalues
@@ -127,8 +127,10 @@ class LinearFnApproxPolicy(core.PyValueFnPolicy):
             )
         super().__init__(action_space, emit_log_probability, seed)
         self.feat_transform = feat_transform
-        self.weights = np.zeros(feat_transform.output_shape, dtype=np.float64)
         self.actions = tuple(range(action_space.n))
+        self.weights = np.zeros(
+            (action_space.n, feat_transform.output_shape), dtype=np.float64
+        )
 
     def get_initial_state(self, batch_size=None):
         del batch_size
@@ -158,10 +160,10 @@ class LinearFnApproxPolicy(core.PyValueFnPolicy):
     def action_values_gradients(self, observation, actions):
         observations = [observation] * len(actions)
         state_action_m = self.feat_transform.batch_transform(observations, actions)
-        return np.dot(state_action_m, self.weights), state_action_m
+        return np.sum(self.weights * state_action_m, axis=1), state_action_m
 
-    def update(self, scaled_gradients):
-        self.weights += scaled_gradients
+    def step(self, action, scaled_gradients):
+        self.weights[action] += scaled_gradients
 
     @property
     def model(self):
@@ -182,8 +184,10 @@ class RandomFnApproxPolicy(core.PyValueFnPolicy):
             )
         super().__init__(action_space, emit_log_probability, seed)
         self.feat_transform = feat_transform
-        self.weights = np.zeros(feat_transform.output_shape, dtype=np.float64)
         self.actions = tuple(range(action_space.n))
+        self.weights = np.zeros(
+            (action_space.n, feat_transform.output_shape), dtype=np.float64
+        )
 
     def get_initial_state(self, batch_size=None):
         del batch_size
@@ -207,10 +211,10 @@ class RandomFnApproxPolicy(core.PyValueFnPolicy):
     def action_values_gradients(self, observation, actions):
         observations = [observation] * len(actions)
         state_action_m = self.feat_transform.batch_transform(observations, actions)
-        return np.dot(state_action_m, self.weights), state_action_m
+        return np.sum(self.weights * state_action_m, axis=1), state_action_m
 
-    def update(self, scaled_gradients):
-        self.weights += scaled_gradients
+    def step(self, action, scaled_gradients):
+        self.weights[action] += scaled_gradients
 
     @property
     def model(self):
@@ -271,7 +275,7 @@ class OptionsSemigradientSARSAFnApprox(FnApproxAlgorithm):
                                 * (reward - state_qvalues[policy_step.action])
                                 * gradients[policy_step.action]
                             )
-                            self.policy.update(scaled_gradients)
+                            self.policy.step(policy_step.action, scaled_gradients)
                         break
                 if term or trunc:
                     break
@@ -294,7 +298,7 @@ class OptionsSemigradientSARSAFnApprox(FnApproxAlgorithm):
                     )
                     * gradients[policy_step.action]
                 )
-                self.policy.update(scaled_gradients)
+                self.policy.step(policy_step.action, scaled_gradients)
                 obs = next_obs
                 policy_step = next_policy_step
                 state_qvalues = next_state_qvalues
@@ -445,7 +449,8 @@ class OptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
         features_m = np.concatenate([state_m, options_matrix], axis=1)
         return np.dot(features_m, self.weights), features_m
 
-    def update(self, scaled_gradients):
+    def step(self, action, scaled_gradients):
+        del action
         self.weights += scaled_gradients
 
     @property
@@ -550,7 +555,8 @@ class SingleActionOptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
         features_m = np.concatenate([state_m, options_m], axis=1)
         return np.dot(features_m, self.weights), features_m
 
-    def update(self, scaled_gradients):
+    def step(self, action, scaled_gradients):
+        del action
         self.weights += scaled_gradients
 
     @property
@@ -605,7 +611,7 @@ class DropMissingSemigradientSARSAFnApprox(FnApproxAlgorithm):
                             * (reward - state_qvalues[policy_step.action])
                             * gradients[policy_step.action]
                         )
-                        self.policy.update(scaled_gradients)
+                        self.policy.step(policy_step.action, scaled_gradients)
                     break
 
                 next_policy_step = self.policy.action(next_obs, epsilon=self.epsilon)
@@ -623,7 +629,7 @@ class DropMissingSemigradientSARSAFnApprox(FnApproxAlgorithm):
                         )
                         * gradients[policy_step.action]
                     )
-                    self.policy.update(scaled_gradients)
+                    self.policy.step(policy_step.action, scaled_gradients)
                 obs = next_obs
                 policy_step = next_policy_step
                 state_qvalues = next_state_qvalues
