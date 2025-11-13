@@ -195,12 +195,10 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             + least_specs(
                 attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "scale", "args": None}],
-                impute_value=0,
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "scale", "args": None}],
-                impute_value=0,
             ),
             "epochs": 1,
         },
@@ -218,12 +216,10 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             + least_specs(
                 attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "scale", "args": None}],
-                impute_value=0,
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "scale", "args": None}],
-                impute_value=0,
             ),
             "epochs": 1,
         },
@@ -241,12 +237,10 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             + least_specs(
                 attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "scale", "args": None}],
-                impute_value=2,
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "scale", "args": None}],
-                impute_value=2,
             ),
             "epochs": 1,
         },
@@ -264,12 +258,10 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             + least_specs(
                 attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "scale", "args": None}],
-                impute_value=24,
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "scale", "args": None}],
-                impute_value=24,
             ),
             "epochs": 1,
         },
@@ -287,12 +279,10 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             + least_specs(
                 attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "scale", "args": None}],
-                impute_value=0,
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "scale", "args": None}],
-                impute_value=0,
             ),
             "epochs": 1,
         },
@@ -310,12 +300,10 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             + least_specs(
                 attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "scale", "args": None}],
-                impute_value=1,
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "scale", "args": None}],
-                impute_value=1,
             ),
             "epochs": 1,
         },
