@@ -191,7 +191,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 "emit_state": False,
             },
             "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 4}}],
-            "problem_specs": common_problem_specs(impute_value=0)
+            "problem_specs": common_problem_specs()
             + least_specs(
                 attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "scale", "args": None}],
@@ -212,7 +212,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 "emit_state": False,
             },
             "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
-            "problem_specs": common_problem_specs(impute_value=0)
+            "problem_specs": common_problem_specs()
             + least_specs(
                 attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "scale", "args": None}],
@@ -233,7 +233,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 "emit_state": False,
             },
             "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 3}}],
-            "problem_specs": common_problem_specs(impute_value=2)
+            "problem_specs": common_problem_specs()
             + least_specs(
                 attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "scale", "args": None}],
@@ -254,7 +254,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 "emit_state": True,
             },
             "feats_specs": [{"name": "scale", "args": None}],
-            "problem_specs": common_problem_specs(impute_value=24)
+            "problem_specs": common_problem_specs(4)
             + least_specs(
                 attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "scale", "args": None}],
@@ -275,7 +275,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 "emit_state": False,
             },
             "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
-            "problem_specs": common_problem_specs(impute_value=0)
+            "problem_specs": common_problem_specs()
             + least_specs(
                 attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "scale", "args": None}],
@@ -296,7 +296,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 "emit_state": True,
             },
             "feats_specs": [{"name": "scale", "args": None}],
-            "problem_specs": common_problem_specs(impute_value=1)
+            "problem_specs": common_problem_specs()
             + least_specs(
                 attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "scale", "args": None}],
