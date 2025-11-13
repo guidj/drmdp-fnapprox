@@ -389,10 +389,11 @@ class ImputeMissingRewardWrapper(gym.RewardWrapper, SupportsName):
     def __init__(self, env: gym.Env, impute_value: float):
         super().__init__(env)
         self.impute_value = float(impute_value)
-        self.mean_estimator = optsol.StreamingMean()
 
     def reward(self, reward):
-        return self.mean_estimator.add(reward or self.impute_value)
+        if reward is None:
+            return self.impute_value
+        return reward
 
 
 class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
