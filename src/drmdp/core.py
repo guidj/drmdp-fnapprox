@@ -102,7 +102,7 @@ class PyValueFnPolicy(PyPolicy):
         """
 
     @abc.abstractmethod
-    def update(self, scaled_gradients):
+    def step(self, action: ActType, scaled_gradients):
         """
         Updates the policy's value
         """

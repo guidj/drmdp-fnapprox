@@ -9,11 +9,13 @@ import ray.data
 
 MAPPERS_NAMES = {
     "identity": "FR",
-    "zero-impute": "IMR",
-    "least-lfa": "L-TDD",
-    "bayes-least-lfa": "L-TDD[B]",
+    "impute-missing": "IMR",
     # backwards compatibility
-    "least-bayes-lfa": "L-TDD[B]",
+    "zero-impute": "IMR",
+    "least-lfa": "BLADE-TD[N-B]",
+    "bayes-least-lfa": "BLADE-TD",
+    # backwards compatibility
+    "least-bayes-lfa": "BLADE-TD",
     "cvlps": "L-TDD[CV]",
     "recurring-cvlps": "L-TDD[CV-R]",
     "discrete-least-lfa": "LEAST",
@@ -25,6 +27,8 @@ POLICY_TYPES = {
     "options": "OP-A",
     "single-action-options": "OP-S",
 }
+
+ORDERED_METHODS = ["BLADE-TD", "BLADE-TD[N-B]", "IMR", "OP-A", "OP-S", "DMR", "FR"]
 
 
 def collection_traj_data(env: gym.Env, steps: int, seed: Optional[int] = None):
@@ -73,7 +77,7 @@ def process_data(df_raw):
             return meta["reward_mapper"]
 
     def filter_method(method):
-        return method not in (["L-TDD", "L-TDD[CV]", "L-TDD[CV-R]", "LEAST", "OP-S"])
+        return method not in (["L-TDD[CV]", "L-TDD[CV-R]", "LEAST", "OP-S"])
 
     df_proc = copy.deepcopy(df_raw)
     df_proc["meta"] = df_proc["meta"].apply(simplify_meta)

@@ -261,7 +261,7 @@ def wrap(env: gym.Env, wrapper: Optional[str] = None, **kwargs):
     """
     if wrapper is None:
         return env
-    if wrapper == constants.RANDOM:
+    if wrapper == constants.RANDOM_VEC:
         enc_size = kwargs["enc_size"]
         return RandomBinaryObsWrapper(env, enc_size=enc_size)
     if wrapper == constants.SCALE:

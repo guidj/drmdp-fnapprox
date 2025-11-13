@@ -381,20 +381,18 @@ class DelayedRewardWrapper(gym.Wrapper, SupportsName):
         }
 
 
-class ZeroImputeMissingRewardWrapper(gym.RewardWrapper, SupportsName):
+class ImputeMissingRewardWrapper(gym.RewardWrapper, SupportsName):
     """
     Missing rewards (`None`) are replaced with zero.
     """
 
-    def __init__(
-        self,
-        env: gym.Env,
-    ):
+    def __init__(self, env: gym.Env, impute_value: float):
         super().__init__(env)
+        self.impute_value = float(impute_value)
 
     def reward(self, reward):
         if reward is None:
-            return 0.0
+            return self.impute_value
         return reward
 
 
@@ -417,6 +415,7 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         attempt_estimation_episode: int,
         estimation_buffer_mult: Optional[int] = None,
         use_bias: bool = False,
+        impute_value: float = 0.0,
     ):
         super().__init__(env)
         if not isinstance(obs_encoding_wrapper.observation_space, gym.spaces.Discrete):
@@ -431,6 +430,7 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self.attempt_estimation_episode = attempt_estimation_episode
         self.estimation_buffer_mult = estimation_buffer_mult
         self.use_bias = use_bias
+        self.impute_value = impute_value
 
         self.episodes = 0
         self.nstates = self.obs_wrapper.observation_space.n
@@ -439,7 +439,7 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self.weights = None
         self._obs_feats = None
         self._segment_features = None
-        self.estimation_meta = {"use_bias": self.use_bias}
+        self.estimation_meta = {"use_bias": self.use_bias, "snapshots": []}
         self.rng = np.random.default_rng()
         self.est_buffer = DataBuffer(
             max_capacity=self.mdim * self.estimation_buffer_mult
@@ -471,8 +471,8 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
                 # reset for the next segment
                 self._segment_features = np.zeros(shape=(self.mdim))
             else:
-                # zero impute until rewards are estimated
-                reward = 0.0
+                # impute until rewards are estimated
+                reward = self.impute_value
             est_state = OptState.UNSOLVED
 
         if term or trunc:
@@ -546,11 +546,17 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
             error = metrics.rmse(
                 v_pred=np.dot(matrix, self.weights), v_true=rewards, axis=0
             )
-            self.estimation_meta["sample"] = {"size": nexamples}
-            self.estimation_meta["error"] = {"rmse": error}
-            self.estimation_meta["estimate"] = {
-                "weights": self.weights.tolist(),
+            snapshot = {
+                "sample": {
+                    "size": nexamples,
+                    "factors_rank": optsol.matrix_factors_rank(matrix),
+                },
+                "error": {"rmse": error},
+                "estimate": {
+                    "weights": self.weights.tolist(),
+                },
             }
+            self.estimation_meta["snapshots"].append(snapshot)
             logging.info(
                 "%s - Estimated rewards for %s. RMSE: %f; No. Samples: %d",
                 self.get_name(),
@@ -579,6 +585,7 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         attempt_estimation_episode: int,
         estimation_buffer_mult: Optional[int] = None,
         use_bias: bool = False,
+        impute_value: float = 0.0,
         use_next_state: bool = True,
         drop_tsc: Sequence[int] = tuple(),
         check_factors: bool = False,
@@ -599,15 +606,14 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self.attempt_estimation_episode = attempt_estimation_episode
         self.estimation_buffer_mult = estimation_buffer_mult
         self.use_bias = use_bias
+        self.impute_value = impute_value
         self.use_next_state = use_next_state
         self.drop_tsc = drop_tsc
         self.check_factors = check_factors
 
         self.episodes = 0
         self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
-        self.mdim = self.obs_dim * self.obs_wrapper.action_space.n + (
-            self.obs_dim if self.use_next_state else 0
-        )
+        self.mdim = self.obs_dim * (2 if self.use_next_state else 1)
         self.weights = None
         self._obs_feats = None
         self._segment_features = None
@@ -616,6 +622,7 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
             "use_next_state": self.use_next_state,
             "drop_tsc": self.drop_tsc,
             "check_factors": self.check_factors,
+            "snapshots": [],
         }
         self.rng = np.random.default_rng()
         self.est_buffer = DataBuffer(
@@ -629,10 +636,7 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         next_obs_feats = self.obs_wrapper.observation(next_obs)
         # Add s to action-specific columns
         # and s' to the last columns.
-        start_index = action * self.obs_dim
-        self._segment_features[start_index : start_index + self.obs_dim] += (
-            self._obs_feats
-        )
+        self._segment_features[: self.obs_dim] += self._obs_feats
         if self.use_next_state:
             self._segment_features[-self.obs_dim :] += next_obs_feats
 
@@ -653,8 +657,8 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
                 # reset for the next segment
                 self._segment_features = np.zeros(shape=(self.mdim))
             else:
-                # zero impute until rewards are estimated
-                reward = 0.0
+                # impute until rewards are estimated
+                reward = self.impute_value
             est_state = OptState.UNSOLVED
 
         if term or trunc:
@@ -781,11 +785,17 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
                 weights = weights_matrix.flatten()
 
             self.weights = weights
-            self.estimation_meta["sample"] = {"size": nexamples}
-            self.estimation_meta["error"] = {"rmse": error}
-            self.estimation_meta["estimate"] = {
-                "weights": self.weights.tolist(),
+            snapshot = {
+                "sample": {
+                    "size": nexamples,
+                    "factors_rank": optsol.matrix_factors_rank(matrix),
+                },
+                "error": {"rmse": error},
+                "estimate": {
+                    "weights": self.weights.tolist(),
+                },
             }
+            self.estimation_meta["snapshots"].append(snapshot)
             logging.info(
                 "%s - Estimated rewards for %s. RMSE: %f; No. Samples: %d",
                 self.get_name(),
@@ -818,6 +828,7 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         init_attempt_estimation_episode: int = 10,
         estimation_buffer_mult: Optional[int] = None,
         use_bias: bool = False,
+        impute_value: float = 0.0,
         use_next_state: bool = True,
         drop_tsc: Sequence[int] = tuple(),
         check_factors: bool = False,
@@ -836,6 +847,7 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self.init_attempt_estimation_episode = init_attempt_estimation_episode
         self.estimation_buffer_mult = estimation_buffer_mult
         self.use_bias = use_bias
+        self.impute_value = impute_value
         self.use_next_state = use_next_state
         self.drop_tsc = drop_tsc
         self.check_factors = check_factors
@@ -848,9 +860,7 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self.posterior_updates = 0
 
         self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
-        self.mdim = self.obs_dim * self.obs_wrapper.action_space.n + (
-            self.obs_dim if self.use_next_state else 0
-        )
+        self.mdim = self.obs_dim * (2 if self.use_next_state else 1)
         self.mv_normal_rewards: Optional[optsol.MultivariateNormal] = None
         self._obs_feats = None
         self._segment_features = None
@@ -859,6 +869,7 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
             "use_next_state": self.use_next_state,
             "drop_tsc": self.drop_tsc,
             "check_factors": self.check_factors,
+            "snapshots": [],
         }
         self.est_buffer = DataBuffer(
             max_capacity=self.mdim * self.estimation_buffer_mult
@@ -872,9 +883,10 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         next_obs_feats = self.obs_wrapper.observation(next_obs)
         # Add s to action-specific columns
         # and s' to the last columns.
+        # We use a separate vector to make predictions
+        # because we continuously collect aggregate data.
         step_features = np.zeros(shape=(self.mdim))
-        start_index = action * self.obs_dim
-        step_features[start_index : start_index + self.obs_dim] += self._obs_feats
+        step_features[: self.obs_dim] += self._obs_feats
         if self.use_next_state:
             step_features[-self.obs_dim :] += next_obs_feats
         self._segment_features += step_features
@@ -894,9 +906,9 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
             reward = np.dot(feats, self.mv_normal_rewards.mean)
             est_state = OptState.SOLVED
         else:
-            # Zero impute until rewards are estimated
+            # impute until rewards are estimated
             if info["segment_step"] != info["delay"] - 1:
-                reward = 0.0
+                reward = self.impute_value
             # else, use aggregate reward
             est_state = OptState.UNSOLVED
 
@@ -1052,11 +1064,18 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
                     mv_normal = dataclasses.replace(mv_normal, mean=weights)
 
                 self.mv_normal_rewards = mv_normal
-                self.estimation_meta["sample"] = {"size": nexamples}
-                self.estimation_meta["error"] = {"rmse": error}
-                self.estimation_meta["estimate"] = {
-                    "weights": self.mv_normal_rewards.mean.tolist(),
+                snapshot = {
+                    "sample": {
+                        "size": nexamples,
+                        "factors_rank": optsol.matrix_factors_rank(matrix),
+                    },
+                    "error": {"rmse": error},
+                    "estimate": {
+                        "weights": self.mv_normal_rewards.mean.tolist(),
+                    },
                 }
+                self.estimation_meta["snapshots"].append(snapshot)
+
                 logging.info(
                     "%s - %s rewards for %s. RMSE: %f; No. Samples: %d",
                     "Estimated" if self.posterior_updates == 0 else "Updated",
@@ -1094,6 +1113,7 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         attempt_estimation_episode: int,
         estimation_buffer_mult: Optional[int] = None,
         use_bias: bool = False,
+        impute_value: float = 0.0,
         constraints_buffer_limit: Optional[int] = None,
     ):
         super().__init__(env)
@@ -1109,15 +1129,16 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self.attempt_estimation_episode = attempt_estimation_episode
         self.estimation_buffer_mult = estimation_buffer_mult
         self.use_bias = use_bias
+        self.impute_value = impute_value
         self.constraints_buffer_limit = constraints_buffer_limit
 
         self.episodes = 0
         self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
-        self.mdim = self.obs_dim * self.obs_wrapper.action_space.n + self.obs_dim
+        self.mdim = self.obs_dim * 2
         self.weights = None
         self._obs_feats = None
         self._segment_features = None
-        self.estimation_meta = {"use_bias": self.use_bias}
+        self.estimation_meta = {"use_bias": self.use_bias, "snapshots": []}
         self.rng = np.random.default_rng()
         self.est_buffer = DataBuffer(
             max_capacity=self.mdim * self.estimation_buffer_mult
@@ -1131,10 +1152,7 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         next_obs_feats = self.obs_wrapper.observation(next_obs)
         # Add s to action-specific columns
         # and s' to the last columns.
-        start_index = action * self.obs_dim
-        self._segment_features[start_index : start_index + self.obs_dim] += (
-            self._obs_feats
-        )
+        self._segment_features[: self.obs_dim] += self._obs_feats
         self._segment_features[-self.obs_dim :] += next_obs_feats
 
         if self.weights is not None:
@@ -1154,25 +1172,19 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
                 # reset for the next segment
                 self._segment_features = np.zeros(shape=(self.mdim))
             else:
-                # zero impute until rewards are estimated
-                reward = 0.0
+                # impute until rewards are estimated
+                reward = self.impute_value
 
             est_state = OptState.UNSOLVED
 
         # Add constraint for terminal state
         # if there is no estimate.
         if term and self.weights is None:
-            # The action is not relevant here,
-            # since every action leads to the same
-            # transition.
-            # But we represent every action for completeness.
-            for ts_action in range(self.obs_wrapper.action_space.n):
-                term_state = np.zeros(shape=(self.mdim))
-                ts_idx = ts_action * self.obs_dim
-                # To simplify the problem for the convex solver
-                # we encode the (S,A) - not S'
-                term_state[ts_idx : ts_idx + self.obs_dim] += next_obs_feats
-                self.tst_buffer.add(term_state)
+            term_state = np.zeros(shape=(self.mdim))
+            # To simplify the problem for the convex solver
+            # we encode the (S,A) - not S'
+            term_state[: self.obs_dim] += next_obs_feats
+            self.tst_buffer.add(term_state)
 
         if term or trunc:
             self.episodes += 1
@@ -1264,12 +1276,19 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
             error = metrics.rmse(
                 v_pred=np.dot(matrix, self.weights), v_true=rewards, axis=0
             )
-            self.estimation_meta["sample"] = {"size": nexamples}
-            self.estimation_meta["error"] = {"rmse": error}
-            self.estimation_meta["estimate"] = {
-                "weights": self.weights.tolist(),
-                "constraints": len(term_states),
+            snapshot = {
+                "sample": {
+                    "size": nexamples,
+                    "factors_rank": optsol.matrix_factors_rank(matrix),
+                },
+                "error": {"rmse": error},
+                "estimate": {
+                    "weights": self.weights.tolist(),
+                    "constraints": len(term_states),
+                },
             }
+            self.estimation_meta["snapshots"].append(snapshot)
+
             logging.info(
                 "%s - Estimated rewards for %s. RMSE: %f; No. Samples: %d, # Constraints: %d",
                 self.get_name(),
@@ -1304,6 +1323,7 @@ class RecurringConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         init_attempt_estimation_episode: int = 10,
         estimation_buffer_mult: Optional[int] = None,
         use_bias: bool = False,
+        impute_value: float = 0.0,
         constraints_buffer_limit: Optional[int] = None,
     ):
         super().__init__(env)
@@ -1320,6 +1340,7 @@ class RecurringConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self.init_attempt_estimation_episode = init_attempt_estimation_episode
         self.estimation_buffer_mult = estimation_buffer_mult
         self.use_bias = use_bias
+        self.impute_value = impute_value
 
         self.constraints_buffer_limit = constraints_buffer_limit
 
@@ -1331,11 +1352,14 @@ class RecurringConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self.posterior_updates = 0
 
         self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
-        self.mdim = self.obs_dim * obs_encoding_wrapper.action_space.n + self.obs_dim
+        self.mdim = self.obs_dim * 2
         self.weights: Optional[np.ndarray] = None
         self._obs_feats = None
         self._segment_features = None
-        self.estimation_meta: Dict[str, Any] = {"use_bias": self.use_bias}
+        self.estimation_meta: Dict[str, Any] = {
+            "use_bias": self.use_bias,
+            "snapshots": [],
+        }
         self.rng = np.random.default_rng()
         self.est_buffer = DataBuffer(
             max_capacity=self.mdim * self.estimation_buffer_mult
@@ -1352,8 +1376,7 @@ class RecurringConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         # Add s to action-specific columns
         # and s' to the last columns.
         step_features = np.zeros(shape=(self.mdim))
-        start_index = action * self.obs_dim
-        step_features[start_index : start_index + self.obs_dim] += self._obs_feats
+        step_features[: self.obs_dim] += self._obs_feats
         step_features[-self.obs_dim :] += next_obs_feats
         self._segment_features += step_features
 
@@ -1372,25 +1395,19 @@ class RecurringConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
             reward = np.dot(feats, self.weights)
             est_state = OptState.SOLVED
         else:
-            # zero impute until rewards are estimated
+            # impute until rewards are estimated
             if info["segment_step"] != info["delay"] - 1:
-                reward = 0.0
+                reward = self.impute_value
             # else, use aggregate reward
             est_state = OptState.UNSOLVED
 
         # Add constraint for terminal state.
         if term:
-            # The action is not relevant here,
-            # since every action leads to the same
-            # transition.
-            # But we represent every action for completeness.
-            for ts_action in range(self.obs_wrapper.action_space.n):
-                term_state = np.zeros(shape=(self.mdim))
-                ts_idx = ts_action * self.obs_dim
-                # To simplify the problem for the convex solver
-                # we encode the (S,A) - not S'
-                term_state[ts_idx : ts_idx + self.obs_dim] += next_obs_feats
-                self.tst_buffer.add(term_state)
+            term_state = np.zeros(shape=(self.mdim))
+            # To simplify the problem for the convex solver
+            # we encode the (S,A) - not S'
+            term_state[: self.obs_dim] += next_obs_feats
+            self.tst_buffer.add(term_state)
 
         if term or trunc:
             self.episodes += 1
@@ -1505,12 +1522,20 @@ class RecurringConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
                 v_true=rewards,
                 axis=0,
             )
-            self.estimation_meta["sample"] = {"size": nexamples}
-            self.estimation_meta["error"] = {"rmse": error}
-            self.estimation_meta["estimate"] = {
-                "weights": self.weights.tolist(),
-                "constraints": len(term_states),
+
+            snapshot = {
+                "sample": {
+                    "size": nexamples,
+                    "factors_rank": optsol.matrix_factors_rank(matrix),
+                },
+                "error": {"rmse": error},
+                "estimate": {
+                    "weights": self.weights.tolist(),
+                    "constraints": len(term_states),
+                },
             }
+            self.estimation_meta["snapshots"].append(snapshot)
+
             logging.info(
                 "%s - %s rewards for %s. RMSE: %f; No. Samples: %d, # Constraints: %d",
                 "Estimated" if self.posterior_updates == 0 else "Updated",

@@ -3,8 +3,8 @@ from typing import Any, Mapping, Optional, Sequence
 
 from drmdp import mathutils
 
-EPSILON = 0.2
-MAX_STEPS_PER_EPISODE_GEM = 200
+EPSILON = 0.1
+MAX_STEPS_PER_EPISODE_GEM = 10_000
 LEARNING_RATE_SPEC = {
     "name": "constant",
     "args": {"initial_lr": 0.01},
@@ -18,40 +18,7 @@ MINES_GW_GRID = [
     "sxxxxxxxxxxg",
 ]
 MAX_OPTIONS_DELAY = 4
-
-
-def discrete_least_specs(
-    attempt_estimation_episodes: Sequence[int],
-    feats_specs: Sequence[Mapping[str, Any]],
-    delays: Sequence[int] = (2, 4, 6, 8),
-    discounts: Sequence[float] = (1.0, 0.99),
-):
-    """
-    Discretised Least Squares specs.
-    """
-    specs = []
-    for delay, gamma, feats_spec, attempt_estimation_episode in itertools.product(
-        delays, discounts, feats_specs, attempt_estimation_episodes
-    ):
-        specs.append(
-            {
-                "policy_type": "markovian",
-                "reward_mapper": {
-                    "name": "discrete-least-lfa",
-                    "args": {
-                        "attempt_estimation_episode": attempt_estimation_episode,
-                        "feats_spec": feats_spec,
-                        "use_bias": False,
-                        "estimation_buffer_mult": 25,
-                    },
-                },
-                "delay_config": poisson_delay_config(delay),
-                "epsilon": EPSILON,
-                "gamma": gamma,
-                "learning_rate_config": LEARNING_RATE_SPEC,
-            },
-        )
-    return tuple(specs)
+DEFAULT_IMPUTE_VALUE = 0
 
 
 def least_specs(
@@ -62,6 +29,7 @@ def least_specs(
     use_next_state: bool = True,
     drop_tsc: Sequence[int] = tuple(),
     check_factors: bool = False,
+    impute_value: float = DEFAULT_IMPUTE_VALUE,
 ) -> Sequence[Mapping[str, Any]]:
     """
     Least Squares specs.
@@ -79,6 +47,7 @@ def least_specs(
                         "attempt_estimation_episode": attempt_estimation_episode,
                         "feats_spec": feats_spec,
                         "use_bias": False,
+                        "impute_value": impute_value,
                         "estimation_buffer_mult": 25,
                         "use_next_state": use_next_state,
                         "drop_tsc": drop_tsc,
@@ -99,6 +68,7 @@ def bayes_least_specs(
     feats_specs: Sequence[Mapping[str, Any]],
     delays: Sequence[int] = (2, 4, 6, 8),
     discounts: Sequence[float] = (1.0, 0.99),
+    impute_value: float = DEFAULT_IMPUTE_VALUE,
 ) -> Sequence[Mapping[str, Any]]:
     """
     Bayesian linear regression specs.
@@ -116,77 +86,8 @@ def bayes_least_specs(
                         "init_attempt_estimation_episode": init_attempt_estimation_episode,
                         "feats_spec": feats_spec,
                         "use_bias": False,
+                        "impute_value": impute_value,
                         "estimation_buffer_mult": 25,
-                    },
-                },
-                "delay_config": poisson_delay_config(delay),
-                "epsilon": EPSILON,
-                "gamma": gamma,
-                "learning_rate_config": LEARNING_RATE_SPEC,
-            },
-        )
-    return tuple(specs)
-
-
-def cvlps_specs(
-    attempt_estimation_episodes: Sequence[int],
-    feats_specs: Sequence[Mapping[str, Any]],
-    delays: Sequence[int] = (2, 4, 6, 8),
-    discounts: Sequence[float] = (1.0, 0.99),
-) -> Sequence[Mapping[str, Any]]:
-    """
-    Constrained optimisation specs.
-    """
-    specs = []
-    for delay, gamma, feats_spec, attempt_estimation_episode in itertools.product(
-        delays, discounts, feats_specs, attempt_estimation_episodes
-    ):
-        specs.append(
-            {
-                "policy_type": "markovian",
-                "reward_mapper": {
-                    "name": "cvlps",
-                    "args": {
-                        "attempt_estimation_episode": attempt_estimation_episode,
-                        "feats_spec": feats_spec,
-                        "use_bias": False,
-                        "estimation_buffer_mult": 25,
-                        "constraints_buffer_limit": 100,
-                    },
-                },
-                "delay_config": poisson_delay_config(delay),
-                "epsilon": EPSILON,
-                "gamma": gamma,
-                "learning_rate_config": LEARNING_RATE_SPEC,
-            },
-        )
-    return tuple(specs)
-
-
-def recurring_cvlps(
-    init_attempt_estimation_episodes: Sequence[int],
-    feats_specs: Sequence[Mapping[str, Any]],
-    delays: Sequence[int] = (2, 4, 6, 8),
-    discounts: Sequence[float] = (1.0, 0.99),
-):
-    """
-    Recurring convex linear estimation specs.
-    """
-    specs = []
-    for delay, gamma, feats_spec, init_attempt_estimation_episode in itertools.product(
-        delays, discounts, feats_specs, init_attempt_estimation_episodes
-    ):
-        specs.append(
-            {
-                "policy_type": "markovian",
-                "reward_mapper": {
-                    "name": "recurring-cvlps",
-                    "args": {
-                        "init_attempt_estimation_episode": init_attempt_estimation_episode,
-                        "feats_spec": feats_spec,
-                        "use_bias": False,
-                        "estimation_buffer_mult": 25,
-                        "constraints_buffer_limit": 100,
                     },
                 },
                 "delay_config": poisson_delay_config(delay),
@@ -199,7 +100,9 @@ def recurring_cvlps(
 
 
 def common_problem_specs(
-    delays: Sequence[int] = (2, 4, 6, 8), discounts: Sequence[float] = (1.0, 0.99)
+    delays: Sequence[int] = (2, 4, 6, 8),
+    discounts: Sequence[float] = (1.0, 0.99),
+    impute_value: float = DEFAULT_IMPUTE_VALUE,
 ):
     """
     Specs that apply to every env.
@@ -230,7 +133,10 @@ def common_problem_specs(
                     },
                     {
                         "policy_type": "markovian",
-                        "reward_mapper": {"name": "zero-impute", "args": None},
+                        "reward_mapper": {
+                            "name": "impute-missing",
+                            "args": {"impute_value": impute_value},
+                        },
                         "delay_config": poisson_delay_config(delay),
                         "epsilon": EPSILON,
                         "gamma": gamma,
@@ -280,12 +186,12 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             "args": {
                 "reward_fn": "pos-enf",
                 "penalty_gamma": 1.0,
-                "constraint_violation_reward": 0.0,
+                "constraint_violation_reward": -10.0,
                 "max_episode_steps": MAX_STEPS_PER_EPISODE_GEM,
                 "emit_state": False,
             },
             "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 4}}],
-            "problem_specs": common_problem_specs()
+            "problem_specs": common_problem_specs(impute_value=0)
             + least_specs(
                 attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "scale", "args": None}],
@@ -301,12 +207,12 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             "args": {
                 "reward_fn": "pos-enf",
                 "penalty_gamma": 1.0,
-                "constraint_violation_reward": 0.0,
+                "constraint_violation_reward": -10.0,
                 "max_episode_steps": MAX_STEPS_PER_EPISODE_GEM,
                 "emit_state": False,
             },
             "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
-            "problem_specs": common_problem_specs()
+            "problem_specs": common_problem_specs(impute_value=0)
             + least_specs(
                 attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "scale", "args": None}],
@@ -322,12 +228,12 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             "args": {
                 "reward_fn": "pos-enf",
                 "penalty_gamma": 1.0,
-                "constraint_violation_reward": 0.0,
+                "constraint_violation_reward": -10.0,
                 "max_episode_steps": MAX_STEPS_PER_EPISODE_GEM,
                 "emit_state": False,
             },
             "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 3}}],
-            "problem_specs": common_problem_specs()
+            "problem_specs": common_problem_specs(impute_value=2)
             + least_specs(
                 attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "scale", "args": None}],
@@ -343,12 +249,12 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             "args": {
                 "reward_fn": "pos-enf",
                 "penalty_gamma": 1.0,
-                "constraint_violation_reward": 0.0,
+                "constraint_violation_reward": -10.0,
                 "max_episode_steps": MAX_STEPS_PER_EPISODE_GEM,
-                "emit_state": False,
+                "emit_state": True,
             },
             "feats_specs": [{"name": "scale", "args": None}],
-            "problem_specs": common_problem_specs()
+            "problem_specs": common_problem_specs(impute_value=24)
             + least_specs(
                 attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "scale", "args": None}],
@@ -364,12 +270,12 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             "args": {
                 "reward_fn": "pos-enf",
                 "penalty_gamma": 1.0,
-                "constraint_violation_reward": 0.0,
+                "constraint_violation_reward": -10.0,
                 "max_episode_steps": MAX_STEPS_PER_EPISODE_GEM,
                 "emit_state": False,
             },
             "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
-            "problem_specs": common_problem_specs()
+            "problem_specs": common_problem_specs(impute_value=0)
             + least_specs(
                 attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "scale", "args": None}],
@@ -385,12 +291,12 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             "args": {
                 "reward_fn": "pos-enf",
                 "penalty_gamma": 1.0,
-                "constraint_violation_reward": 0.0,
+                "constraint_violation_reward": -10.0,
                 "max_episode_steps": MAX_STEPS_PER_EPISODE_GEM,
-                "emit_state": False,
+                "emit_state": True,
             },
             "feats_specs": [{"name": "scale", "args": None}],
-            "problem_specs": common_problem_specs()
+            "problem_specs": common_problem_specs(impute_value=1)
             + least_specs(
                 attempt_estimation_episodes=(10,),
                 feats_specs=[{"name": "scale", "args": None}],

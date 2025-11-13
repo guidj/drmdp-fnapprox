@@ -1,6 +1,6 @@
 import copy
 import functools
-from typing import Optional
+from typing import Any, Optional
 
 import gym_electric_motor
 import gymnasium as gym
@@ -20,9 +20,9 @@ class StrictWeightedSumOfErrors(reward_functions.WeightedSumOfErrors):
     def __init__(
         self,
         penalty_gamma: Optional[float] = None,
-        reward_weights=None,
-        normed_reward_weights=False,
-        violation_reward=None,
+        reward_weights: Optional[Any] = None,
+        normed_reward_weights: bool = False,
+        violation_reward: Optional[float] = None,
     ):
         super().__init__(
             reward_weights,
@@ -53,9 +53,7 @@ class EarlyStopPenaltyWeightedSumOfErrors(reward_functions.WeightedSumOfErrors):
     """
 
     def __init__(
-        self,
-        reward_weights=None,
-        normed_reward_weights=False,
+        self, reward_weights: Optional[Any] = None, normed_reward_weights: bool = False
     ):
         super().__init__(
             reward_weights,
@@ -86,9 +84,9 @@ class PositiveEnforcementWeightedSumOfErrors(reward_functions.WeightedSumOfError
     def __init__(
         self,
         penalty_gamma: Optional[float] = None,
-        reward_weights=None,
-        normed_reward_weights=False,
-        violation_reward=None,
+        reward_weights: Optional[Any] = None,
+        normed_reward_weights: Optional[bool] = False,
+        violation_reward: Optional[float] = None,
     ):
         super().__init__(
             reward_weights,
@@ -197,28 +195,28 @@ class GemObsAsVectorWrapper(gym.ObservationWrapper):
 
     def observation(self, observation):
         prev_ref_state = copy.copy(self._prev_ref_state)
-        next_state, ref_state = observation
-        cv = self._cvfn(next_state)
+        current_phys_state, next_ref_state = observation
+        cv = self._cvfn(current_phys_state)
 
         if prev_ref_state is None:
-            prev_ref_state = ref_state
+            prev_ref_state = next_ref_state
 
         wrapped_next_state = np.concatenate(
             [
                 (
-                    abs(next_state[self._reference_state_mask] - prev_ref_state)
+                    abs(current_phys_state[self._reference_state_mask] - prev_ref_state)
                     / self._denom
                 )
                 ** self._expo
                 + self._bias,
-                next_state
+                current_phys_state
                 if self.emit_state
-                else next_state[self._reference_state_mask],
+                else current_phys_state[self._reference_state_mask],
                 # constraint violation + free variable
                 np.array([cv, 1.0]),
             ]
         )
-        self._prev_ref_state = ref_state
+        self._prev_ref_state = next_ref_state
         return wrapped_next_state
 
 

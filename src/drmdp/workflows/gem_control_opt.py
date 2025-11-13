@@ -84,6 +84,7 @@ def run_fn(job_spec: JobSpec):
     try:
         feats_spec_control(job_spec, task_id)
     except Exception as err:
+        logging.error("Task %s `%s` failed: %s", task_id, job_spec, err)
         raise RuntimeError(f"Task {task_id} `{job_spec}` failed") from err
     logging.info("Completed task %s: %s", task_id, job_spec)
     return task_id
