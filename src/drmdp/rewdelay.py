@@ -1180,17 +1180,11 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         # Add constraint for terminal state
         # if there is no estimate.
         if term and self.weights is None:
-            # The action is not relevant here,
-            # since every action leads to the same
-            # transition.
-            # But we represent every action for completeness.
-            for ts_action in range(self.obs_wrapper.action_space.n):
-                term_state = np.zeros(shape=(self.mdim))
-                ts_idx = ts_action * self.obs_dim
-                # To simplify the problem for the convex solver
-                # we encode the (S,A) - not S'
-                term_state[ts_idx : ts_idx + self.obs_dim] += next_obs_feats
-                self.tst_buffer.add(term_state)
+            term_state = np.zeros(shape=(self.mdim))
+            # To simplify the problem for the convex solver
+            # we encode the (S,A) - not S'
+            term_state[: self.obs_dim] += next_obs_feats
+            self.tst_buffer.add(term_state)
 
         if term or trunc:
             self.episodes += 1
@@ -1409,17 +1403,11 @@ class RecurringConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
 
         # Add constraint for terminal state.
         if term:
-            # The action is not relevant here,
-            # since every action leads to the same
-            # transition.
-            # But we represent every action for completeness.
-            for ts_action in range(self.obs_wrapper.action_space.n):
-                term_state = np.zeros(shape=(self.mdim))
-                ts_idx = ts_action * self.obs_dim
-                # To simplify the problem for the convex solver
-                # we encode the (S,A) - not S'
-                term_state[ts_idx : ts_idx + self.obs_dim] += next_obs_feats
-                self.tst_buffer.add(term_state)
+            term_state = np.zeros(shape=(self.mdim))
+            # To simplify the problem for the convex solver
+            # we encode the (S,A) - not S'
+            term_state[: self.obs_dim] += next_obs_feats
+            self.tst_buffer.add(term_state)
 
         if term or trunc:
             self.episodes += 1

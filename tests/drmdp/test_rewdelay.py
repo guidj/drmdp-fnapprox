@@ -57,8 +57,9 @@ def test_least_lfa_generative_reward_wrapper_init():
         env, obs_wrapper, attempt_estimation_episode=5
     )
 
+    assert wrapped
     assert wrapped.obs_dim == 2
-    assert wrapped.mdim == 8  # 2 * 3 + 2
+    assert wrapped.mdim == 4  # 2 * 2
     assert wrapped.weights is None
     assert wrapped.est_buffer.size() == 0
 
@@ -96,8 +97,8 @@ def test_least_lfa_generative_reward_wrapper_step():
     # After `attempt_estimation_episode` segments, should estimate rewards
     # but matrix isn't tall yet, so we force it after
     buffer = [
-        ([0.5, -0.5, 0.5, -0.5, 0.0, 0.0, 1.0, -1.0], 2.0),
-        ([0.5, -0.5, 0.0, 0.0, 0.5, -0.5, 1.0, -1.0], 2.0),
+        ([1.0, -1.0, 1.0, -1.0], 2.0),
+        ([1.0, -1.0, 1.0, -1.0], 2.0),
     ]
     assert wrapped.weights is None
     wrapped.estimate_rewards()
@@ -149,7 +150,7 @@ def test_convex_solver_generative_reward_wrapper_init():
     )
 
     assert wrapped.obs_dim == 2
-    assert wrapped.mdim == 8  # 2 * 3 + 2
+    assert wrapped.mdim == 4  # 2 * 2
     assert wrapped.weights is None
     assert wrapped.est_buffer.size() == 0
 
@@ -184,8 +185,8 @@ def test_convex_solver_generative_reward_wrapper_step():
     # After `attempt_estimation_episode` segments, should estimate rewards
     # but matrix isn't tall yet, so we force it later
     buffer = [
-        ([0.5, -0.5, 0.5, -0.5, 0.0, 0.0, 1.0, -1.0], 2.0),
-        ([0.5, -0.5, 0.0, 0.0, 0.5, -0.5, 1.0, -1.0], 2.0),
+        ([1.0, -1.0, 1.0, -1.0], 2.0),
+        ([1.0, -1.0, 1.0, -1.0], 2.0),
     ]
     assert wrapped.weights is None
     wrapped.estimate_rewards()
