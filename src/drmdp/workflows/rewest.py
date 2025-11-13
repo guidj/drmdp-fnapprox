@@ -588,6 +588,12 @@ def reward_estimation(job_spec: JobSpec):
                 np.mean(returns),
             )
         except Exception as err:
+            logging.error(
+                "Task %s, run %s failed: %s",
+                exp_instance.exp_id,
+                exp_instance.instance_id,
+                err,
+            )
             raise RuntimeError(
                 f"Task {exp_instance.exp_id}, run {exp_instance.instance_id} failed"
             ) from err
