@@ -63,6 +63,7 @@ def policy_control(exp_instance: core.ExperimentInstance):
         log_dir=exp_instance.run_config.output_dir, experiment_instance=exp_instance
     ) as exp_logger:
         returns = []
+        instance_id = f"{exp_instance.exp_id}_{exp_instance.instance_id}"
         try:
             for episode, snapshot in enumerate(results):
                 returns.append(snapshot.returns)
@@ -73,6 +74,12 @@ def policy_control(exp_instance: core.ExperimentInstance):
                         returns=np.mean(returns).item(),
                         info={},
                     )
+                    if exp_instance.model_dir:
+                        logger.save_model(
+                            snapshot.weights,
+                            name=f"weights_{episode}",
+                            model_dir=os.path.join(exp_instance.model_dir, instance_id),
+                        )
 
             logging.debug(
                 "\nReturns for run %d of %s:\n%s",
@@ -131,6 +138,7 @@ def generate_experiments_instances(
     use_seed: bool,
     output_dir: str,
     task_prefix: str,
+    model_dir: Optional[str],
 ) -> Iterator[core.ExperimentInstance]:
     """
     Parse experiments and creates experiment
@@ -158,6 +166,7 @@ def generate_experiments_instances(
                     ),
                 ),
                 context={"dummy": 0},
+                model_dir=model_dir,
             )
 
 

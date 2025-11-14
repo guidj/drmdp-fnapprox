@@ -175,6 +175,7 @@ class ExperimentInstance:
     experiment: Experiment
     run_config: RunConfig
     context: Optional[Mapping[str, Any]]
+    model_dir: Optional[str]
 
 
 class EnvMonitorWrapper(gym.Wrapper):
