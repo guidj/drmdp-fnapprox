@@ -646,6 +646,7 @@ def create_exp_instance(job_spec: JobSpec):
         ),
         run_config=run_config,
         context={},
+        export_model=False,
     )
 
 
