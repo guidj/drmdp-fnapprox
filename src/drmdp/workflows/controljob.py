@@ -28,6 +28,7 @@ class ControlPipelineArgs:
     log_episode_frequency: int
     task_prefix: str
     use_seed: bool
+    export_model: bool
     # ray args
     cluster_uri: Optional[str]
 
@@ -57,6 +58,7 @@ def create_tasks(
     task_prefix: str,
     log_episode_frequency: int,
     use_seed: bool,
+    export_model: bool,
 ) -> Sequence[core.ExperimentInstance]:
     """
     Runs numerical experiments on policy evaluation.
@@ -71,6 +73,7 @@ def create_tasks(
             use_seed=use_seed,
             output_dir=output_dir,
             task_prefix=task_prefix,
+            export_model=export_model,
         )
     )
     # shuffle tasks to balance workload
@@ -145,6 +148,7 @@ def main(args: ControlPipelineArgs):
         task_prefix=args.task_prefix,
         log_episode_frequency=args.log_episode_frequency,
         use_seed=args.use_seed,
+        export_model=args.export_model,
     )
 
     with ray.init(args.cluster_uri, runtime_env=ray_env) as context:
@@ -171,6 +175,9 @@ def parse_args() -> ControlPipelineArgs:
     arg_parser.add_argument("--log-episode-frequency", type=int, required=True)
     arg_parser.add_argument("--task-prefix", type=str, required=True)
     arg_parser.add_argument("--use-seed", action="store_true")
+    arg_parser.add_argument(
+        "--export-model", action=argparse.BooleanOptionalAction, default=False
+    )
     arg_parser.add_argument("--cluster-uri", type=str, default=None)
     known_args, unknown_args = arg_parser.parse_known_args()
     logging.info("Unknown args: %s", unknown_args)

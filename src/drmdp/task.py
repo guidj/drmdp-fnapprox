@@ -73,6 +73,13 @@ def policy_control(exp_instance: core.ExperimentInstance):
                         returns=np.mean(returns).item(),
                         info={},
                     )
+                    if exp_instance.export_model:
+                        export_model(
+                            snapshot.weights,
+                            snapshot=episode,
+                            max_snapshot=exp_instance.run_config.episodes_per_run,
+                            model_dir=exp_instance.run_config.output_dir,
+                        )
 
             logging.debug(
                 "\nReturns for run %d of %s:\n%s",
@@ -131,6 +138,7 @@ def generate_experiments_instances(
     use_seed: bool,
     output_dir: str,
     task_prefix: str,
+    export_model: bool,
 ) -> Iterator[core.ExperimentInstance]:
     """
     Parse experiments and creates experiment
@@ -158,6 +166,7 @@ def generate_experiments_instances(
                     ),
                 ),
                 context={"dummy": 0},
+                export_model=export_model,
             )
 
 
@@ -367,3 +376,12 @@ def create_algorithm(
         )
 
     raise ValueError(f"Unknown policy_type: {policy_type}")
+
+
+def export_model(weights: np.ndarray, snapshot: int, max_snapshot: int, model_dir: str):
+    ndigits = len(str(max_snapshot)) + 1
+    logger.save_model(
+        weights,
+        name=f"weights_{snapshot:0{ndigits}}",
+        model_dir=os.path.join(model_dir, "saved_model"),
+    )

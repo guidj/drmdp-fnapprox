@@ -384,6 +384,7 @@ def create_tasks(
             use_seed=use_seed,
             output_dir=output_dir,
             task_prefix=task_prefix,
+            export_model=False,
         )
     )
     # shuffle tasks to balance workload

@@ -16,6 +16,7 @@ from typing import (
     Type,
 )
 
+import numpy as np
 import tensorflow as tf
 
 from drmdp import core
@@ -124,3 +125,15 @@ def json_from_dict(
         return data
 
     return {key: go(value, level=0) for key, value in mapping.items()}
+
+
+def save_model(weights: np.ndarray, name: str, model_dir: str) -> None:
+    """
+    Saves a model to a given path.
+    """
+    name = name if name.endswith(".npz") else f"{name}.npz"
+    output_path = os.path.join(model_dir, name)
+    if not tf.io.gfile.exists(model_dir):
+        tf.io.gfile.makedirs(model_dir)
+    with tf.io.gfile.GFile(output_path, "wb") as writable:
+        np.save(writable, arr=weights, allow_pickle=False)
