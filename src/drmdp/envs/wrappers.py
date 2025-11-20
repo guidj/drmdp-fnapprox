@@ -49,6 +49,12 @@ class ScaleObsWrapper(gym.ObservationWrapper):
         self.num_actions = env.action_space.n
         self.obs_dim = np.size(self.obs_space.high)
 
+        self.observation_space = gym.spaces.Box(
+            high=np.ones_like(self.obs_space.high),
+            low=np.zeros_like(self.obs_space.high),
+            dtype=np.float64,
+        )
+
     def observation(self, observation: ObsType):
         obs_scaled_01 = (observation - self.obs_space.low) / (
             self.obs_space.high - self.obs_space.low
