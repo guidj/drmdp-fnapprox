@@ -45,19 +45,23 @@ class RandomBinaryObsWrapper(gym.ObservationWrapper):
 class ScaleObsWrapper(gym.ObservationWrapper):
     def __init__(self, env):
         super().__init__(env)
-        self.obs_space = env.observation_space
+        if not isinstance(env.observation_space, gym.spaces.Box):
+            raise ValueError(
+                f"Expected Box observation_space. Got: {env.observation_space}"
+            )
+
         self.num_actions = env.action_space.n
-        self.obs_dim = np.size(self.obs_space.high)
+        self.obs_dim = np.size(env.observation_space.high)
 
         self.observation_space = gym.spaces.Box(
-            high=np.ones_like(self.obs_space.high),
-            low=np.zeros_like(self.obs_space.high),
+            high=np.ones_like(env.observation_space.high),
+            low=np.zeros_like(env.observation_space.high),
             dtype=np.float64,
         )
 
     def observation(self, observation: ObsType):
-        obs_scaled_01 = (observation - self.obs_space.low) / (
-            self.obs_space.high - self.obs_space.low
+        obs_scaled_01 = (observation - self.env.observation_space.low) / (
+            self.env.observation_space.high - self.env.observation_space.low
         )
         return obs_scaled_01
 
