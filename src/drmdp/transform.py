@@ -112,6 +112,7 @@ class ScaleObservationFT(FTOp):
     """
 
     def __init__(self, input_space: ExampleSpace):
+        super().__init__()
         if not isinstance(input_space.observation_space, gym.spaces.Box):
             raise ValueError(f"Expected Box observation_space. Got: {input_space}")
 
@@ -121,7 +122,6 @@ class ScaleObservationFT(FTOp):
             observation_space=gym.spaces.Box(
                 low=np.zeros_like(input_space.observation_space.high),
                 high=np.ones_like(input_space.observation_space.high),
-                dtype=np.float64,
             ),
         )
         self._observation_ranges = (
@@ -151,6 +151,7 @@ class TileObservationActionFT(FTOp):
         num_tilings: Optional[int] = None,
         hash_dim: Optional[int] = None,
     ):
+        super().__init__()
         if not isinstance(input_space.observation_space, gym.spaces.Box):
             raise ValueError(
                 f"Expected Box observation_space. Got: {input_space.observation_space}"
@@ -231,6 +232,7 @@ class ActionSliceTileObservationActionFT(FTOp):
         num_tilings: Optional[int] = None,
         hash_dim: Optional[int] = None,
     ):
+        super().__init__()
         if not isinstance(input_space.observation_space, gym.spaces.Box):
             raise ValueError(
                 f"Expected Box observation_space. Got: {input_space.observation_space}"
@@ -305,6 +307,7 @@ class ActionSegmentedObservationFT(FTOp):
     """
 
     def __init__(self, input_space: ExampleSpace, flat: bool = True):
+        super().__init__()
         if not isinstance(input_space.observation_space, gym.spaces.Box):
             raise ValueError(f"Expected Box observation_space. Got: {input_space}")
         if not isinstance(input_space.action_space, gym.spaces.Discrete):
@@ -353,6 +356,7 @@ class DropObservationDimsFT(FTOp):
     def __init__(
         self, input_space: ExampleSpace, axis_dims: Mapping[int, Sequence[int]]
     ):
+        super().__init__()
         if not isinstance(input_space.observation_space, gym.spaces.Box):
             raise ValueError(f"Expected Box observation_space. Got: {input_space}")
 
@@ -386,6 +390,7 @@ class DropObservationDimsFT(FTOp):
 
 class OHEActionFT(FTOp):
     def __init__(self, input_space: ExampleSpace):
+        super().__init__()
         if not isinstance(input_space.action_space, gym.spaces.Discrete):
             raise ValueError(
                 f"Expected Discrete action_space. Got: {input_space.action_space}"
@@ -418,6 +423,7 @@ class ConcatObservationActionFT(FTOp):
     """
 
     def __init__(self, input_space: ExampleSpace):
+        super().__init__()
         if not isinstance(input_space.observation_space, gym.spaces.Box):
             raise ValueError(f"Expected Box observation_space. Got: {input_space}")
         if not isinstance(input_space.action_space, gym.spaces.Box):
@@ -460,6 +466,7 @@ class Pipeline(FTOp):
     """
 
     def __init__(self, input_space: ExampleSpace):
+        super().__init__()
         self.input_space = input_space
         self.ft_op = FuncFT(lambda ex: ex, output_space=input_space)
 
