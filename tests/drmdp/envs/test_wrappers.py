@@ -63,10 +63,11 @@ def test_random_binary_obs_wrapper():
 
 def test_scale_obs_wrapper():
     wrapped_env = wrappers.ScaleObsWrapper(BoxEnv(dim=1))
-    assert wrapped_env.obs_space == spaces.Box(0, 2, shape=(1,))
     assert wrapped_env.num_actions == 2
     assert wrapped_env.obs_dim == 1
-    assert wrapped_env.observation_space == spaces.Box(low=0, high=2, shape=(1,))
+    assert wrapped_env.observation_space == spaces.Box(
+        low=0, high=1, shape=(1,), dtype=np.float64
+    )
 
     np.testing.assert_array_equal(wrapped_env.observation(np.array([0])), 0)
     np.testing.assert_array_equal(wrapped_env.observation(np.array([1])), 0.5)

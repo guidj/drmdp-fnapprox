@@ -13,7 +13,7 @@ class RandomBinaryObsWrapper(gym.ObservationWrapper):
     def __init__(self, env: gym.Env, enc_size: int):
         super().__init__(env)
         self.observation_space = gym.spaces.Box(
-            low=np.zeros(enc_size), high=np.ones(enc_size), dtype=np.int64
+            low=0, high=1, shape=(enc_size,), dtype=np.int64
         )
         self.enc_size = enc_size
         self._representations: Dict[Hashable, Any] = {}
@@ -45,13 +45,23 @@ class RandomBinaryObsWrapper(gym.ObservationWrapper):
 class ScaleObsWrapper(gym.ObservationWrapper):
     def __init__(self, env):
         super().__init__(env)
-        self.obs_space = env.observation_space
+        if not isinstance(env.observation_space, gym.spaces.Box):
+            raise ValueError(
+                f"Expected Box observation_space. Got: {env.observation_space}"
+            )
+
         self.num_actions = env.action_space.n
-        self.obs_dim = np.size(self.obs_space.high)
+        self.obs_dim = np.size(env.observation_space.high)
+
+        self.observation_space = gym.spaces.Box(
+            high=np.ones_like(env.observation_space.high),
+            low=np.zeros_like(env.observation_space.high),
+            dtype=np.float64,
+        )
 
     def observation(self, observation: ObsType):
-        obs_scaled_01 = (observation - self.obs_space.low) / (
-            self.obs_space.high - self.obs_space.low
+        obs_scaled_01 = (observation - self.env.observation_space.low) / (
+            self.env.observation_space.high - self.env.observation_space.low
         )
         return obs_scaled_01
 
@@ -69,8 +79,9 @@ class GaussianMixObsWrapper(gym.ObservationWrapper):
         self.obs_dim = self.grid_search.best_estimator_.n_components
 
         self.observation_space = gym.spaces.Box(
-            low=np.zeros(shape=self.obs_dim),
-            high=np.ones(shape=self.obs_dim),
+            low=0,
+            high=1,
+            shape=(self.obs_dim,),
             dtype=np.float64,
         )
 
@@ -197,7 +208,7 @@ class FlatGridCoordObsWrapper(gym.ObservationWrapper):
         ]
         self.output_size = self.nstates if self.ohe else 1
         self.observation_space = (
-            gym.spaces.Box(low=np.zeros(self.nstates), high=np.ones(self.nstates))
+            gym.spaces.Box(low=0, high=1, shape=(self.nstates,))
             if self.ohe
             else gym.spaces.Discrete(self.nstates)
         )
@@ -242,8 +253,9 @@ class TilesObsWrapper(gym.ObservationWrapper):
             hash_dim if hash_dim and self.tiles.max_size > hash_dim else None
         )
         self.observation_space = gym.spaces.Box(
-            low=np.zeros(shape=self.hash_dim or self.tiles.max_size),
-            high=np.ones(shape=self.hash_dim or self.tiles.max_size),
+            low=0,
+            high=1,
+            shape=self.hash_dim or self.tiles.max_size,
             dtype=np.int64,
         )
 
