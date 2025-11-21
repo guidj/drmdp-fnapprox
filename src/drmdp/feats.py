@@ -778,7 +778,7 @@ class ActionSplicedTileFeatTransform(FeatTransform):
 class FiniteActionSplicedTileFeatTransform(FeatTransform):
     """
     - Given an input observation of size n, returns an observation
-     of size `tiling_dim` x `num_tilings` x `num_actions`.
+     of size `tiling_dim` x `num_tilings` + `num_actions`.
     - Each observation is tiled, which yields a vector of binary values. Tiles
     are coarse, overlapping representations.
     - Each action uses it's own separate tiling table to handle
