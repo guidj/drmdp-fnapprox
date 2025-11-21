@@ -58,7 +58,8 @@ class FTOp(abc.ABC):
         """
         Calls `apply` for each example in the batch
         """
-        return self.vapply(examples)
+        outputs: Sequence[Example] = self.vapply(examples)
+        return outputs
 
     @property
     @abc.abstractmethod
@@ -190,8 +191,9 @@ class TileObservationActionFT(FTOp):
         self._output_space = dataclasses.replace(
             input_space,
             observation_space=gym.spaces.Box(
-                low=np.zeros(shape=self.hash_dim or self.max_size),
-                high=np.ones(shape=self.hash_dim or self.max_size),
+                low=0,
+                high=1,
+                shape=(self.hash_dim or self.max_size,),
                 dtype=np.int64,
             ),
         )
@@ -203,7 +205,7 @@ class TileObservationActionFT(FTOp):
         indices = self._tiles(example.observation, example.action)
         output[indices] = 1
         if self.hash_dim:
-            return mathutils.hashtrick(output, self.hash_dim)
+            output = mathutils.hashtrick(output, self.hash_dim)
         return dataclasses.replace(example, observation=output)
 
     @property
@@ -274,8 +276,9 @@ class ActionSliceTileObservationActionFT(FTOp):
         self._output_space = dataclasses.replace(
             input_space,
             observation_space=gym.spaces.Box(
-                low=np.zeros(shape=self.hash_dim or self.max_size),
-                high=np.ones(shape=self.hash_dim or self.max_size),
+                low=0,
+                high=1,
+                shape=(self.hash_dim or self.max_size,),
                 dtype=np.int64,
             ),
         )
@@ -285,7 +288,7 @@ class ActionSliceTileObservationActionFT(FTOp):
         indices = self._tiles(example.observation, example.action)
         output[indices] = 1
         if self.hash_dim:
-            return mathutils.hashtrick(output, self.hash_dim)
+            output = mathutils.hashtrick(output, self.hash_dim)
         return dataclasses.replace(example, observation=output)
 
     @property
@@ -408,8 +411,9 @@ class OHEActionFT(FTOp):
         self._output_space = dataclasses.replace(
             input_space,
             action_space=gym.spaces.Box(
-                low=np.zeros(input_space.action_space.n),
-                high=np.ones(input_space.action_space.n),
+                low=0,
+                high=1,
+                shape=(input_space.action_space.n,),
                 dtype=np.int64,
             ),
         )

@@ -376,28 +376,28 @@ def test_pipeline():
     assert_batch(output, expected)
 
 
-def example(obs, act):
+def example(obs, act) -> transform.Example:
     """
     Creates an example.
     """
     return transform.Example(observation=obs, action=act)
 
 
-def space(obs_space, act_space):
+def space(obs_space, act_space) -> transform.ExampleSpace:
     """
     Creates an ExampleSpace.
     """
     return transform.ExampleSpace(observation_space=obs_space, action_space=act_space)
 
 
-def arr(xs: Sequence[Any], dtype: Optional[np.dtype] = None):
+def arr(xs: Sequence[Any], dtype: Optional[np.dtype] = None) -> np.ndarray:
     """
     Wraps sequence into an array.
     """
     return np.array(xs, dtype=dtype)
 
 
-def assert_equal(actual: transform.Example, expected: transform.Example):
+def assert_equal(actual: transform.Example, expected: transform.Example) -> None:
     """
     Assert obs and action.
     If either is an array, calling `np.testing.assert_equal` directly
@@ -409,7 +409,7 @@ def assert_equal(actual: transform.Example, expected: transform.Example):
 
 def assert_batch(
     actuals: Sequence[transform.Example], outputs: Sequence[transform.Example]
-):
+) -> None:
     """
     Calls `assert_equal` on a sequence.
     """

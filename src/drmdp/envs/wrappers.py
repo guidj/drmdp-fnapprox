@@ -13,7 +13,7 @@ class RandomBinaryObsWrapper(gym.ObservationWrapper):
     def __init__(self, env: gym.Env, enc_size: int):
         super().__init__(env)
         self.observation_space = gym.spaces.Box(
-            low=np.zeros(enc_size), high=np.ones(enc_size), dtype=np.int64
+            low=0, high=1, shape=(enc_size,), dtype=np.int64
         )
         self.enc_size = enc_size
         self._representations: Dict[Hashable, Any] = {}
@@ -79,8 +79,9 @@ class GaussianMixObsWrapper(gym.ObservationWrapper):
         self.obs_dim = self.grid_search.best_estimator_.n_components
 
         self.observation_space = gym.spaces.Box(
-            low=np.zeros(shape=self.obs_dim),
-            high=np.ones(shape=self.obs_dim),
+            low=0,
+            high=1,
+            shape=(self.obs_dim,),
             dtype=np.float64,
         )
 
@@ -207,7 +208,7 @@ class FlatGridCoordObsWrapper(gym.ObservationWrapper):
         ]
         self.output_size = self.nstates if self.ohe else 1
         self.observation_space = (
-            gym.spaces.Box(low=np.zeros(self.nstates), high=np.ones(self.nstates))
+            gym.spaces.Box(low=0, high=1, shape=(self.nstates,))
             if self.ohe
             else gym.spaces.Discrete(self.nstates)
         )
@@ -252,8 +253,9 @@ class TilesObsWrapper(gym.ObservationWrapper):
             hash_dim if hash_dim and self.tiles.max_size > hash_dim else None
         )
         self.observation_space = gym.spaces.Box(
-            low=np.zeros(shape=self.hash_dim or self.tiles.max_size),
-            high=np.ones(shape=self.hash_dim or self.tiles.max_size),
+            low=0,
+            high=1,
+            shape=self.hash_dim or self.tiles.max_size,
             dtype=np.int64,
         )
 
