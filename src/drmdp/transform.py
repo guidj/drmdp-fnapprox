@@ -40,7 +40,8 @@ class FTOp(abc.ABC):
     Abstract Example transformer class.
     """
 
-    def __init__(self):
+    def __init__(self, input_space: ExampleSpace):
+        self.input_space = input_space
         self.vapply = np.vectorize(self.apply)
 
     @abc.abstractmethod
@@ -87,10 +88,11 @@ class FuncFT(FTOp):
 
     def __init__(
         self,
+        input_space: ExampleSpace,
         transform_fn: Callable[[Example], Example],
         output_space: ExampleSpace,
     ):
-        super().__init__()
+        super().__init__(input_space=input_space)
         self.transform_fn = transform_fn
         self._output_space = output_space
 
@@ -112,7 +114,7 @@ class ScaleObservationFT(FTOp):
     """
 
     def __init__(self, input_space: ExampleSpace):
-        super().__init__()
+        super().__init__(input_space=input_space)
         if not isinstance(input_space.observation_space, gym.spaces.Box):
             raise ValueError(f"Expected Box observation_space. Got: {input_space}")
 
@@ -151,7 +153,7 @@ class TileObservationActionFT(FTOp):
         num_tilings: Optional[int] = None,
         hash_dim: Optional[int] = None,
     ):
-        super().__init__()
+        super().__init__(input_space=input_space)
         if not isinstance(input_space.observation_space, gym.spaces.Box):
             raise ValueError(
                 f"Expected Box observation_space. Got: {input_space.observation_space}"
@@ -195,7 +197,9 @@ class TileObservationActionFT(FTOp):
         )
 
     def apply(self, example: Example) -> Example:
-        output = np.zeros(shape=self.max_size)
+        output = np.zeros(
+            shape=self.max_size, dtype=self.output_space.observation_space.dtype
+        )
         indices = self._tiles(example.observation, example.action)
         output[indices] = 1
         if self.hash_dim:
@@ -232,7 +236,7 @@ class ActionSliceTileObservationActionFT(FTOp):
         num_tilings: Optional[int] = None,
         hash_dim: Optional[int] = None,
     ):
-        super().__init__()
+        super().__init__(input_space=input_space)
         if not isinstance(input_space.observation_space, gym.spaces.Box):
             raise ValueError(
                 f"Expected Box observation_space. Got: {input_space.observation_space}"
@@ -307,7 +311,7 @@ class ActionSegmentedObservationFT(FTOp):
     """
 
     def __init__(self, input_space: ExampleSpace, flat: bool = True):
-        super().__init__()
+        super().__init__(input_space=input_space)
         if not isinstance(input_space.observation_space, gym.spaces.Box):
             raise ValueError(f"Expected Box observation_space. Got: {input_space}")
         if not isinstance(input_space.action_space, gym.spaces.Discrete):
@@ -356,7 +360,7 @@ class DropObservationDimsFT(FTOp):
     def __init__(
         self, input_space: ExampleSpace, axis_dims: Mapping[int, Sequence[int]]
     ):
-        super().__init__()
+        super().__init__(input_space=input_space)
         if not isinstance(input_space.observation_space, gym.spaces.Box):
             raise ValueError(f"Expected Box observation_space. Got: {input_space}")
 
@@ -364,7 +368,7 @@ class DropObservationDimsFT(FTOp):
         self.axis_dims = axis_dims
 
         obs_low = input_space.observation_space.low
-        obs_high = input_space.observation_space.low
+        obs_high = input_space.observation_space.high
         for axis, drop_dims in axis_dims.items():
             obs_low = np.delete(obs_low, drop_dims, axis=axis)
             obs_high = np.delete(obs_high, drop_dims, axis=axis)
@@ -389,8 +393,12 @@ class DropObservationDimsFT(FTOp):
 
 
 class OHEActionFT(FTOp):
+    """
+    One-hot encodes the action.
+    """
+
     def __init__(self, input_space: ExampleSpace):
-        super().__init__()
+        super().__init__(input_space=input_space)
         if not isinstance(input_space.action_space, gym.spaces.Discrete):
             raise ValueError(
                 f"Expected Discrete action_space. Got: {input_space.action_space}"
@@ -407,7 +415,7 @@ class OHEActionFT(FTOp):
         )
 
     def apply(self, example: Example) -> Example:
-        ohe_action = np.zeros(self.output_space.action_space.n)
+        ohe_action = np.zeros(self.input_space.action_space.n)
         ohe_action[example.action] = 1
         return dataclasses.replace(example, action=ohe_action)
 
@@ -423,7 +431,7 @@ class ConcatObservationActionFT(FTOp):
     """
 
     def __init__(self, input_space: ExampleSpace):
-        super().__init__()
+        super().__init__(input_space=input_space)
         if not isinstance(input_space.observation_space, gym.spaces.Box):
             raise ValueError(f"Expected Box observation_space. Got: {input_space}")
         if not isinstance(input_space.action_space, gym.spaces.Box):
@@ -466,9 +474,13 @@ class Pipeline(FTOp):
     """
 
     def __init__(self, input_space: ExampleSpace):
-        super().__init__()
+        super().__init__(input_space=input_space)
         self.input_space = input_space
-        self.ft_op = FuncFT(lambda ex: ex, output_space=input_space)
+        self.ft_op = FuncFT(
+            input_space=input_space,
+            transform_fn=lambda ex: ex,
+            output_space=input_space,
+        )
 
     def map(self, ftop_cls: Callable[[ExampleSpace], FTOp]) -> "Pipeline":
         """
@@ -476,7 +488,8 @@ class Pipeline(FTOp):
         """
         next_ft_op = ftop_cls(self.output_space)
         chained_ftops = FuncFT(
-            compose2(next_ft_op.apply, self.ft_op.apply),
+            input_space=self.ft_op.input_space,
+            transform_fn=compose2(next_ft_op.apply, self.ft_op.apply),
             output_space=next_ft_op.output_space,
         )
         pipeline = Pipeline(input_space=self.input_space)
