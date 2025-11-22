@@ -7,7 +7,7 @@ from typing import Any, Iterator, Optional, Tuple
 import gymnasium as gym
 import numpy as np
 
-from drmdp import core, feats, mathutils, optsol
+from drmdp import core, feats, mathutils, optsol, transform
 
 
 @dataclasses.dataclass(frozen=True)
@@ -116,20 +116,24 @@ class SemigradientSARSAFnApprox(FnApproxAlgorithm):
 class LinearFnApproxPolicy(core.PyValueFnPolicy):
     def __init__(
         self,
-        feat_transform: feats.FeatTransform,
+        feat_transform: transform.FTOp,
         action_space: gym.Space,
         emit_log_probability: bool = False,
         seed: Optional[int] = None,
     ):
-        if not isinstance(action_space, gym.spaces.Discrete):
+        if not isinstance(
+            feat_transform.output_space.action_space, gym.spaces.Discrete
+        ):
             raise ValueError(
-                f"This policy only supports discrete action spaces. Got {type(action_space)}"
+                f"This policy only supports discrete action spaces. Got {type(feat_transform.output_space.action_space)}"
             )
         super().__init__(action_space, emit_log_probability, seed)
         self.feat_transform = feat_transform
-        self.actions = tuple(range(action_space.n))
+        self.actions = tuple(range(feat_transform.output_space.action_space.n))
         self.weights = np.zeros(
-            (action_space.n, feat_transform.output_shape), dtype=np.float64
+            (feat_transform.output_space.action_space.n,)
+            + feat_transform.output_space.observation_space.shape,
+            dtype=np.float64,
         )
 
     def get_initial_state(self, batch_size=None):
@@ -158,8 +162,8 @@ class LinearFnApproxPolicy(core.PyValueFnPolicy):
         )
 
     def action_values_gradients(self, observation, actions):
-        observations = [observation] * len(actions)
-        state_action_m = self.feat_transform.batch_transform(observations, actions)
+        examples = [transform.Example(observation, action) for action in actions]
+        state_action_m = [ex.observation for ex in self.feat_transform.batch(examples)]
         return np.sum(self.weights * state_action_m, axis=1), state_action_m
 
     def step(self, action, scaled_gradients):

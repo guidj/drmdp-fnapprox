@@ -157,11 +157,11 @@ def test_actionslicetileobservationactionft():
     assert_batch(output, expected)
 
 
-def test_actionsegmentedobservationft():
+def test_actionsegmentobservationft():
     input_space = space(
         obs_space=spaces.Box(arr([0, -10]), arr([10, 0])), act_space=spaces.Discrete(2)
     )
-    ftop = transform.ActionSegmentedObservationFT(input_space=input_space, flat=False)
+    ftop = transform.ActionSegmentObservationFT(input_space=input_space, flat=False)
     assert ftop.output_space == space(
         obs_space=spaces.Box(
             np.stack([getattr(input_space.observation_space, "low")] * 2),
@@ -191,7 +191,7 @@ def test_actionsegmentedobservationft_with_flat():
     input_space = space(
         obs_space=spaces.Box(arr([0, -10]), arr([10, 0])), act_space=spaces.Discrete(2)
     )
-    ftop = transform.ActionSegmentedObservationFT(input_space=input_space)
+    ftop = transform.ActionSegmentObservationFT(input_space=input_space)
     assert ftop.output_space == space(
         obs_space=spaces.Box(
             np.stack([getattr(input_space.observation_space, "low")] * 2).flatten(),
@@ -352,7 +352,7 @@ def test_pipeline():
     # Pass 'scale -> seg -> double'    #  pipeline
     pipe = (
         pipe.map(transform.ScaleObservationFT.builder())
-        .map(transform.ActionSegmentedObservationFT.builder())
+        .map(transform.ActionSegmentObservationFT.builder())
         .map(
             transform.FuncFT.builder(
                 transform_fn=lambda ex: example(ex.observation * 2, ex.action),
