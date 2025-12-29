@@ -103,12 +103,12 @@ def feats_spec_control(job_spec: JobSpec, task_id: str):
         proxy_env=proxy_env,
         mapping_spec={"name": "identity", "args": None},
     )
-    feats_tfx = feats.create_feat_transformer(env=env, **job_spec.feats_spec)
+    feats_ftop = feats.create_feat_transformer(env=env, **job_spec.feats_spec)
     lr = task.learning_rate(**{"name": "constant", "args": {"initial_lr": 0.01}})  # type: ignore
     # Create spec using provided name and args for feature spec
     algorithm = task.create_algorithm(
         env=env,
-        feats_transform=feats_tfx,
+        ft_op=feats_ftop,
         delay_reward=rew_delay,
         lr=lr,
         gamma=1.0,

@@ -1021,6 +1021,7 @@ def create_feat_transformer(env: gym.Env, name: str, args: Mapping[str, Any]):
     """
     Creates a FeatTransformer according to the spec.
     """
+    raise ValueError("Deprecated")
     constructors: Mapping[str, Callable[..., FeatTransform]] = {
         constants.IDENTITY: IdentityFeatTransform,
         constants.FINITE_IDENTITY: FiniteIdentityFeatTransform,

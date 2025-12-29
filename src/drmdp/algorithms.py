@@ -7,7 +7,7 @@ from typing import Any, Iterator, Optional, Tuple
 import gymnasium as gym
 import numpy as np
 
-from drmdp import core, feats, mathutils, optsol, transform
+from drmdp import core, mathutils, optsol, transform
 
 
 @dataclasses.dataclass(frozen=True)
@@ -116,23 +116,21 @@ class SemigradientSARSAFnApprox(FnApproxAlgorithm):
 class LinearFnApproxPolicy(core.PyValueFnPolicy):
     def __init__(
         self,
-        feat_transform: transform.FTOp,
+        ft_op: transform.FTOp,
         action_space: gym.Space,
         emit_log_probability: bool = False,
         seed: Optional[int] = None,
     ):
-        if not isinstance(
-            feat_transform.output_space.action_space, gym.spaces.Discrete
-        ):
+        if not isinstance(ft_op.output_space.action_space, gym.spaces.Discrete):
             raise ValueError(
-                f"This policy only supports discrete action spaces. Got {type(feat_transform.output_space.action_space)}"
+                f"This policy only supports discrete action spaces. Got {type(ft_op.output_space.action_space)}"
             )
         super().__init__(action_space, emit_log_probability, seed)
-        self.feat_transform = feat_transform
-        self.actions = tuple(range(feat_transform.output_space.action_space.n))
+        self.ft_op = ft_op
+        self.actions = tuple(range(ft_op.output_space.action_space.n))
         self.weights = np.zeros(
-            (feat_transform.output_space.action_space.n,)
-            + feat_transform.output_space.observation_space.shape,
+            (ft_op.output_space.action_space.n,)
+            + ft_op.output_space.observation_space.shape,
             dtype=np.float64,
         )
 
@@ -163,7 +161,7 @@ class LinearFnApproxPolicy(core.PyValueFnPolicy):
 
     def action_values_gradients(self, observation, actions):
         examples = [transform.Example(observation, action) for action in actions]
-        state_action_m = [ex.observation for ex in self.feat_transform.batch(examples)]
+        state_action_m = [ex.observation for ex in self.ft_op.batch(examples)]
         return np.sum(self.weights * state_action_m, axis=1), state_action_m
 
     def step(self, action, scaled_gradients):
@@ -177,7 +175,7 @@ class LinearFnApproxPolicy(core.PyValueFnPolicy):
 class RandomFnApproxPolicy(core.PyValueFnPolicy):
     def __init__(
         self,
-        feat_transform: feats.FeatTransform,
+        ft_op: transform.FTOp,
         action_space: gym.Space,
         emit_log_probability: bool = False,
         seed: Optional[int] = None,
@@ -187,10 +185,11 @@ class RandomFnApproxPolicy(core.PyValueFnPolicy):
                 f"This policy only supports discrete action spaces. Got {type(action_space)}"
             )
         super().__init__(action_space, emit_log_probability, seed)
-        self.feat_transform = feat_transform
+        self.ft_op = ft_op
         self.actions = tuple(range(action_space.n))
         self.weights = np.zeros(
-            (action_space.n, feat_transform.output_shape), dtype=np.float64
+            [action_space.n] + ft_op.output_space.observation_space.shape,
+            dtype=np.float64,
         )
 
     def get_initial_state(self, batch_size=None):
@@ -213,8 +212,8 @@ class RandomFnApproxPolicy(core.PyValueFnPolicy):
         )
 
     def action_values_gradients(self, observation, actions):
-        observations = [observation] * len(actions)
-        state_action_m = self.feat_transform.batch_transform(observations, actions)
+        examples = [transform.Example(observation, action) for action in actions]
+        state_action_m = [ex.observation for ex in self.ft_op.batch(examples)]
         return np.sum(self.weights * state_action_m, axis=1), state_action_m
 
     def step(self, action, scaled_gradients):
@@ -335,7 +334,7 @@ class OptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
 
     The way they are encoded here is:
 
-    1. Apply feat_transform to the `observation` usign action=0
+    1. Apply ft_op to the `observation` usign action=0
     2. Apply binary encoding of integers, using the first
     power of 2 that is greater than `num_options[delay_max]`.
     e.g. if delay_max = 3 and there are 4 actions,
@@ -346,17 +345,17 @@ class OptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
     The final option encoding is a concatenation of
     the output of steps 2 and 3
     option_enc = binary_enc(option) + one_hot(delay)
-    observation_enc = feat_transform.transform(observation)
+    observation_enc = ft_op.apply(observation)
     And the action encoding as well, has a max length.
 
     `option_enc` is generally very small compared to the
     number of actions.
-    feat_transform depends on the option.
+    ft_op depends on the option.
     """
 
     def __init__(
         self,
-        feat_transform: feats.FeatTransform,
+        ft_op: transform.FTOp,
         action_space: gym.Space,
         options_length_range: Tuple[int, int],
         emit_log_probability: bool = False,
@@ -367,7 +366,7 @@ class OptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
                 f"This policy only supports discrete action spaces. Got {type(action_space)}"
             )
         super().__init__(action_space, emit_log_probability, seed)
-        self.feat_transform = feat_transform
+        self.ft_op = ft_op
         # + plus something something
         self.primitive_actions = tuple(range(action_space.n))
         self.num_primitive_actions = len(self.primitive_actions)
@@ -384,7 +383,9 @@ class OptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
         self.option_enc_size = option_enc_size
         # seq len + OHE[delay]
         self.options_dim = self.option_enc_size + (upper - lower + 1)
-        self.features_dim = self.feat_transform.output_shape + self.options_dim
+        self.features_dim = self.ft_op.output_space.observation_space.shape + [
+            self.options_dim
+        ]
         self.delay_options_matrix_mapping = self.options_encoding()
         self.weights = np.zeros(self.features_dim, dtype=np.float64)
 
@@ -447,7 +448,8 @@ class OptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
         # repeat state m times
         options_matrix = self.delay_options_matrix_mapping[delay]
         state_m = np.tile(
-            self.feat_transform.transform(observation, 0), (options_matrix.shape[0], 1)
+            self.ft_op(transform.Example(observation, 0)).observation,
+            (options_matrix.shape[0], 1),
         )
         # get option representations
         features_m = np.concatenate([state_m, options_matrix], axis=1)
@@ -465,7 +467,7 @@ class OptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
 class SingleActionOptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
     def __init__(
         self,
-        feat_transform: feats.FeatTransform,
+        ft_op: transform.FTOp,
         action_space: gym.Space,
         options_length_range: Tuple[int, int],
         emit_log_probability: bool = False,
@@ -476,7 +478,7 @@ class SingleActionOptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
                 f"This policy only supports discrete action spaces. Got {type(action_space)}"
             )
         super().__init__(action_space, emit_log_probability, seed)
-        self.feat_transform = feat_transform
+        self.ft_op = ft_op
         # + plus something something
         self.primitive_actions = tuple(range(action_space.n))
         self.num_primitive_actions = len(self.primitive_actions)
@@ -492,7 +494,9 @@ class SingleActionOptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
         self.option_enc_size = option_enc_size
         # seq len + OHE[delay]
         self.options_dim = self.option_enc_size + (upper - lower + 1)
-        self.features_dim = self.feat_transform.output_shape + self.options_dim
+        self.features_dim = self.ft_op.output_space.observation_space.shape + [
+            self.options_dim
+        ]
         self.options_m = self.options_encoding()
         self.weights = np.zeros(self.features_dim, dtype=np.float64)
 
@@ -553,7 +557,8 @@ class SingleActionOptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
         # repeat state m times
         options_m = self.options_m[delay]
         state_m = np.tile(
-            self.feat_transform.transform(observation, 0), (options_m.shape[0], 1)
+            self.ft_op(transform.Example(observation, 0)).observation,
+            (options_m.shape[0], 1),
         )
         # get option representations
         features_m = np.concatenate([state_m, options_m], axis=1)

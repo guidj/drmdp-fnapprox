@@ -7,7 +7,7 @@ from typing import Any, Iterator, List, Mapping, Optional, Sequence, Tuple
 import gymnasium as gym
 import numpy as np
 
-from drmdp import algorithms, core, envs, feats, logger, optsol, rewdelay
+from drmdp import algorithms, core, envs, feats, logger, optsol, rewdelay, transform
 from drmdp.envs import wrappers
 
 DELAYS: Sequence[type[rewdelay.RewardDelay]] = (
@@ -44,7 +44,7 @@ def policy_control(exp_instance: core.ExperimentInstance):
     # Create spec using provided name and args for feature spec
     algorithm = create_algorithm(
         env=env,
-        feats_transform=feats_tfx,
+        ft_op=feats_tfx,
         delay_reward=rew_delay,
         lr=lr,
         gamma=problem_spec.gamma,
@@ -74,7 +74,7 @@ def policy_control(exp_instance: core.ExperimentInstance):
                         info={},
                     )
                     if exp_instance.export_model:
-                        export_model(
+                        export_model_snapshot(
                             snapshot.weights,
                             snapshot=episode,
                             max_snapshot=exp_instance.run_config.episodes_per_run,
@@ -247,8 +247,8 @@ def reward_mapper(env: gym.Env, proxy_env: gym.Env, mapping_spec: Mapping[str, A
     """
     name = mapping_spec["name"]
     m_args = dict(**(mapping_spec["args"] or {}))
-    enc_feats_spec = m_args.pop("feats_spec") if "feats_spec" in m_args else None
-    observation_enc = observation_encoder(proxy_env, feats_spec=enc_feats_spec)
+    enc_feats_spec = m_args.pop("feats_spec") if "feats_spec" in m_args else []
+    ft_op = create_ft_ops(proxy_env, feats_spec=enc_feats_spec)
 
     if name == "identity":
         return env
@@ -257,35 +257,31 @@ def reward_mapper(env: gym.Env, proxy_env: gym.Env, mapping_spec: Mapping[str, A
     elif name == "discrete-least-lfa":
         return rewdelay.DiscretisedLeastLfaGenerativeRewardWrapper(
             env=env,
-            obs_encoding_wrapper=observation_enc,
+            ft_op=ft_op,
             **m_args,
         )
     elif name == "least-lfa":
-        # local copy before pop
         return rewdelay.LeastLfaGenerativeRewardWrapper(
             env=env,
-            obs_encoding_wrapper=observation_enc,
+            ft_op=ft_op,
             **m_args,
         )
     elif name == "bayes-least-lfa":
-        # local copy before pop
         return rewdelay.BayesLeastLfaGenerativeRewardWrapper(
             env=env,
-            obs_encoding_wrapper=observation_enc,
+            ft_op=ft_op,
             **m_args,
         )
     elif name == "cvlps":
-        # local copy before pop
         return rewdelay.ConvexSolverGenerativeRewardWrapper(
             env=env,
-            obs_encoding_wrapper=observation_enc,
+            ft_op=ft_op,
             **m_args,
         )
     elif name == "recurring-cvlps":
-        # local copy before pop
         return rewdelay.RecurringConvexSolverGenerativeRewardWrapper(
             env=env,
-            obs_encoding_wrapper=observation_enc,
+            ft_op=ft_op,
             **m_args,
         )
     raise ValueError(f"Unknown mapping_method: {mapping_spec}")
@@ -302,9 +298,18 @@ def observation_encoder(
     return wrappers.wrap(env, wrapper=feats_spec["name"], **(feats_spec["args"] or {}))
 
 
+def create_ft_ops(
+    env: gym.Env, feats_spec: Sequence[Mapping[str, Any]]
+) -> transform.FTOp:
+    """
+    Creates a features processing pipeline for an environment.
+    """
+    return transform.transform_pipeline(env, specs=feats_spec)
+
+
 def create_algorithm(
     env: gym.Env,
-    feats_transform: feats.FeatTransform,
+    ft_op: transform.FTOp,
     policy_type: str,
     delay_reward: Optional[rewdelay.RewardDelay],
     lr: optsol.LearningRateSchedule,
@@ -322,7 +327,7 @@ def create_algorithm(
             gamma=gamma,
             epsilon=epsilon,
             policy=algorithms.LinearFnApproxPolicy(
-                feat_transform=feats_transform, action_space=env.action_space
+                ft_op=ft_op, action_space=env.action_space
             ),
             base_seed=base_seed,
         )
@@ -332,7 +337,7 @@ def create_algorithm(
             gamma=gamma,
             epsilon=epsilon,
             policy=algorithms.RandomFnApproxPolicy(
-                feat_transform=feats_transform, action_space=env.action_space
+                ft_op=ft_op, action_space=env.action_space
             ),
             base_seed=base_seed,
         )
@@ -342,7 +347,7 @@ def create_algorithm(
             gamma=gamma,
             epsilon=epsilon,
             policy=algorithms.LinearFnApproxPolicy(
-                feat_transform=feats_transform, action_space=env.action_space
+                ft_op=ft_op, action_space=env.action_space
             ),
             base_seed=base_seed,
         )
@@ -354,7 +359,7 @@ def create_algorithm(
             gamma=gamma,
             epsilon=epsilon,
             policy=algorithms.OptionsLinearFnApproxPolicy(
-                feat_transform=feats_transform,
+                ft_op=ft_op,
                 action_space=env.action_space,
                 options_length_range=delay_reward.range(),
             ),
@@ -368,7 +373,7 @@ def create_algorithm(
             gamma=gamma,
             epsilon=epsilon,
             policy=algorithms.SingleActionOptionsLinearFnApproxPolicy(
-                feat_transform=feats_transform,
+                ft_op=ft_op,
                 action_space=env.action_space,
                 options_length_range=delay_reward.range(),
             ),
@@ -378,7 +383,9 @@ def create_algorithm(
     raise ValueError(f"Unknown policy_type: {policy_type}")
 
 
-def export_model(weights: np.ndarray, snapshot: int, max_snapshot: int, model_dir: str):
+def export_model_snapshot(
+    weights: np.ndarray, snapshot: int, max_snapshot: int, model_dir: str
+):
     ndigits = len(str(max_snapshot)) + 1
     logger.save_model(
         weights,

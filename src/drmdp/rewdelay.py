@@ -1,5 +1,4 @@
 import abc
-import dataclasses
 import logging
 import random
 import sys
@@ -18,7 +17,7 @@ from typing import (
 import gymnasium as gym
 import numpy as np
 
-from drmdp import mathutils, metrics, optsol
+from drmdp import mathutils, metrics, optsol, transform
 
 
 class OptState(str, Enum):
@@ -411,48 +410,51 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
     def __init__(
         self,
         env: gym.Env,
-        obs_encoding_wrapper: gym.ObservationWrapper,
+        ft_op: transform.FTOp,
         attempt_estimation_episode: int,
         estimation_buffer_mult: Optional[int] = None,
         use_bias: bool = False,
         impute_value: float = 0.0,
     ):
         super().__init__(env)
-        if not isinstance(obs_encoding_wrapper.observation_space, gym.spaces.Discrete):
+        if not isinstance(ft_op.output_space.observation_space, gym.spaces.Discrete):
             raise ValueError(
-                f"obs_wrapper space must of type Discrete. Got: {type(obs_encoding_wrapper.observation_space)}"
+                f"ft_op space must of type Discrete. Got: {type(ft_op.output_space.observation_space)}"
             )
-        if not isinstance(obs_encoding_wrapper.action_space, gym.spaces.Discrete):
+        if not isinstance(ft_op.output_space.action_space, gym.spaces.Discrete):
             raise ValueError(
-                f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper.action_space)}"
+                f"ft_op space must of type Discrete. Got: {type(ft_op.output_space.action_space)}"
             )
-        self.obs_wrapper = obs_encoding_wrapper
+
+        self.ft_op = ft_op
         self.attempt_estimation_episode = attempt_estimation_episode
         self.estimation_buffer_mult = estimation_buffer_mult
         self.use_bias = use_bias
         self.impute_value = impute_value
 
         self.episodes = 0
-        self.nstates = self.obs_wrapper.observation_space.n
-        self.nactions = self.obs_wrapper.action_space.n
+        self.nstates = ft_op.output_space.observation_space.n
+        self.nactions = ft_op.output_space.action_space.n
         self.mdim = self.nstates * self.nactions
         self.weights = None
-        self._obs_feats = None
+        self._latest_obs = None
         self._segment_features = None
         self.estimation_meta = {"use_bias": self.use_bias, "snapshots": []}
         self.rng = np.random.default_rng()
         self.est_buffer = DataBuffer(
-            max_capacity=self.mdim * self.estimation_buffer_mult
-            if self.estimation_buffer_mult
+            max_capacity=self.mdim * estimation_buffer_mult
+            if estimation_buffer_mult
             else None
         )
 
     def step(self, action):
+        latest_step_feats = self.ft_op(transform.Example(self._latest_obs, action))
         next_obs, reward, term, trunc, info = super().step(action)
-        next_obs_feats = self.obs_wrapper.observation(next_obs)
 
         # Find S x A position
-        self._segment_features[self._obs_feats * self.nactions + action] += 1
+        self._segment_features[
+            latest_step_feats.observation * self.nactions + action
+        ] += 1
 
         if self.weights is not None:
             # estimate
@@ -486,7 +488,7 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
                 self.estimate_rewards()
 
         # For the next step
-        self._obs_feats = next_obs_feats
+        self._latest_obs = next_obs
         return (
             next_obs,
             reward,
@@ -497,7 +499,7 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
 
     def reset(self, *, seed=None, options=None):
         obs, info = super().reset(seed=seed, options=options)
-        self._obs_feats = self.obs_wrapper.observation(obs)
+        self._latest_obs = obs
         # Init segment and step features array
         self._segment_features = np.zeros(shape=(self.mdim))
         return obs, info
@@ -581,64 +583,51 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
     def __init__(
         self,
         env: gym.Env,
-        obs_encoding_wrapper: gym.ObservationWrapper,
+        ft_op: transform.FTOp,
         attempt_estimation_episode: int,
         estimation_buffer_mult: Optional[int] = None,
         use_bias: bool = False,
         impute_value: float = 0.0,
-        use_next_state: bool = True,
-        drop_tsc: Sequence[int] = tuple(),
         check_factors: bool = False,
     ):
         super().__init__(env)
-        if not isinstance(obs_encoding_wrapper.observation_space, gym.spaces.Box):
+        if not isinstance(ft_op.output_space.observation_space, gym.spaces.Box):
             raise ValueError(
-                f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper.observation_space)}"
+                f"ft_op space must of type Box. Got: {type(ft_op.output_space.observation_space)}"
             )
-        if not isinstance(obs_encoding_wrapper.action_space, gym.spaces.Discrete):
+        if not isinstance(ft_op.output_space.action_space, gym.spaces.Discrete):
             raise ValueError(
-                f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper.action_space)}"
+                f"ft_op space must of type Discrete. Got: {type(ft_op.output_space.action_space)}"
             )
-        if any([tsc < 0 for tsc in drop_tsc]):
-            raise ValueError("`drop_tsc` values must be non-negative")
 
-        self.obs_wrapper = obs_encoding_wrapper
+        self.ft_op = ft_op
         self.attempt_estimation_episode = attempt_estimation_episode
         self.estimation_buffer_mult = estimation_buffer_mult
         self.use_bias = use_bias
         self.impute_value = impute_value
-        self.use_next_state = use_next_state
-        self.drop_tsc = drop_tsc
         self.check_factors = check_factors
 
         self.episodes = 0
-        self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
-        self.mdim = self.obs_dim * (2 if self.use_next_state else 1)
+        self.mdim = np.size(ft_op.output_space.observation_space.high)
         self.weights = None
-        self._obs_feats = None
+        self._latest_obs = None
         self._segment_features = None
         self.estimation_meta = {
-            "use_bias": self.use_bias,
-            "use_next_state": self.use_next_state,
-            "drop_tsc": self.drop_tsc,
-            "check_factors": self.check_factors,
+            "use_bias": use_bias,
+            "check_factors": check_factors,
             "snapshots": [],
         }
         self.rng = np.random.default_rng()
         self.est_buffer = DataBuffer(
-            max_capacity=self.mdim * self.estimation_buffer_mult
-            if self.estimation_buffer_mult
+            max_capacity=self.mdim * estimation_buffer_mult
+            if estimation_buffer_mult
             else None
         )
 
     def step(self, action):
+        latest_step_feats = self.ft_op(transform.Example(self._latest_obs, action))
+        self._segment_features += latest_step_feats.observation
         next_obs, reward, term, trunc, info = super().step(action)
-        next_obs_feats = self.obs_wrapper.observation(next_obs)
-        # Add s to action-specific columns
-        # and s' to the last columns.
-        self._segment_features[: self.obs_dim] += self._obs_feats
-        if self.use_next_state:
-            self._segment_features[-self.obs_dim :] += next_obs_feats
 
         if self.weights is not None:
             # estimate
@@ -672,7 +661,7 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
                 self.estimate_rewards()
 
         # For the next step
-        self._obs_feats = next_obs_feats
+        self._latest_obs = next_obs
         return (
             next_obs,
             reward,
@@ -683,7 +672,7 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
 
     def reset(self, *, seed=None, options=None):
         obs, info = super().reset(seed=seed, options=options)
-        self._obs_feats = self.obs_wrapper.observation(obs)
+        self._latest_obs = obs
         # Init segment and step features array
         self._segment_features = np.zeros(shape=(self.mdim))
         return obs, info
@@ -696,24 +685,6 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         matrix = np.stack(obs_buffer, dtype=np.float64)
         rewards = np.array(rew_buffer, dtype=np.float64)
         nexamples = rewards.shape[0]
-
-        if self.drop_tsc:
-            matrix = matrix.reshape(
-                (matrix.shape[0], int(matrix.shape[1] / self.obs_dim), self.obs_dim)
-            )
-
-            # Drop terminal columns (tsc)
-            for tsc in reversed(sorted(self.drop_tsc)):
-                if tsc == (matrix.shape[2] - 1):
-                    # Last column
-                    matrix = matrix[:, :, :-1]
-                else:
-                    # Middle column
-                    left = matrix[:, :, :tsc]
-                    right = matrix[:, :, tsc + 1 :]
-                    matrix = np.concat([left, right], axis=-1)
-
-            matrix = matrix.reshape(matrix.shape[0], -1)
 
         if self.check_factors:
             rank = optsol.matrix_factors_rank(matrix)
@@ -737,11 +708,6 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
                 err,
             )
 
-            if self.drop_tsc:
-                # reset matrix and rewards
-                # before dropping samplings
-                matrix = np.stack(obs_buffer, dtype=np.float64)
-
             # drop latest 5% of samples
             nexamples_dropped, (matrix, rewards) = drop_samples(
                 frac=0.05, arrays=[matrix, rewards], rng=self.rng
@@ -758,32 +724,6 @@ class LeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
 
         else:
             error = metrics.rmse(v_pred=np.dot(matrix, weights), v_true=rewards, axis=0)
-
-            if self.drop_tsc:
-                # Re-adjust weights
-                nrows = int(matrix.shape[1] / (self.obs_dim - len(self.drop_tsc)))
-                weights_matrix = weights.reshape(
-                    (nrows, self.obs_dim - len(self.drop_tsc))
-                )
-
-                for tsc in sorted(self.drop_tsc):
-                    if tsc == weights_matrix.shape[1]:
-                        # Last column
-                        weights_matrix = np.concat(
-                            [weights_matrix, np.zeros(shape=(nrows, 1))], axis=1
-                        )
-                    else:
-                        # Middle column
-                        weights_matrix = np.concat(
-                            [
-                                weights_matrix[:, 0:tsc],
-                                np.zeros(shape=(nrows, 1)),
-                                weights_matrix[:, tsc:],
-                            ],
-                            axis=1,
-                        )
-                weights = weights_matrix.flatten()
-
             self.weights = weights
             snapshot = {
                 "sample": {
@@ -823,73 +763,59 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
     def __init__(
         self,
         env: gym.Env,
-        obs_encoding_wrapper: gym.ObservationWrapper,
+        ft_op: transform.FTOp,
         mode: str = WindowedTaskSchedule.DOUBLE,
         init_attempt_estimation_episode: int = 10,
         estimation_buffer_mult: Optional[int] = None,
         use_bias: bool = False,
         impute_value: float = 0.0,
-        use_next_state: bool = True,
-        drop_tsc: Sequence[int] = tuple(),
         check_factors: bool = False,
     ):
         super().__init__(env)
-        if not isinstance(obs_encoding_wrapper.observation_space, gym.spaces.Box):
+        if not isinstance(ft_op.output_space.observation_space, gym.spaces.Box):
             raise ValueError(
-                f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper.observation_space)}"
+                f"ft_op space must of type Box. Got: {type(ft_op.output_space.observation_space)}"
             )
-        if not isinstance(obs_encoding_wrapper.action_space, gym.spaces.Discrete):
+        if not isinstance(ft_op.output_space.action_space, gym.spaces.Discrete):
             raise ValueError(
-                f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper.action_space)}"
+                f"ft_op space must of type Discrete. Got: {type(ft_op.output_space.action_space)}"
             )
-        self.obs_wrapper = obs_encoding_wrapper
+
+        self.ft_op = ft_op
         self.mode = mode
         self.init_attempt_estimation_episode = init_attempt_estimation_episode
         self.estimation_buffer_mult = estimation_buffer_mult
         self.use_bias = use_bias
         self.impute_value = impute_value
-        self.use_next_state = use_next_state
-        self.drop_tsc = drop_tsc
         self.check_factors = check_factors
 
         self.windowed_task_schedule = WindowedTaskSchedule(
-            mode=self.mode, init_update_ep=self.init_attempt_estimation_episode
+            mode=mode, init_update_ep=init_attempt_estimation_episode
         )
         self.episodes = 0
-        self.update_episode = self.init_attempt_estimation_episode
+        self.update_episode = init_attempt_estimation_episode
         self.posterior_updates = 0
 
-        self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
-        self.mdim = self.obs_dim * (2 if self.use_next_state else 1)
+        self.mdim = np.size(ft_op.output_space.observation_space.high)
         self.mv_normal_rewards: Optional[optsol.MultivariateNormal] = None
-        self._obs_feats = None
+        self._latest_obs = None
         self._segment_features = None
         self.estimation_meta: Dict[str, Any] = {
-            "use_bias": self.use_bias,
-            "use_next_state": self.use_next_state,
-            "drop_tsc": self.drop_tsc,
-            "check_factors": self.check_factors,
+            "use_bias": use_bias,
+            "check_factors": check_factors,
             "snapshots": [],
         }
         self.est_buffer = DataBuffer(
-            max_capacity=self.mdim * self.estimation_buffer_mult
-            if self.estimation_buffer_mult
+            max_capacity=self.mdim * estimation_buffer_mult
+            if estimation_buffer_mult
             else None
         )
         self.rng = np.random.default_rng()
 
     def step(self, action):
+        latest_step_feats = self.ft_op(transform.Example(self._latest_obs, action))
+        self._segment_features += latest_step_feats.observation
         next_obs, reward, term, trunc, info = super().step(action)
-        next_obs_feats = self.obs_wrapper.observation(next_obs)
-        # Add s to action-specific columns
-        # and s' to the last columns.
-        # We use a separate vector to make predictions
-        # because we continuously collect aggregate data.
-        step_features = np.zeros(shape=(self.mdim))
-        step_features[: self.obs_dim] += self._obs_feats
-        if self.use_next_state:
-            step_features[-self.obs_dim :] += next_obs_feats
-        self._segment_features += step_features
 
         # Add example to buffer and
         # use aggregate reward.
@@ -900,7 +826,7 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
 
         if self.mv_normal_rewards is not None:
             # Estimate rewards
-            feats = step_features
+            feats = latest_step_feats.observation
             if self.use_bias:
                 feats = np.concatenate([feats, np.array([1.0])])
             reward = np.dot(feats, self.mv_normal_rewards.mean)
@@ -924,7 +850,7 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
                 self.windowed_task_schedule.set_state(succ=outcome)
 
         # For the next step
-        self._obs_feats = next_obs_feats
+        self._latest_obs = next_obs
         return (
             next_obs,
             reward,
@@ -941,7 +867,7 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
 
     def reset(self, *, seed=None, options=None):
         obs, info = super().reset(seed=seed, options=options)
-        self._obs_feats = self.obs_wrapper.observation(obs)
+        self._latest_obs = obs
         # Init segment and step features array
         self._segment_features = np.zeros(shape=(self.mdim))
         return obs, info
@@ -957,24 +883,6 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         matrix = np.stack(obs_buffer, dtype=np.float64)
         rewards = np.array(rew_buffer, dtype=np.float64)
         nexamples = rewards.shape[0]
-
-        if self.drop_tsc:
-            matrix = matrix.reshape(
-                (matrix.shape[0], int(matrix.shape[1] / self.obs_dim), self.obs_dim)
-            )
-
-            # Drop terminal columns (tsc)
-            for tsc in reversed(sorted(self.drop_tsc)):
-                if tsc == (matrix.shape[2] - 1):
-                    # Last column
-                    matrix = matrix[:, :, :-1]
-                else:
-                    # Middle column
-                    left = matrix[:, :, :tsc]
-                    right = matrix[:, :, tsc + 1 :]
-                    matrix = np.concat([left, right], axis=-1)
-
-            matrix = matrix.reshape(matrix.shape[0], -1)
 
         if self.check_factors:
             rank = optsol.matrix_factors_rank(matrix)
@@ -1010,11 +918,6 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
                 err,
             )
 
-            if self.drop_tsc:
-                # reset matrix and rewards
-                # before dropping samplings
-                matrix = np.stack(obs_buffer, dtype=np.float64)
-
             # drop latest 5% of samples
             nexamples_dropped, (matrix, rewards) = drop_samples(
                 frac=0.05, arrays=[matrix, rewards], rng=self.rng
@@ -1036,32 +939,6 @@ class BayesLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
                     v_true=rewards,
                     axis=0,
                 )
-
-                if self.drop_tsc:
-                    # Re-adjust weights
-                    nrows = int(matrix.shape[1] / (self.obs_dim - len(self.drop_tsc)))
-                    weights_matrix = weights.reshape(
-                        (nrows, self.obs_dim - len(self.drop_tsc))
-                    )
-
-                    for tsc in sorted(self.drop_tsc):
-                        if tsc == weights_matrix.shape[1]:
-                            # Last column
-                            weights_matrix = np.concat(
-                                [weights_matrix, np.zeros(shape=(nrows, 1))], axis=1
-                            )
-                        else:
-                            # Middle column
-                            weights_matrix = np.concat(
-                                [
-                                    weights_matrix[:, 0:tsc],
-                                    np.zeros(shape=(nrows, 1)),
-                                    weights_matrix[:, tsc:],
-                                ],
-                                axis=1,
-                            )
-                    weights = weights_matrix.flatten()
-                    mv_normal = dataclasses.replace(mv_normal, mean=weights)
 
                 self.mv_normal_rewards = mv_normal
                 snapshot = {
@@ -1109,7 +986,7 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
     def __init__(
         self,
         env: gym.Env,
-        obs_encoding_wrapper: gym.ObservationWrapper,
+        ft_op: transform.FTOp,
         attempt_estimation_episode: int,
         estimation_buffer_mult: Optional[int] = None,
         use_bias: bool = False,
@@ -1117,15 +994,16 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         constraints_buffer_limit: Optional[int] = None,
     ):
         super().__init__(env)
-        if not isinstance(obs_encoding_wrapper.observation_space, gym.spaces.Box):
+        if not isinstance(ft_op.output_space.observation_space, gym.spaces.Box):
             raise ValueError(
-                f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper.observation_space)}"
+                f"ft_op space must of type Box. Got: {type(ft_op.output_space.observation_space)}"
             )
-        if not isinstance(obs_encoding_wrapper.action_space, gym.spaces.Discrete):
+        if not isinstance(ft_op.output_space.action_space, gym.spaces.Discrete):
             raise ValueError(
-                f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper.action_space)}"
+                f"ft_op space must of type Discrete. Got: {type(ft_op.output_space.action_space)}"
             )
-        self.obs_wrapper = obs_encoding_wrapper
+
+        self.ft_op = ft_op
         self.attempt_estimation_episode = attempt_estimation_episode
         self.estimation_buffer_mult = estimation_buffer_mult
         self.use_bias = use_bias
@@ -1133,27 +1011,23 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self.constraints_buffer_limit = constraints_buffer_limit
 
         self.episodes = 0
-        self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
-        self.mdim = self.obs_dim * 2
+        self.mdim = np.size(ft_op.output_space.observation_space.high)
         self.weights = None
-        self._obs_feats = None
+        self._latest_obs = None
         self._segment_features = None
-        self.estimation_meta = {"use_bias": self.use_bias, "snapshots": []}
+        self.estimation_meta = {"use_bias": use_bias, "snapshots": []}
         self.rng = np.random.default_rng()
         self.est_buffer = DataBuffer(
-            max_capacity=self.mdim * self.estimation_buffer_mult
-            if self.estimation_buffer_mult
+            max_capacity=self.mdim * estimation_buffer_mult
+            if estimation_buffer_mult
             else None
         )
-        self.tst_buffer = DataBuffer(max_capacity=self.constraints_buffer_limit)
+        self.tst_buffer = DataBuffer(max_capacity=constraints_buffer_limit)
 
     def step(self, action):
+        latest_step_feats = self.ft_op(transform.Example(self._latest_obs, action))
+        self._segment_features += latest_step_feats.observation
         next_obs, reward, term, trunc, info = super().step(action)
-        next_obs_feats = self.obs_wrapper.observation(next_obs)
-        # Add s to action-specific columns
-        # and s' to the last columns.
-        self._segment_features[: self.obs_dim] += self._obs_feats
-        self._segment_features[-self.obs_dim :] += next_obs_feats
 
         if self.weights is not None:
             # estimate
@@ -1180,11 +1054,8 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         # Add constraint for terminal state
         # if there is no estimate.
         if term and self.weights is None:
-            term_state = np.zeros(shape=(self.mdim))
-            # To simplify the problem for the convex solver
-            # we encode the (S,A) - not S'
-            term_state[: self.obs_dim] += next_obs_feats
-            self.tst_buffer.add(term_state)
+            # Use action 0;
+            self.tst_buffer.add(self.ft_op(transform.Example(next_obs, 0)).observation)
 
         if term or trunc:
             self.episodes += 1
@@ -1197,7 +1068,7 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
                 self.estimate_rewards()
 
         # For the next step
-        self._obs_feats = next_obs_feats
+        self._latest_obs = next_obs
         return (
             next_obs,
             reward,
@@ -1208,7 +1079,7 @@ class ConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
 
     def reset(self, *, seed=None, options=None):
         obs, info = super().reset(seed=seed, options=options)
-        self._obs_feats = self.obs_wrapper.observation(obs)
+        self._latest_obs = obs
         # Init segment and step features array
         self._segment_features = np.zeros(shape=(self.mdim))
         return obs, info
@@ -1318,7 +1189,7 @@ class RecurringConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
     def __init__(
         self,
         env: gym.Env,
-        obs_encoding_wrapper: gym.ObservationWrapper,
+        ft_op: transform.FTOp,
         mode: str = WindowedTaskSchedule.DOUBLE,
         init_attempt_estimation_episode: int = 10,
         estimation_buffer_mult: Optional[int] = None,
@@ -1327,15 +1198,16 @@ class RecurringConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         constraints_buffer_limit: Optional[int] = None,
     ):
         super().__init__(env)
-        if not isinstance(obs_encoding_wrapper.observation_space, gym.spaces.Box):
+        if not isinstance(ft_op.output_space.observation_space, gym.spaces.Box):
             raise ValueError(
-                f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper.observation_space)}"
+                f"ft_op space must of type Box. Got: {type(ft_op.output_space.observation_space)}"
             )
-        if not isinstance(obs_encoding_wrapper.action_space, gym.spaces.Discrete):
+        if not isinstance(ft_op.output_space.action_space, gym.spaces.Discrete):
             raise ValueError(
-                f"obs_wrapper space must of type Box. Got: {type(obs_encoding_wrapper.action_space)}"
+                f"ft_op space must of type Discrete. Got: {type(ft_op.output_space.action_space)}"
             )
-        self.obs_wrapper = obs_encoding_wrapper
+
+        self.ft_op = ft_op
         self.mode = mode
         self.init_attempt_estimation_episode = init_attempt_estimation_episode
         self.estimation_buffer_mult = estimation_buffer_mult
@@ -1345,16 +1217,15 @@ class RecurringConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self.constraints_buffer_limit = constraints_buffer_limit
 
         self.windowed_task_schedule = WindowedTaskSchedule(
-            mode=self.mode, init_update_ep=self.init_attempt_estimation_episode
+            mode=mode, init_update_ep=init_attempt_estimation_episode
         )
         self.episodes = 0
-        self.update_episode = self.init_attempt_estimation_episode
+        self.update_episode = init_attempt_estimation_episode
         self.posterior_updates = 0
 
-        self.obs_dim = np.size(self.obs_wrapper.observation_space.sample())
-        self.mdim = self.obs_dim * 2
+        self.mdim = np.size(ft_op.output_space.observation_space.high)
         self.weights: Optional[np.ndarray] = None
-        self._obs_feats = None
+        self._latest_obs = None
         self._segment_features = None
         self.estimation_meta: Dict[str, Any] = {
             "use_bias": self.use_bias,
@@ -1362,23 +1233,18 @@ class RecurringConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         }
         self.rng = np.random.default_rng()
         self.est_buffer = DataBuffer(
-            max_capacity=self.mdim * self.estimation_buffer_mult
-            if self.estimation_buffer_mult
+            max_capacity=self.mdim * estimation_buffer_mult
+            if estimation_buffer_mult
             else None
         )
         self.tst_buffer = DataBuffer(
-            max_capacity=self.constraints_buffer_limit,
+            max_capacity=constraints_buffer_limit,
         )
 
     def step(self, action):
+        latest_step_feats = self.ft_op(transform.Example(self._latest_obs, action))
+        self._segment_features += latest_step_feats.observation
         next_obs, reward, term, trunc, info = super().step(action)
-        next_obs_feats = self.obs_wrapper.observation(next_obs)
-        # Add s to action-specific columns
-        # and s' to the last columns.
-        step_features = np.zeros(shape=(self.mdim))
-        step_features[: self.obs_dim] += self._obs_feats
-        step_features[-self.obs_dim :] += next_obs_feats
-        self._segment_features += step_features
 
         # Add example to buffer and
         # use aggregate reward.
@@ -1389,7 +1255,7 @@ class RecurringConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
 
         if self.weights is not None:
             # estimate
-            feats = step_features
+            feats = latest_step_feats.observation
             if self.use_bias:
                 feats = np.concatenate([feats, np.array([1.0])])
             reward = np.dot(feats, self.weights)
@@ -1403,11 +1269,7 @@ class RecurringConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
 
         # Add constraint for terminal state.
         if term:
-            term_state = np.zeros(shape=(self.mdim))
-            # To simplify the problem for the convex solver
-            # we encode the (S,A) - not S'
-            term_state[: self.obs_dim] += next_obs_feats
-            self.tst_buffer.add(term_state)
+            self.tst_buffer.add(self.ft_op(transform.Example(next_obs, 0).observation))
 
         if term or trunc:
             self.episodes += 1
@@ -1421,7 +1283,7 @@ class RecurringConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
                 self.windowed_task_schedule.set_state(succ=outcome)
 
         # For the next step
-        self._obs_feats = next_obs_feats
+        self._latest_obs = next_obs
         return (
             next_obs,
             reward,
@@ -1438,7 +1300,7 @@ class RecurringConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
 
     def reset(self, *, seed=None, options=None):
         obs, info = super().reset(seed=seed, options=options)
-        self._obs_feats = self.obs_wrapper.observation(obs)
+        self._latest_obs = obs
         # Init segment and step features array
         self._segment_features = np.zeros(shape=(self.mdim))
         return obs, info
@@ -1516,13 +1378,11 @@ class RecurringConvexSolverGenerativeRewardWrapper(gym.Wrapper, SupportsName):
                 # increment counter.
                 self.posterior_updates += 1
             self.weights = weights
-
             error = metrics.rmse(
                 v_pred=np.dot(matrix, self.weights),
                 v_true=rewards,
                 axis=0,
             )
-
             snapshot = {
                 "sample": {
                     "size": nexamples,

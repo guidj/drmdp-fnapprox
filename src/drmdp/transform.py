@@ -2,6 +2,7 @@ import abc
 import dataclasses
 import functools
 from typing import (
+    Any,
     Callable,
     Mapping,
     Optional,
@@ -225,7 +226,7 @@ class TileObservationActionFT(FTOp):
         )
 
 
-class ActionSliceTileObservationActionFT(FTOp):
+class SpliceTileObservationActionFT(FTOp):
     """
     Tiles observation-actions.
     Uses separate tile mappings per action.
@@ -307,7 +308,7 @@ class ActionSliceTileObservationActionFT(FTOp):
         )
 
 
-class ActionSegmentedObservationFT(FTOp):
+class ActionSegmentObservationFT(FTOp):
     """
     Creates a vector output where the observation
     is positioned according to the action taken.
@@ -522,3 +523,40 @@ def compose2(f, g):
     Returns a function: f(g(x))
     """
     return lambda *a, **kw: f(g(*a, **kw))
+
+
+def transform_pipeline(env: gym.Env, specs: Sequence[Mapping[str, Any]]) -> Pipeline:
+    """
+    Creates an environment observation wrappers.
+    """
+    input_space = ExampleSpace(
+        observation_space=env.observation_space, action_space=env.action_space
+    )
+    pipe = Pipeline(input_space=input_space)
+    for spec in specs:
+        name = spec["name"]
+        kwargs = spec["args"] or {}
+        next_ft_op = transform_op(name, **kwargs)
+        pipe = pipe.map(next_ft_op)
+    return pipe
+
+
+def transform_op(name: str, **kwargs) -> Callable[[ExampleSpace], FTOp]:
+    """
+    Creates an FTOp instance.
+    """
+    builders: Mapping[str, FTOp] = {
+        "func-ft": FuncFT,
+        "scale-observation-ft": ScaleObservationFT,
+        "tile-observation-action-ft": TileObservationActionFT,
+        "splice-tile-observation-action-ft": SpliceTileObservationActionFT,
+        "action-segment-observation-ft": ActionSegmentObservationFT,
+        "drop-observation-dims-ft": DropObservationDimsFT,
+        "ohe-action-ft": OHEActionFT,
+        "concat-observation-action-ft": ConcatObservationActionFT,
+    }
+    if name not in builders:
+        raise ValueError(
+            f"Unknown FTOp {name}. Must be one of: {sorted(builders.keys())}"
+        )
+    return builders[name].builder(**kwargs)

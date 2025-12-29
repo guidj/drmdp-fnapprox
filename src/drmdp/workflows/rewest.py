@@ -17,7 +17,16 @@ import numpy as np
 import ray
 import tensorflow as tf
 
-from drmdp import core, envs, feats, logger, mathutils, metrics, rewdelay, task
+from drmdp import (
+    core,
+    envs,
+    logger,
+    mathutils,
+    metrics,
+    rewdelay,
+    task,
+    transform,
+)
 
 MAX_STEPS = 10_000
 REWARD_DELAYS = (2, 4, 6)
@@ -274,17 +283,30 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 "max_episode_steps": MAX_STEPS,
                 "emit_state": False,
             },
-            "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 4}}],
+            "feats_specs": [
+                [
+                    {
+                        "name": "splice-tile-observation-action-ft",
+                        "args": {"tiling_dim": 4},
+                    }
+                ]
+            ],
             "rewest": least_specs(
                 attempt_estimation_episodes=(10,),
                 feat_specs=[
-                    {"name": "scale", "args": None},
+                    [
+                        {"name": "scale-observation-ft", "args": None},
+                        {"name": "action-segment-observation-ft", "args": None},
+                    ],
                 ],
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
                 feat_specs=[
-                    {"name": "scale", "args": None},
+                    [
+                        {"name": "scale-observation-ft", "args": None},
+                        {"name": "action-segment-observation-ft", "args": None},
+                    ],
                 ],
             ),
             "epochs": 1,
@@ -298,17 +320,25 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 "max_episode_steps": MAX_STEPS,
                 "emit_state": False,
             },
-            "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
+            "feats_specs": [
+                [{"name": "tile-observation-action-ft", "args": {"tiling_dim": 3}}]
+            ],
             "rewest": least_specs(
                 attempt_estimation_episodes=(10,),
                 feat_specs=[
-                    {"name": "scale", "args": None},
+                    [
+                        {"name": "scale-observation-ft", "args": None},
+                        {"name": "action-segment-observation-ft", "args": None},
+                    ],
                 ],
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
                 feat_specs=[
-                    {"name": "scale", "args": None},
+                    [
+                        {"name": "scale-observation-ft", "args": None},
+                        {"name": "action-segment-observation-ft", "args": None},
+                    ],
                 ],
             ),
             "epochs": 1,
@@ -322,17 +352,30 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 "max_episode_steps": MAX_STEPS,
                 "emit_state": False,
             },
-            "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 3}}],
+            "feats_specs": [
+                [
+                    {
+                        "name": "splice-tile-observation-action-ft",
+                        "args": {"tiling_dim": 3},
+                    }
+                ]
+            ],
             "rewest": least_specs(
                 attempt_estimation_episodes=(10,),
                 feat_specs=[
-                    {"name": "scale", "args": None},
+                    [
+                        {"name": "scale-observation-ft", "args": None},
+                        {"name": "action-segment-observation-ft", "args": None},
+                    ],
                 ],
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
                 feat_specs=[
-                    {"name": "scale", "args": None},
+                    [
+                        {"name": "scale-observation-ft", "args": None},
+                        {"name": "action-segment-observation-ft", "args": None},
+                    ],
                 ],
             ),
             "epochs": 1,
@@ -347,18 +390,27 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 "emit_state": True,
             },
             "feats_specs": [
-                {"name": "scale", "args": None},
+                [
+                    {"name": "scale-observation-ft", "args": None},
+                    {"name": "action-segment-observation-ft", "args": None},
+                ],
             ],
             "rewest": least_specs(
                 attempt_estimation_episodes=(10,),
                 feat_specs=[
-                    {"name": "scale", "args": None},
+                    [
+                        {"name": "scale-observation-ft", "args": None},
+                        {"name": "action-segment-observation-ft", "args": None},
+                    ],
                 ],
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
                 feat_specs=[
-                    {"name": "scale", "args": None},
+                    [
+                        {"name": "scale-observation-ft", "args": None},
+                        {"name": "action-segment-observation-ft", "args": None},
+                    ],
                 ],
             ),
             "epochs": 1,
@@ -372,17 +424,25 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 "max_episode_steps": MAX_STEPS,
                 "emit_state": False,
             },
-            "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
+            "feats_specs": [
+                [{"name": "tile-observation-action-ft", "args": {"tiling_dim": 3}}]
+            ],
             "rewest": least_specs(
                 attempt_estimation_episodes=(10,),
                 feat_specs=[
-                    {"name": "scale", "args": None},
+                    [
+                        {"name": "scale-observation-ft", "args": None},
+                        {"name": "action-segment-observation-ft", "args": None},
+                    ],
                 ],
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
                 feat_specs=[
-                    {"name": "scale", "args": None},
+                    [
+                        {"name": "scale-observation-ft", "args": None},
+                        {"name": "action-segment-observation-ft", "args": None},
+                    ],
                 ],
             ),
             "epochs": 1,
@@ -396,17 +456,28 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 "max_episode_steps": MAX_STEPS,
                 "emit_state": True,
             },
-            "feats_specs": [{"name": "scale", "args": None}],
+            "feats_specs": [
+                [
+                    {"name": "scale-observation-ft", "args": None},
+                    {"name": "action-segment-observation-ft", "args": None},
+                ]
+            ],
             "rewest": least_specs(
                 attempt_estimation_episodes=(10,),
                 feat_specs=[
-                    {"name": "scale", "args": None},
+                    [
+                        {"name": "scale-observation-ft", "args": None},
+                        {"name": "action-segment-observation-ft", "args": None},
+                    ],
                 ],
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
                 feat_specs=[
-                    {"name": "scale", "args": None},
+                    [
+                        {"name": "scale-observation-ft", "args": None},
+                        {"name": "action-segment-observation-ft", "args": None},
+                    ],
                 ],
             ),
             "epochs": 1,
@@ -560,8 +631,8 @@ def reward_estimation(job_spec: JobSpec):
     """
     exp_instance = create_exp_instance(job_spec)
     env, algorithm, monitor, opt_logs = setup_experiment(exp_instance)
-
     logging.debug("Starting DRMDP Control Experiments: %s", exp_instance)
+
     results = algorithm.train(
         env=env, num_episodes=exp_instance.run_config.episodes_per_run, monitor=monitor
     )
@@ -699,15 +770,14 @@ def setup_experiment(exp_instance: core.ExperimentInstance):
     env = RewardStoreWrapper(env, buffer_size=REWARD_EVAL_SAMPLES)
     opt_logs["pred_reward_buffer"] = env.buffer
     opt_logs["solver_state"] = env.solver_state
-
     # measure samples required to estimate rewards
     # random policy vs control
-    feats_tfx = feats.create_feat_transformer(env=env, **env_spec.feats_spec)
+    feats_op = transform.transform_pipeline(env=env, specs=env_spec.feats_spec)
     lr = task.learning_rate(**problem_spec.learning_rate_config)
     # Create spec using provided name and args for feature spec
     algorithm = task.create_algorithm(
         env=env,
-        feats_transform=feats_tfx,
+        ft_op=feats_op,
         delay_reward=rew_delay,
         lr=lr,
         gamma=problem_spec.gamma,

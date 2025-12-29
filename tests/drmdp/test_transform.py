@@ -126,7 +126,7 @@ def test_actionslicetileobservationactionft():
         output[indices] = 1
         return example(output, ex.action)
 
-    ftop = transform.ActionSliceTileObservationActionFT(
+    ftop = transform.SpliceTileObservationActionFT(
         input_space=input_space, tiling_dim=2
     )
     assert ftop.input_space == input_space
