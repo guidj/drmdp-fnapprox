@@ -61,7 +61,7 @@ class JobSpec:
 
     env_name: str
     env_args: Mapping[str, Any]
-    control_feats_spec: Mapping[str, Any]
+    control_feats_spec: Sequence[Mapping[str, Any]]
     rewest_method: str
     rewest_args: Mapping[str, Any]
     reward_delay: int
@@ -141,7 +141,7 @@ class RewardStoreWrapper(gym.Wrapper):
 
 def discrete_least_specs(
     attempt_estimation_episodes: Sequence[int],
-    feat_specs: Sequence[Mapping[str, Any]],
+    feat_specs: Sequence[Sequence[Mapping[str, Any]]],
     estimation_buffer_multiples: Sequence[Optional[int]] = (25,),
 ):
     """
@@ -166,7 +166,7 @@ def discrete_least_specs(
 
 def least_specs(
     attempt_estimation_episodes: Sequence[int],
-    feat_specs: Sequence[Mapping[str, Any]],
+    feat_specs: Sequence[Sequence[Mapping[str, Any]]],
     estimation_buffer_multiples: Sequence[Optional[int]] = (25,),
 ):
     """
@@ -191,7 +191,7 @@ def least_specs(
 
 def bayes_least_specs(
     init_attempt_estimation_episodes: Sequence[int],
-    feat_specs: Sequence[Mapping[str, Any]],
+    feat_specs: Sequence[Sequence[Mapping[str, Any]]],
     estimation_buffer_multiples: Sequence[Optional[int]] = (25,),
 ):
     """
@@ -217,7 +217,7 @@ def bayes_least_specs(
 
 def cvlps_specs(
     attempt_estimation_episodes: Sequence[int],
-    feat_specs: Sequence[Mapping[str, Any]],
+    feat_specs: Sequence[Sequence[Mapping[str, Any]]],
     estimation_buffer_multiples: Sequence[Optional[int]] = (25,),
     constraints_buffer_limit: Optional[int] = 100,
 ):
@@ -244,7 +244,7 @@ def cvlps_specs(
 
 def recurring_cvlps(
     init_attempt_estimation_episodes: Sequence[int],
-    feat_specs: Sequence[Mapping[str, Any]],
+    feat_specs: Sequence[Sequence[Mapping[str, Any]]],
     estimation_buffer_multiples: Sequence[Optional[int]] = (25,),
     constraints_buffer_limit: Optional[int] = 100,
 ):

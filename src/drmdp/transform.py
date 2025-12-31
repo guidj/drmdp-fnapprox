@@ -308,6 +308,165 @@ class SpliceTileObservationActionFT(FTOp):
         )
 
 
+class FlatGridObservationActionFT(FTOp):  # pylint: disable=too-many-instance-attributes
+    """
+    Flattens observation and action into a discrete number or OHE vector.
+
+    Supports two input observation space types:
+    - Box: Grid coordinates are flattened to a single state index
+    - Discrete: Observation is already a discrete state index
+
+    Maps (observation, action) -> discrete index in [0, nstates * nactions)
+    or one-hot encoded vector if ohe=True.
+    """
+
+    def __init__(
+        self,
+        input_space: ExampleSpace,
+        ohe: bool = True,
+    ):
+        super().__init__(input_space=input_space)
+        if not isinstance(
+            input_space.observation_space, (gym.spaces.Box, gym.spaces.Discrete)
+        ):
+            raise ValueError(
+                f"Expected Box or Discrete observation_space. "
+                f"Got: {input_space.observation_space}"
+            )
+        if not isinstance(input_space.action_space, gym.spaces.Discrete):
+            raise ValueError(
+                f"Expected Discrete action_space. Got: {input_space.action_space}"
+            )
+
+        self.input_space = input_space
+        self.ohe = ohe
+        self.nactions: int = input_space.action_space.n
+        self.is_discrete_obs = isinstance(
+            input_space.observation_space, gym.spaces.Discrete
+        )
+        self.get_state_idx: Callable[[Any], int] = NotImplemented
+
+        if self.is_discrete_obs:
+            # Discrete observation space
+            self.nstates = input_space.observation_space.n
+            self.get_state_idx = lambda obs: obs
+        else:
+            # Box observation space (grid coordinates)
+            if np.size(input_space.observation_space.shape) != 1:
+                raise ValueError(
+                    f"Box observation space should be 1D array. "
+                    f"Got {input_space.observation_space.shape}"
+                )
+            obs_dims = (
+                input_space.observation_space.shape[0]
+                if isinstance(input_space.observation_space.shape, Sequence)
+                else input_space.observation_space.shape
+            )
+            value_ranges = (
+                input_space.observation_space.high - input_space.observation_space.low
+            )
+            value_ranges_arr = np.array(value_ranges, dtype=np.int64)
+            if np.sum(value_ranges - value_ranges_arr) != 0:
+                raise ValueError(
+                    f"Bad value range: {input_space.observation_space}. "
+                    f"Make sure all values are integers."
+                )
+            self.nstates = int(np.prod(value_ranges_arr))
+            value_range_prod = [
+                    np.prod(value_ranges_arr[idx + 1 :]) for idx in range(obs_dims)
+                ]
+            def get_state_idx(obs: Any) -> int:
+                xs = np.concatenate([obs, [1]])
+                state_idx = 0
+                for idx in range(obs_dims):
+                    state_idx += xs[idx] * value_range_prod[idx]
+                return int(state_idx)
+
+            self.get_state_idx = get_state_idx
+
+        if ohe:
+            self._output_space = dataclasses.replace(
+                input_space,
+                observation_space=gym.spaces.Box(
+                    low=0,
+                    high=1,
+                    shape=(self.nstates * self.nactions,),
+                    dtype=np.int64,
+                ),
+            )
+        else:
+            self._output_space = dataclasses.replace(
+                input_space,
+                observation_space=gym.spaces.Discrete(self.nstates * self.nactions),
+            )
+
+    def apply(self, example: Example) -> Example:
+        state_idx = self.get_state_idx(example.observation)
+        # Map (state, action) to single discrete value
+        discrete_obs = example.action * self.nstates + state_idx
+
+        if self.ohe:
+            # One-hot encode the discrete observation
+            output = np.zeros(self.nstates * self.nactions, dtype=np.int64)
+            output[discrete_obs] = 1
+            return dataclasses.replace(example, observation=output)
+
+        return dataclasses.replace(example, observation=discrete_obs)
+
+    @property
+    def output_space(self):
+        """
+        Example output shape.
+        """
+        return self._output_space
+
+
+class OHEDiscreteObservationActionFT(FTOp):
+    """
+    One-hot encodes discrete observation and action into a single vector.
+    Takes discrete observation and discrete action, outputs OHE vector.
+    """
+
+    def __init__(
+        self,
+        input_space: ExampleSpace,
+    ):
+        super().__init__(input_space=input_space)
+        if not isinstance(input_space.observation_space, gym.spaces.Discrete):
+            raise ValueError(
+                f"Expected Discrete observation_space. Got: {input_space.observation_space}"
+            )
+        if not isinstance(input_space.action_space, gym.spaces.Discrete):
+            raise ValueError(
+                f"Expected Discrete action_space. Got: {input_space.action_space}"
+            )
+
+        self.input_space = input_space
+        self.nstates: int = input_space.observation_space.n
+        self.nactions: int = input_space.action_space.n
+        self._output_space = dataclasses.replace(
+            input_space,
+            observation_space=gym.spaces.Box(
+                low=0,
+                high=1,
+                shape=(self.nstates * self.nactions,),
+                dtype=np.int64,
+            ),
+        )
+
+    def apply(self, example: Example) -> Example:
+        output = np.zeros(shape=(self.nactions, self.nstates), dtype=np.int64)
+        output[example.action, example.observation] = 1
+        return dataclasses.replace(example, observation=output.flatten())
+
+    @property
+    def output_space(self):
+        """
+        Example output shape.
+        """
+        return self._output_space
+
+
 class ActionSegmentObservationFT(FTOp):
     """
     Creates a vector output where the observation
@@ -545,11 +704,13 @@ def transform_op(name: str, **kwargs) -> Callable[[ExampleSpace], FTOp]:
     """
     Creates an FTOp instance.
     """
-    builders: Mapping[str, FTOp] = {
+    builders: Mapping[str, Any] = {
         "func-ft": FuncFT,
         "scale-observation-ft": ScaleObservationFT,
         "tile-observation-action-ft": TileObservationActionFT,
         "splice-tile-observation-action-ft": SpliceTileObservationActionFT,
+        "flat-grid-observation-action-ft": FlatGridObservationActionFT,
+        "ohe-discrete-observation-action-ft": OHEDiscreteObservationActionFT,
         "action-segment-observation-ft": ActionSegmentObservationFT,
         "drop-observation-dims-ft": DropObservationDimsFT,
         "ohe-action-ft": OHEActionFT,
@@ -559,4 +720,4 @@ def transform_op(name: str, **kwargs) -> Callable[[ExampleSpace], FTOp]:
         raise ValueError(
             f"Unknown FTOp {name}. Must be one of: {sorted(builders.keys())}"
         )
-    return builders[name].builder(**kwargs)
+    return builders[name].builder(**kwargs) # type: ignore

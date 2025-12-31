@@ -415,6 +415,7 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         estimation_buffer_mult: Optional[int] = None,
         use_bias: bool = False,
         impute_value: float = 0.0,
+        check_factors: bool = False,
     ):
         super().__init__(env)
         if not isinstance(ft_op.output_space.observation_space, gym.spaces.Discrete):
@@ -431,15 +432,18 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         self.estimation_buffer_mult = estimation_buffer_mult
         self.use_bias = use_bias
         self.impute_value = impute_value
+        self.check_factors = check_factors
 
         self.episodes = 0
-        self.nstates = ft_op.output_space.observation_space.n
-        self.nactions = ft_op.output_space.action_space.n
-        self.mdim = self.nstates * self.nactions
+        self.mdim = ft_op.output_space.observation_space.n
         self.weights = None
         self._latest_obs = None
         self._segment_features = None
-        self.estimation_meta = {"use_bias": self.use_bias, "snapshots": []}
+        self.estimation_meta = {
+            "use_bias": self.use_bias,
+            "check_factors": check_factors,
+            "snapshots": [],
+        }
         self.rng = np.random.default_rng()
         self.est_buffer = DataBuffer(
             max_capacity=self.mdim * estimation_buffer_mult
@@ -452,9 +456,7 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         next_obs, reward, term, trunc, info = super().step(action)
 
         # Find S x A position
-        self._segment_features[
-            latest_step_feats.observation * self.nactions + action
-        ] += 1
+        self._segment_features[latest_step_feats.observation] += 1
 
         if self.weights is not None:
             # estimate
@@ -512,6 +514,11 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(gym.Wrapper, SupportsName):
         matrix = np.stack(obs_buffer, dtype=np.float64)
         rewards = np.array(rew_buffer, dtype=np.float64)
         nexamples = rewards.shape[0]
+
+        if self.check_factors:
+            rank = optsol.matrix_factors_rank(matrix)
+            if rank < matrix.shape[1]:
+                return
         if self.use_bias:
             matrix = np.concatenate(
                 [
