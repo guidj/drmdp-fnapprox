@@ -373,8 +373,9 @@ class FlatGridObservationActionFT(FTOp):  # pylint: disable=too-many-instance-at
                 )
             self.nstates = int(np.prod(value_ranges_arr))
             value_range_prod = [
-                    np.prod(value_ranges_arr[idx + 1 :]) for idx in range(obs_dims)
-                ]
+                np.prod(value_ranges_arr[idx + 1 :]) for idx in range(obs_dims)
+            ]
+
             def get_state_idx(obs: Any) -> int:
                 xs = np.concatenate([obs, [1]])
                 state_idx = 0
@@ -720,4 +721,4 @@ def transform_op(name: str, **kwargs) -> Callable[[ExampleSpace], FTOp]:
         raise ValueError(
             f"Unknown FTOp {name}. Must be one of: {sorted(builders.keys())}"
         )
-    return builders[name].builder(**kwargs) # type: ignore
+    return builders[name].builder(**kwargs)  # type: ignore
