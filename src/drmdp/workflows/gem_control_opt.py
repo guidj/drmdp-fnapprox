@@ -5,14 +5,13 @@ import json
 import logging
 import os.path
 import uuid
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 import numpy as np
 import ray
-import ray.data
 import tensorflow as tf
 
-from drmdp import feats, task
+from drmdp import task, transform
 from drmdp.envs import gem
 
 MAX_STEPS = 2500
@@ -28,7 +27,7 @@ class Args:
 @dataclasses.dataclass(frozen=True)
 class JobSpec:
     env_name: str
-    feats_spec: Mapping[str, Any]
+    feats_spec: Sequence[Mapping[str, Any]]
     policy_type: str
     num_episodes: int
     turn: int
@@ -36,9 +35,13 @@ class JobSpec:
 
 
 def run_feats_spec_control_study(
-    envs, feats_specs, turns: int, num_episodes: int, output_path: str
+    envs,
+    feats_specs: Sequence[Sequence[Mapping[str, Any]]],
+    turns: int,
+    num_episodes: int,
+    output_path: str,
 ):
-    baseline_spec = {"name": "identity", "args": None}
+    baseline_spec = [{"name": "action-segment-observation-ft", "args": None}]
     # pair speccs with policies
     configs = list(
         itertools.product(envs, feats_specs, ["markovian"], range(turns))
@@ -103,12 +106,12 @@ def feats_spec_control(job_spec: JobSpec, task_id: str):
         proxy_env=proxy_env,
         mapping_spec={"name": "identity", "args": None},
     )
-    feats_ftop = feats.create_feat_transformer(env=env, **job_spec.feats_spec)
+    ft_op = transform.transform_pipeline(env=env, specs=job_spec.feats_spec)
     lr = task.learning_rate(**{"name": "constant", "args": {"initial_lr": 0.01}})  # type: ignore
     # Create spec using provided name and args for feature spec
     algorithm = task.create_algorithm(
         env=env,
-        ft_op=feats_ftop,
+        ft_op=ft_op,
         delay_reward=rew_delay,
         lr=lr,
         gamma=1.0,
@@ -178,13 +181,16 @@ def main():
             "Finite-TC-SCIM-v0",
         ],
         [
-            {"name": "tiles", "args": {"tiling_dim": 4}},
-            {"name": "tiles", "args": {"tiling_dim": 3}},
-            {"name": "tiles", "args": {"tiling_dim": 2}},
-            {"name": "spliced-tiles", "args": {"tiling_dim": 4}},
-            {"name": "spliced-tiles", "args": {"tiling_dim": 3}},
-            {"name": "spliced-tiles", "args": {"tiling_dim": 2}},
-            {"name": "scale", "args": None},
+            [{"name": "tile-observation-action-ft", "args": {"tiling_dim": 4}}],
+            [{"name": "tile-observation-action-ft", "args": {"tiling_dim": 3}}],
+            [{"name": "tile-observation-action-ft", "args": {"tiling_dim": 2}}],
+            [{"name": "splice-tile-observation-action-ft", "args": {"tiling_dim": 4}}],
+            [{"name": "splice-tile-observation-action-ft", "args": {"tiling_dim": 3}}],
+            [{"name": "splice-tile-observation-action-ft", "args": {"tiling_dim": 2}}],
+            [
+                {"name": "scale-observation-ft", "args": None},
+                {"name": "action-segment-observation-ft", "args": None},
+            ],
         ],
         turns=args.num_runs,
         num_episodes=args.num_episodes,
