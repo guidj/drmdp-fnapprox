@@ -488,7 +488,7 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
         Override to use latest step features instead (e.g., for Bayesian methods).
         """
         del latest_step_feats
-        return self._segment_features
+        return self._segment_features  # type: ignore
 
     def _should_buffer_when_estimated(self) -> bool:
         """
@@ -765,20 +765,20 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
             )
 
     def _compute_ftop_dim(self, ft_op: transform.FTOp) -> int:
-        return ft_op.output_space.observation_space.n
+        return ft_op.output_space.observation_space.n  # type: ignore
 
     def _initialize_segment_features(self):
         return np.zeros(shape=(self.mdim))
 
     def _accumulate_step_features(self, latest_step_feats: transform.Example):
         # Discretized: increment count at feature index
-        self._segment_features[latest_step_feats.observation] += 1
+        self._segment_features[latest_step_feats.observation] += 1  # type: ignore
 
     def _has_estimate(self) -> bool:
         return self.weights is not None
 
     def _get_estimated_reward(self, feats: np.ndarray) -> float:
-        return np.dot(feats, self.weights)
+        return np.dot(feats, self.weights)  # type: ignore
 
     def _should_attempt_estimation(self, term: bool, trunc: bool) -> bool:
         return (
@@ -883,7 +883,7 @@ class LeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         return self.weights is not None
 
     def _get_estimated_reward(self, feats: np.ndarray) -> float:
-        return np.dot(feats, self.weights)
+        return np.dot(feats, self.weights)  # type: ignore
 
     def _should_attempt_estimation(self, term: bool, trunc: bool) -> bool:
         return (
@@ -1001,14 +1001,14 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         self, latest_step_feats: transform.Example
     ) -> np.ndarray:
         # Use latest step features, not accumulated
-        return latest_step_feats.observation
+        return latest_step_feats.observation  # type: ignore
 
     def _should_buffer_when_estimated(self) -> bool:
         # Continue buffering for continual learning
         return True
 
     def _get_estimated_reward(self, feats: np.ndarray) -> float:
-        return np.dot(feats, self.mv_normal_rewards.mean)
+        return np.dot(feats, self.mv_normal_rewards.mean)  # type: ignore
 
     def _should_attempt_estimation(self, term: bool, trunc: bool) -> bool:
         return (
@@ -1142,7 +1142,7 @@ class ConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         return self.weights is not None
 
     def _get_estimated_reward(self, feats: np.ndarray) -> float:
-        return np.dot(feats, self.weights)
+        return np.dot(feats, self.weights)  # type: ignore
 
     def _should_attempt_estimation(self, term: bool, trunc: bool) -> bool:
         return (
@@ -1296,7 +1296,7 @@ class RecurringConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         return True
 
     def _get_estimated_reward(self, feats: np.ndarray) -> float:
-        return np.dot(feats, self.weights)
+        return np.dot(feats, self.weights)  # type: ignore
 
     def _should_attempt_estimation(self, term: bool, trunc: bool) -> bool:
         return (
