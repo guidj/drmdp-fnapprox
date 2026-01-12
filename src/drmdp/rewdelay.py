@@ -428,10 +428,9 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
         self.use_next_state = use_next_state
 
         self.episodes = 0
-        self.mdim = self._compute_mdim(ft_op)
+        self.ft_op_dim = self._compute_ftop_dim(ft_op)
         # Double feature dimension if concatenating with next state
-        if self.use_next_state:
-            self.mdim *= 2
+        self.mdim = self.ft_op_dim * 2 if self.use_next_state else self.ft_op_dim
         self._latest_obs = None
         self._segment_features = None
         self.rng = np.random.default_rng()
@@ -455,7 +454,7 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def _compute_mdim(self, ft_op: transform.FTOp) -> int:
+    def _compute_ftop_dim(self, ft_op: transform.FTOp) -> int:
         """Compute feature dimension."""
         raise NotImplementedError
 
@@ -765,7 +764,7 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
                 f"Got: {type(ft_op.output_space.observation_space)}"
             )
 
-    def _compute_mdim(self, ft_op: transform.FTOp) -> int:
+    def _compute_ftop_dim(self, ft_op: transform.FTOp) -> int:
         return ft_op.output_space.observation_space.n
 
     def _initialize_segment_features(self):
@@ -783,7 +782,8 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
 
     def _should_attempt_estimation(self, term: bool, trunc: bool) -> bool:
         return (
-            self.weights is None
+            (term or trunc)
+            and self.weights is None
             and self.episodes >= self.attempt_estimation_episode
             and self.est_buffer.size() >= self.mdim
         )
@@ -869,7 +869,7 @@ class LeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
                 f"Got: {type(ft_op.output_space.observation_space)}"
             )
 
-    def _compute_mdim(self, ft_op: transform.FTOp) -> int:
+    def _compute_ftop_dim(self, ft_op: transform.FTOp) -> int:
         return np.size(ft_op.output_space.observation_space.high)
 
     def _initialize_segment_features(self):
@@ -887,7 +887,8 @@ class LeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
 
     def _should_attempt_estimation(self, term: bool, trunc: bool) -> bool:
         return (
-            self.weights is None
+            (term or trunc)
+            and self.weights is None
             and self.episodes >= self.attempt_estimation_episode
             and self.est_buffer.size() >= self.mdim
         )
@@ -983,7 +984,7 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
                 f"Got: {type(ft_op.output_space.observation_space)}"
             )
 
-    def _compute_mdim(self, ft_op: transform.FTOp) -> int:
+    def _compute_ftop_dim(self, ft_op: transform.FTOp) -> int:
         return np.size(ft_op.output_space.observation_space.high)
 
     def _initialize_segment_features(self):
@@ -1011,7 +1012,8 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
 
     def _should_attempt_estimation(self, term: bool, trunc: bool) -> bool:
         return (
-            not self.windowed_task_schedule.current_window_done
+            (term or trunc)
+            and not self.windowed_task_schedule.current_window_done
             and self.est_buffer.size() >= self.mdim
         )
 
@@ -1126,7 +1128,7 @@ class ConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
                 f"Got: {type(ft_op.output_space.observation_space)}"
             )
 
-    def _compute_mdim(self, ft_op: transform.FTOp) -> int:
+    def _compute_ftop_dim(self, ft_op: transform.FTOp) -> int:
         return np.size(ft_op.output_space.observation_space.high)
 
     def _initialize_segment_features(self):
@@ -1144,7 +1146,8 @@ class ConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
 
     def _should_attempt_estimation(self, term: bool, trunc: bool) -> bool:
         return (
-            self.weights is None
+            (term or trunc)
+            and self.weights is None
             and self.episodes >= self.attempt_estimation_episode
             and self.est_buffer.size() >= self.mdim
         )
@@ -1269,7 +1272,7 @@ class RecurringConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
                 f"Got: {type(ft_op.output_space.observation_space)}"
             )
 
-    def _compute_mdim(self, ft_op: transform.FTOp) -> int:
+    def _compute_ftop_dim(self, ft_op: transform.FTOp) -> int:
         return np.size(ft_op.output_space.observation_space.high)
 
     def _initialize_segment_features(self):
@@ -1297,7 +1300,8 @@ class RecurringConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
 
     def _should_attempt_estimation(self, term: bool, trunc: bool) -> bool:
         return (
-            not self.windowed_task_schedule.current_window_done
+            (term or trunc)
+            and not self.windowed_task_schedule.current_window_done
             and self.est_buffer.size() >= self.mdim
         )
 
