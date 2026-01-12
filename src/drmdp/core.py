@@ -230,8 +230,10 @@ class EnvMonitor:
 
 
 class Seeder:
-    MAX_INS = 1000
-    MAX_EPS = 100_000
+    """
+    Use's Cantor's pairing function to turn a pair
+    of integers into a unique integer.
+    """
 
     def __init__(self, instance: Optional[int] = None):
         self.instance = instance
@@ -242,7 +244,9 @@ class Seeder:
         episode specific seeds consistently.
         """
         if self.instance is not None:
-            return (self.MAX_INS * self.instance + 1) * (self.MAX_EPS + episode + 1)
+            k1 = self.instance
+            k2 = episode
+            return int(((k1 + k2) * (k1 + k2 + 1)) / 2 + k2)
         return self.instance
 
 
