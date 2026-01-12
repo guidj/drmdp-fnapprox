@@ -23,7 +23,7 @@ DEFAULT_IMPUTE_VALUE = 0
 
 def least_specs(
     attempt_estimation_episodes: Sequence[int],
-    feats_specs: Sequence[Mapping[str, Any]],
+    feats_specs: Sequence[Sequence[Mapping[str, Any]]],
     delays: Sequence[int] = (2, 4, 6, 8),
     discounts: Sequence[float] = (1.0, 0.99),
     use_next_state: bool = True,
@@ -63,7 +63,7 @@ def least_specs(
 
 def bayes_least_specs(
     init_attempt_estimation_episodes: Sequence[int],
-    feats_specs: Sequence[Mapping[str, Any]],
+    feats_specs: Sequence[Sequence[Mapping[str, Any]]],
     delays: Sequence[int] = (2, 4, 6, 8),
     discounts: Sequence[float] = (1.0, 0.99),
     impute_value: float = DEFAULT_IMPUTE_VALUE,
