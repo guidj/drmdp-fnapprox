@@ -188,7 +188,7 @@ class RandomFnApproxPolicy(core.PyValueFnPolicy):
         self.ft_op = ft_op
         self.actions = tuple(range(action_space.n))
         self.weights = np.zeros(
-            [action_space.n] + ft_op.output_space.observation_space.shape,
+            (action_space.n,) + ft_op.output_space.observation_space.shape,
             dtype=np.float64,
         )
 
@@ -361,6 +361,10 @@ class OptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
         emit_log_probability: bool = False,
         seed: Optional[int] = None,
     ):
+        if not np.size(ft_op.output_space.observation_space.shape != 1):
+            raise ValueError(
+                f"Observation output space must be a vector. Got {type(ft_op.output_space.observation_space.shape)}"
+            )
         if not isinstance(action_space, gym.spaces.Discrete):
             raise ValueError(
                 f"This policy only supports discrete action spaces. Got {type(action_space)}"
@@ -383,9 +387,9 @@ class OptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
         self.option_enc_size = option_enc_size
         # seq len + OHE[delay]
         self.options_dim = self.option_enc_size + (upper - lower + 1)
-        self.features_dim = self.ft_op.output_space.observation_space.shape + [
-            self.options_dim
-        ]
+        self.features_dim = (
+            self.ft_op.output_space.observation_space.shape[0] + self.options_dim
+        )
         self.delay_options_matrix_mapping = self.options_encoding()
         self.weights = np.zeros(self.features_dim, dtype=np.float64)
 
@@ -473,6 +477,10 @@ class SingleActionOptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
         emit_log_probability: bool = False,
         seed: Optional[int] = None,
     ):
+        if not np.size(ft_op.output_space.observation_space.shape != 1):
+            raise ValueError(
+                f"Observation output space must be a vector. Got {type(ft_op.output_space.observation_space.shape)}"
+            )
         if not isinstance(action_space, gym.spaces.Discrete):
             raise ValueError(
                 f"This policy only supports discrete action spaces. Got {type(action_space)}"
@@ -494,9 +502,9 @@ class SingleActionOptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
         self.option_enc_size = option_enc_size
         # seq len + OHE[delay]
         self.options_dim = self.option_enc_size + (upper - lower + 1)
-        self.features_dim = self.ft_op.output_space.observation_space.shape + [
-            self.options_dim
-        ]
+        self.features_dim = (
+            self.ft_op.output_space.observation_space.shape[0] + self.options_dim
+        )
         self.options_m = self.options_encoding()
         self.weights = np.zeros(self.features_dim, dtype=np.float64)
 

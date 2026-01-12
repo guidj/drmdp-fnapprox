@@ -13,7 +13,7 @@ ray job submit \
     -- \
     python $PARENT_DIR/src/$BASE/workflows/controljob.py \
         --num-runs=1 \
-        --num-episodes=100 \
+        --num-episodes=2 \
         --output-dir=$HOME/fs/$BASE/workflows/controljob/logs/$TIMESTAMP \
         --task-prefix $TIMESTAMP \
         --log-episode-frequency=5 \

@@ -27,7 +27,6 @@ def least_specs(
     delays: Sequence[int] = (2, 4, 6, 8),
     discounts: Sequence[float] = (1.0, 0.99),
     use_next_state: bool = True,
-    drop_tsc: Sequence[int] = tuple(),
     check_factors: bool = False,
     impute_value: float = DEFAULT_IMPUTE_VALUE,
 ) -> Sequence[Mapping[str, Any]]:
@@ -50,7 +49,6 @@ def least_specs(
                         "impute_value": impute_value,
                         "estimation_buffer_mult": 25,
                         "use_next_state": use_next_state,
-                        "drop_tsc": drop_tsc,
                         "check_factors": check_factors,
                     },
                 },
@@ -190,15 +188,32 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 "max_episode_steps": MAX_STEPS_PER_EPISODE_GEM,
                 "emit_state": False,
             },
-            "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 4}}],
+            "feats_specs": [
+                [
+                    {
+                        "name": "splice-tile-observation-action-ft",
+                        "args": {"tiling_dim": 4},
+                    }
+                ]
+            ],
             "problem_specs": common_problem_specs(impute_value=0)
             + least_specs(
                 attempt_estimation_episodes=(10,),
-                feats_specs=[{"name": "scale", "args": None}],
+                feats_specs=[
+                    [
+                        {"name": "scale-observation-ft", "args": None},
+                        {"name": "action-segment-observation-ft", "args": None},
+                    ]
+                ],
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
-                feats_specs=[{"name": "scale", "args": None}],
+                feats_specs=[
+                    [
+                        {"name": "scale-observation-ft", "args": None},
+                        {"name": "action-segment-observation-ft", "args": None},
+                    ]
+                ],
             ),
             "epochs": 1,
         },
@@ -211,15 +226,27 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 "max_episode_steps": MAX_STEPS_PER_EPISODE_GEM,
                 "emit_state": False,
             },
-            "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
+            "feats_specs": [
+                [{"name": "tile-observation-action-ft", "args": {"tiling_dim": 3}}]
+            ],
             "problem_specs": common_problem_specs(impute_value=0)
             + least_specs(
                 attempt_estimation_episodes=(10,),
-                feats_specs=[{"name": "scale", "args": None}],
+                feats_specs=[
+                    [
+                        {"name": "scale-observation-ft", "args": None},
+                        {"name": "action-segment-observation-ft", "args": None},
+                    ]
+                ],
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
-                feats_specs=[{"name": "scale", "args": None}],
+                feats_specs=[
+                    [
+                        {"name": "scale-observation-ft", "args": None},
+                        {"name": "action-segment-observation-ft", "args": None},
+                    ]
+                ],
             ),
             "epochs": 1,
         },
@@ -232,15 +259,32 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 "max_episode_steps": MAX_STEPS_PER_EPISODE_GEM,
                 "emit_state": False,
             },
-            "feats_specs": [{"name": "spliced-tiles", "args": {"tiling_dim": 3}}],
+            "feats_specs": [
+                [
+                    {
+                        "name": "splice-tile-observation-action-ft",
+                        "args": {"tiling_dim": 3},
+                    }
+                ]
+            ],
             "problem_specs": common_problem_specs(impute_value=2)
             + least_specs(
                 attempt_estimation_episodes=(10,),
-                feats_specs=[{"name": "scale", "args": None}],
+                feats_specs=[
+                    [
+                        {"name": "scale-observation-ft", "args": None},
+                        {"name": "action-segment-observation-ft", "args": None},
+                    ]
+                ],
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
-                feats_specs=[{"name": "scale", "args": None}],
+                feats_specs=[
+                    [
+                        {"name": "scale-observation-ft", "args": None},
+                        {"name": "action-segment-observation-ft", "args": None},
+                    ]
+                ],
             ),
             "epochs": 1,
         },
@@ -253,15 +297,30 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 "max_episode_steps": MAX_STEPS_PER_EPISODE_GEM,
                 "emit_state": True,
             },
-            "feats_specs": [{"name": "scale", "args": None}],
+            "feats_specs": [
+                [
+                    {"name": "scale-observation-ft", "args": None},
+                    {"name": "action-segment-observation-ft", "args": None},
+                ]
+            ],
             "problem_specs": common_problem_specs(impute_value=24)
             + least_specs(
                 attempt_estimation_episodes=(10,),
-                feats_specs=[{"name": "scale", "args": None}],
+                feats_specs=[
+                    [
+                        {"name": "scale-observation-ft", "args": None},
+                        {"name": "action-segment-observation-ft", "args": None},
+                    ]
+                ],
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
-                feats_specs=[{"name": "scale", "args": None}],
+                feats_specs=[
+                    [
+                        {"name": "scale-observation-ft", "args": None},
+                        {"name": "action-segment-observation-ft", "args": None},
+                    ]
+                ],
             ),
             "epochs": 1,
         },
@@ -274,15 +333,27 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 "max_episode_steps": MAX_STEPS_PER_EPISODE_GEM,
                 "emit_state": False,
             },
-            "feats_specs": [{"name": "tiles", "args": {"tiling_dim": 3}}],
+            "feats_specs": [
+                [{"name": "tile-observation-action-ft", "args": {"tiling_dim": 3}}]
+            ],
             "problem_specs": common_problem_specs(impute_value=0)
             + least_specs(
                 attempt_estimation_episodes=(10,),
-                feats_specs=[{"name": "scale", "args": None}],
+                feats_specs=[
+                    [
+                        {"name": "scale-observation-ft", "args": None},
+                        {"name": "action-segment-observation-ft", "args": None},
+                    ]
+                ],
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
-                feats_specs=[{"name": "scale", "args": None}],
+                feats_specs=[
+                    [
+                        {"name": "scale-observation-ft", "args": None},
+                        {"name": "action-segment-observation-ft", "args": None},
+                    ]
+                ],
             ),
             "epochs": 1,
         },
@@ -295,15 +366,30 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 "max_episode_steps": MAX_STEPS_PER_EPISODE_GEM,
                 "emit_state": True,
             },
-            "feats_specs": [{"name": "scale", "args": None}],
+            "feats_specs": [
+                [
+                    {"name": "scale-observation-ft", "args": None},
+                    {"name": "action-segment-observation-ft", "args": None},
+                ]
+            ],
             "problem_specs": common_problem_specs(impute_value=1)
             + least_specs(
                 attempt_estimation_episodes=(10,),
-                feats_specs=[{"name": "scale", "args": None}],
+                feats_specs=[
+                    [
+                        {"name": "scale-observation-ft", "args": None},
+                        {"name": "action-segment-observation-ft", "args": None},
+                    ]
+                ],
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
-                feats_specs=[{"name": "scale", "args": None}],
+                feats_specs=[
+                    [
+                        {"name": "scale-observation-ft", "args": None},
+                        {"name": "action-segment-observation-ft", "args": None},
+                    ]
+                ],
             ),
             "epochs": 1,
         },

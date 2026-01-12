@@ -7,7 +7,7 @@ from typing import Any, Iterator, List, Mapping, Optional, Sequence, Tuple
 import gymnasium as gym
 import numpy as np
 
-from drmdp import algorithms, core, envs, feats, logger, optsol, rewdelay, transform
+from drmdp import algorithms, core, envs, logger, optsol, rewdelay, transform
 from drmdp.envs import wrappers
 
 DELAYS: Sequence[type[rewdelay.RewardDelay]] = (
@@ -39,12 +39,12 @@ def policy_control(exp_instance: core.ExperimentInstance):
         proxy_env=proxied_env.proxy,
         mapping_spec=problem_spec.reward_mapper,
     )
-    feats_tfx = feats.create_feat_transformer(env=env, **env_spec.feats_spec)
+    ft_op = transform.transform_pipeline(env=env, specs=env_spec.feats_spec)
     lr = learning_rate(**problem_spec.learning_rate_config)
     # Create spec using provided name and args for feature spec
     algorithm = create_algorithm(
         env=env,
-        ft_op=feats_tfx,
+        ft_op=ft_op,
         delay_reward=rew_delay,
         lr=lr,
         gamma=problem_spec.gamma,
