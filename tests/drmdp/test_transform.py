@@ -126,7 +126,7 @@ def test_actionslicetileobservationactionft():
         output[indices] = 1
         return example(output, ex.action)
 
-    ftop = transform.ActionSliceTileObservationActionFT(
+    ftop = transform.SpliceTileObservationActionFT(
         input_space=input_space, tiling_dim=2
     )
     assert ftop.input_space == input_space
@@ -157,11 +157,11 @@ def test_actionslicetileobservationactionft():
     assert_batch(output, expected)
 
 
-def test_actionsegmentedobservationft():
+def test_actionsegmentobservationft():
     input_space = space(
         obs_space=spaces.Box(arr([0, -10]), arr([10, 0])), act_space=spaces.Discrete(2)
     )
-    ftop = transform.ActionSegmentedObservationFT(input_space=input_space, flat=False)
+    ftop = transform.ActionSegmentObservationFT(input_space=input_space, flat=False)
     assert ftop.output_space == space(
         obs_space=spaces.Box(
             np.stack([getattr(input_space.observation_space, "low")] * 2),
@@ -191,7 +191,7 @@ def test_actionsegmentedobservationft_with_flat():
     input_space = space(
         obs_space=spaces.Box(arr([0, -10]), arr([10, 0])), act_space=spaces.Discrete(2)
     )
-    ftop = transform.ActionSegmentedObservationFT(input_space=input_space)
+    ftop = transform.ActionSegmentObservationFT(input_space=input_space)
     assert ftop.output_space == space(
         obs_space=spaces.Box(
             np.stack([getattr(input_space.observation_space, "low")] * 2).flatten(),
@@ -327,6 +327,180 @@ def test_concatobservationactionft():
     assert_batch(output, expected)
 
 
+def test_flatgridcoordft_with_ohe():
+    # 2D grid: x in [0, 3), y in [0, 2) -> 3 * 2 = 6 states, 2 actions -> 12 features
+    input_space = space(
+        obs_space=spaces.Box(arr([0, 0]), arr([3, 2]), dtype=np.int64),
+        act_space=spaces.Discrete(2),
+    )
+    ftop = transform.FlatGridObservationActionFT(input_space=input_space, ohe=True)
+
+    assert ftop.input_space == input_space
+    assert ftop.ohe is True
+    assert ftop.nactions == 2
+    assert ftop.nstates == 6
+    assert ftop.output_space == space(
+        obs_space=spaces.Box(arr([0] * 12), arr([1] * 12), shape=(12,), dtype=np.int64),
+        act_space=spaces.Discrete(2),
+    )
+
+    # Test single example: obs=[1, 1], action=0
+    # pos = 1 * 2 + 1 * 1 = 3
+    # discrete_obs = action * nstates + pos = 0 * 6 + 3 = 3
+    # output[3] = 1
+    inputs = example(obs=arr([1, 1], dtype=np.int64), act=0)
+    expected_obs = np.zeros(12, dtype=np.int64)
+    expected_obs[3] = 1
+    expected = example(obs=expected_obs, act=0)
+    output = ftop.apply(inputs)
+    assert_equal(output, expected)
+
+    # Test batch with multiple examples
+    # obs=[0, 0], action=1 -> pos=0, discrete_obs = 1 * 6 + 0 = 6, output[6] = 1
+    # obs=[2, 1], action=0 -> pos=2*2 + 1*1 = 5, discrete_obs = 0 * 6 + 5 = 5, output[5] = 1
+    inputs = [
+        example(obs=arr([0, 0], dtype=np.int64), act=1),
+        example(obs=arr([2, 1], dtype=np.int64), act=0),
+    ]
+    expected_obs_1 = np.zeros(12, dtype=np.int64)
+    expected_obs_1[6] = 1
+    expected_obs_2 = np.zeros(12, dtype=np.int64)
+    expected_obs_2[5] = 1
+    expected = [
+        example(obs=expected_obs_1, act=1),
+        example(obs=expected_obs_2, act=0),
+    ]
+    output = ftop.batch(inputs)
+    assert_batch(output, expected)
+
+
+def test_flatgridcoordft_without_ohe():
+    # 2D grid: x in [0, 3), y in [0, 2) -> 3 * 2 = 6 states, 2 actions -> 12 discrete values
+    input_space = space(
+        obs_space=spaces.Box(arr([0, 0]), arr([3, 2]), dtype=np.int64),
+        act_space=spaces.Discrete(2),
+    )
+    ftop = transform.FlatGridObservationActionFT(input_space=input_space, ohe=False)
+
+    assert ftop.input_space == input_space
+    assert ftop.ohe is False
+    assert ftop.nactions == 2
+    assert ftop.nstates == 6
+    assert ftop.output_space == space(
+        obs_space=spaces.Discrete(12),
+        act_space=spaces.Discrete(2),
+    )
+
+    # Test single example: obs=[1, 1], action=0
+    # pos = 1 * 2 + 1 * 1 = 3
+    # discrete_obs = action * nstates + pos = 0 * 6 + 3 = 3
+    inputs = example(obs=arr([1, 1], dtype=np.int64), act=0)
+    expected = example(obs=3, act=0)
+    output = ftop.apply(inputs)
+    assert_equal(output, expected)
+
+    # Test batch with multiple examples
+    # obs=[0, 0], action=1 -> pos=0, discrete_obs = 1 * 6 + 0 = 6
+    # obs=[2, 1], action=0 -> pos=2*2 + 1*1 = 5, discrete_obs = 0 * 6 + 5 = 5
+    inputs = [
+        example(obs=arr([0, 0], dtype=np.int64), act=1),
+        example(obs=arr([2, 1], dtype=np.int64), act=0),
+    ]
+    expected = [
+        example(obs=6, act=1),
+        example(obs=5, act=0),
+    ]
+    output = ftop.batch(inputs)
+    assert_batch(output, expected)
+
+
+def test_flatgridcoordft_discrete_with_ohe():
+    # 6 discrete states, 2 actions -> 12 features
+    input_space = space(
+        obs_space=spaces.Discrete(6),
+        act_space=spaces.Discrete(2),
+    )
+    ftop = transform.FlatGridObservationActionFT(input_space=input_space, ohe=True)
+
+    assert ftop.input_space == input_space
+    assert ftop.ohe is True
+    assert ftop.is_discrete_obs is True
+    assert ftop.nactions == 2
+    assert ftop.nstates == 6
+    assert ftop.output_space == space(
+        obs_space=spaces.Box(arr([0] * 12), arr([1] * 12), shape=(12,), dtype=np.int64),
+        act_space=spaces.Discrete(2),
+    )
+
+    # Test single example: obs=3, action=0
+    # discrete_obs = action * nstates + state = 0 * 6 + 3 = 3
+    # output[3] = 1
+    inputs = example(obs=3, act=0)
+    expected_obs = np.zeros(12, dtype=np.int64)
+    expected_obs[3] = 1
+    expected = example(obs=expected_obs, act=0)
+    output = ftop.apply(inputs)
+    assert_equal(output, expected)
+
+    # Test batch with multiple examples
+    # obs=0, action=1 -> discrete_obs = 1 * 6 + 0 = 6, output[6] = 1
+    # obs=5, action=0 -> discrete_obs = 0 * 6 + 5 = 5, output[5] = 1
+    inputs = [
+        example(obs=0, act=1),
+        example(obs=5, act=0),
+    ]
+    expected_obs_1 = np.zeros(12, dtype=np.int64)
+    expected_obs_1[6] = 1
+    expected_obs_2 = np.zeros(12, dtype=np.int64)
+    expected_obs_2[5] = 1
+    expected = [
+        example(obs=expected_obs_1, act=1),
+        example(obs=expected_obs_2, act=0),
+    ]
+    output = ftop.batch(inputs)
+    assert_batch(output, expected)
+
+
+def test_flatgridcoordft_discrete_without_ohe():
+    # 6 discrete states, 2 actions -> 12 discrete values
+    input_space = space(
+        obs_space=spaces.Discrete(6),
+        act_space=spaces.Discrete(2),
+    )
+    ftop = transform.FlatGridObservationActionFT(input_space=input_space, ohe=False)
+
+    assert ftop.input_space == input_space
+    assert ftop.ohe is False
+    assert ftop.is_discrete_obs is True
+    assert ftop.nactions == 2
+    assert ftop.nstates == 6
+    assert ftop.output_space == space(
+        obs_space=spaces.Discrete(12),
+        act_space=spaces.Discrete(2),
+    )
+
+    # Test single example: obs=3, action=0
+    # discrete_obs = action * nstates + state = 0 * 6 + 3 = 3
+    inputs = example(obs=3, act=0)
+    expected = example(obs=3, act=0)
+    output = ftop.apply(inputs)
+    assert_equal(output, expected)
+
+    # Test batch with multiple examples
+    # obs=0, action=1 -> discrete_obs = 1 * 6 + 0 = 6
+    # obs=5, action=0 -> discrete_obs = 0 * 6 + 5 = 5
+    inputs = [
+        example(obs=0, act=1),
+        example(obs=5, act=0),
+    ]
+    expected = [
+        example(obs=6, act=1),
+        example(obs=5, act=0),
+    ]
+    output = ftop.batch(inputs)
+    assert_batch(output, expected)
+
+
 def test_pipeline():
     input_space = space(
         obs_space=spaces.Box(arr([0, 0]), arr([10, 100])), act_space=spaces.Discrete(2)
@@ -352,7 +526,7 @@ def test_pipeline():
     # Pass 'scale -> seg -> double'    #  pipeline
     pipe = (
         pipe.map(transform.ScaleObservationFT.builder())
-        .map(transform.ActionSegmentedObservationFT.builder())
+        .map(transform.ActionSegmentObservationFT.builder())
         .map(
             transform.FuncFT.builder(
                 transform_fn=lambda ex: example(ex.observation * 2, ex.action),

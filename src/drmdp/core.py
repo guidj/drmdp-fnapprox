@@ -123,7 +123,7 @@ class EnvSpec:
 
     name: str
     args: Optional[Mapping[str, Any]]
-    feats_spec: Mapping[str, Any]
+    feats_spec: Sequence[Mapping[str, Any]]
 
 
 @dataclasses.dataclass(frozen=True)
