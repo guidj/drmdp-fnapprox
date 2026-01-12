@@ -159,6 +159,102 @@ def test_least_lfa_generative_reward_wrapper_invalid_spaces():
         )
 
 
+def test_least_lfa_generative_reward_wrapper_with_next_state():
+    """Test that use_next_state=True doubles mdim and concatenates features."""
+
+    class StateDependentFTOp(transform.FTOp):
+        """FTOp that returns different vectors based on observation value."""
+
+        def __init__(self, env: gym.Env):
+            super().__init__(
+                transform.ExampleSpace(
+                    observation_space=env.observation_space,
+                    action_space=env.action_space,
+                )
+            )
+            if not isinstance(env.action_space, gym.spaces.Discrete):
+                raise ValueError(
+                    f"Action space must be Discrete. Got {env.action_space}"
+                )
+            self._output_space = transform.ExampleSpace(
+                observation_space=spaces.Box(low=-10, high=10, shape=(2,)),
+                action_space=env.action_space,
+            )
+
+        def apply(self, example: transform.Example) -> transform.Example:
+            # Use the mean of observation vector as a unique identifier
+            obs_id = np.mean(example.observation)
+            # Return different features based on observation
+            return transform.Example(
+                observation=np.array([obs_id, obs_id * 2]),
+                action=example.action,
+            )
+
+        @property
+        def output_space(self):
+            return self._output_space
+
+    env = DummyEnv()
+    ft_op = StateDependentFTOp(env)
+
+    # Create wrapper with use_next_state=True
+    wrapped = rewdelay.LeastLfaGenerativeRewardWrapper(
+        rewdelay.DelayedRewardWrapper(env, rewdelay.FixedDelay(delay=2)),
+        ft_op=ft_op,
+        attempt_estimation_episode=2,
+        use_bias=False,
+        use_next_state=True,
+    )
+
+    # Verify mdim is doubled (2 * 2 = 4)
+    assert wrapped.mdim == 4, f"Expected mdim=4, got {wrapped.mdim}"
+
+    obs, info = wrapped.reset()
+    np.testing.assert_array_equal(obs, np.array([-1, -1, -1]))
+    assert info == {"delay": 2, "segment": 0, "segment_step": -1, "next_delay": 2}
+    # Initial obs is [-1, -1, -1], mean = -1, features = [-1, -2]
+
+    # Ep 1, Seg 1
+    # Step 1: current state = [-1,-1,-1] (mean=-1), next state = [1,1,1] (mean=1)
+    # Features should be: [-1, -2, 1, 2] (current + next)
+    _, rew1, term, trunc, _ = wrapped.step(0)
+    assert (rew1, term, trunc) == (0.0, False, False)
+
+    # Step 2: current state = [1,1,1] (mean=1), next state = [2,2,2] (mean=2) - terminal
+    # Features should be: [1, 2, 2, 4] (current + next)
+    _, rew2, term, trunc, _ = wrapped.step(1)
+    assert (rew2, term, trunc) == (2.0, True, False)
+
+    wrapped.reset()
+
+    # Ep 2, Seg 1
+    _, rew3, term, trunc, _ = wrapped.step(0)
+    assert (rew3, term, trunc) == (0.0, False, False)
+    _, rew4, term, trunc, _ = wrapped.step(2)
+    assert (rew4, term, trunc) == (2.0, True, False)
+
+    # Force estimation
+    wrapped.estimate_rewards()
+    assert wrapped.weights is not None
+
+    # Verify buffered features have doubled size (4 dimensions) and correct concatenation
+    assert len(wrapped.est_buffer.buffer) == 2
+
+    # First segment from Ep 1: accumulated features from two steps
+    # Step 1: [-1, -2, 1, 2]
+    # Step 2: [1, 2, 2, 4]
+    # Accumulated (additive): [0, 0, 3, 6]
+    features1, reward1 = wrapped.est_buffer.buffer[0]
+    assert len(features1) == 4, f"Expected feature size=4, got {len(features1)}"
+    np.testing.assert_array_almost_equal(features1, [0.0, 0.0, 3.0, 6.0])
+    assert reward1 == 2.0
+
+    # Second segment from Ep 2 should be identical
+    features2, reward2 = wrapped.est_buffer.buffer[1]
+    np.testing.assert_array_almost_equal(features2, [0.0, 0.0, 3.0, 6.0])
+    assert reward2 == 2.0
+
+
 def test_convex_solver_generative_reward_wrapper_init():
     env = DummyEnv()
     ft_op = DummyFTOp(env)

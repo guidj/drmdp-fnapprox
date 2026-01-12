@@ -1,4 +1,5 @@
 import abc
+import dataclasses
 import logging
 import random
 import sys
@@ -414,6 +415,7 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
         use_bias: bool = False,
         impute_value: float = 0.0,
         estimation_buffer_mult: Optional[int] = None,
+        use_next_state: bool = False,
     ):
         super().__init__(env)
         self._validate_observation_space(ft_op)
@@ -423,9 +425,13 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
         self.use_bias = use_bias
         self.impute_value = impute_value
         self.estimation_buffer_mult = estimation_buffer_mult
+        self.use_next_state = use_next_state
 
         self.episodes = 0
         self.mdim = self._compute_mdim(ft_op)
+        # Double feature dimension if concatenating with next state
+        if self.use_next_state:
+            self.mdim *= 2
         self._latest_obs = None
         self._segment_features = None
         self.rng = np.random.default_rng()
@@ -631,8 +637,21 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
 
     def step(self, action):
         latest_step_feats = self.ft_op(transform.Example(self._latest_obs, action))
-        self._accumulate_step_features(latest_step_feats)
         next_obs, reward, term, trunc, info = super().step(action)
+
+        # Concatenate with next state features if enabled
+        if self.use_next_state:
+            next_state_feats = self.ft_op(transform.Example(next_obs, 0))
+            # Concatenate observations from both examples
+            concatenated_obs = np.concatenate(
+                [latest_step_feats.observation, next_state_feats.observation]
+            )
+            latest_step_feats = dataclasses.replace(
+                latest_step_feats,
+                observation=concatenated_obs,
+            )
+
+        self._accumulate_step_features(latest_step_feats)
 
         # Buffer segment data at segment end (for continual learning)
         if (
@@ -720,6 +739,7 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         use_bias: bool = False,
         impute_value: float = 0.0,
         check_factors: bool = False,
+        use_next_state: bool = False,
     ):
         super().__init__(
             env=env,
@@ -727,6 +747,7 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
             use_bias=use_bias,
             impute_value=impute_value,
             estimation_buffer_mult=estimation_buffer_mult,
+            use_next_state=use_next_state,
         )
         self.attempt_estimation_episode = attempt_estimation_episode
         self.check_factors = check_factors
@@ -822,6 +843,7 @@ class LeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         use_bias: bool = False,
         impute_value: float = 0.0,
         check_factors: bool = False,
+        use_next_state: bool = False,
     ):
         super().__init__(
             env=env,
@@ -829,6 +851,7 @@ class LeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
             use_bias=use_bias,
             impute_value=impute_value,
             estimation_buffer_mult=estimation_buffer_mult,
+            use_next_state=use_next_state,
         )
         self.attempt_estimation_episode = attempt_estimation_episode
         self.check_factors = check_factors
@@ -928,6 +951,7 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         use_bias: bool = False,
         impute_value: float = 0.0,
         check_factors: bool = False,
+        use_next_state: bool = False,
     ):
         super().__init__(
             env=env,
@@ -935,6 +959,7 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
             use_bias=use_bias,
             impute_value=impute_value,
             estimation_buffer_mult=estimation_buffer_mult,
+            use_next_state=use_next_state,
         )
         self.mode = mode
         self.init_attempt_estimation_episode = init_attempt_estimation_episode
@@ -1077,6 +1102,7 @@ class ConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         use_bias: bool = False,
         impute_value: float = 0.0,
         constraints_buffer_limit: Optional[int] = None,
+        use_next_state: bool = False,
     ):
         super().__init__(
             env=env,
@@ -1084,6 +1110,7 @@ class ConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
             use_bias=use_bias,
             impute_value=impute_value,
             estimation_buffer_mult=estimation_buffer_mult,
+            use_next_state=use_next_state,
         )
         self.attempt_estimation_episode = attempt_estimation_episode
         self.constraints_buffer_limit = constraints_buffer_limit
@@ -1209,6 +1236,7 @@ class RecurringConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         use_bias: bool = False,
         impute_value: float = 0.0,
         constraints_buffer_limit: Optional[int] = None,
+        use_next_state: bool = False,
     ):
         super().__init__(
             env=env,
@@ -1216,6 +1244,7 @@ class RecurringConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
             use_bias=use_bias,
             impute_value=impute_value,
             estimation_buffer_mult=estimation_buffer_mult,
+            use_next_state=use_next_state,
         )
         self.mode = mode
         self.init_attempt_estimation_episode = init_attempt_estimation_episode
@@ -1257,7 +1286,7 @@ class RecurringConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         self, latest_step_feats: transform.Example
     ) -> np.ndarray:
         # Use latest step features, not accumulated
-        return latest_step_feats.observation
+        return latest_step_feats.observation  # type: ignore
 
     def _should_buffer_when_estimated(self) -> bool:
         # Continue buffering for continual learning
