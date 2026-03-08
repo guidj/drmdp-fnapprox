@@ -30,6 +30,19 @@ POLICY_TYPES = {
 
 ORDERED_METHODS = ["BLADE-TD", "BLADE-TD[N-B]", "IMR", "OP-A", "OP-S", "DMR", "FR"]
 
+FEAT_PROCS = {
+    "func-ft": "custom",
+    "scale-observation-ft": "scale",
+    "tile-observation-action-ft": "tiles",
+    "splice-tile-observation-action-ft": "spliced-tiles",
+    "flat-grid-observation-action-ft": "flat-grid",
+    "ohe-discrete-observation-action-ft": "ohe-obs",
+    "action-segment-observation-ft": "seg",
+    "drop-observation-dims-ft": "drop-dims",
+    "ohe-action-ft": "ohe-action",
+    "concat-observation-action-ft": "concat",
+}
+
 
 def collection_traj_data(env: gym.Env, steps: int, seed: Optional[int] = None):
     """
