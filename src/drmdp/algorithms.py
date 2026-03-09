@@ -361,7 +361,7 @@ class OptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
         emit_log_probability: bool = False,
         seed: Optional[int] = None,
     ):
-        if not np.size(ft_op.output_space.observation_space.shape != 1):
+        if len(ft_op.output_space.observation_space.shape) != 1:
             raise ValueError(
                 f"Observation output space must be a vector. Got {type(ft_op.output_space.observation_space.shape)}"
             )
@@ -477,7 +477,7 @@ class SingleActionOptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
         emit_log_probability: bool = False,
         seed: Optional[int] = None,
     ):
-        if not np.size(ft_op.output_space.observation_space.shape != 1):
+        if len(ft_op.output_space.observation_space.shape) != 1:
             raise ValueError(
                 f"Observation output space must be a vector. Got {type(ft_op.output_space.observation_space.shape)}"
             )

@@ -168,6 +168,11 @@ class TileObservationActionFT(FTOp):
         self.tiling_dim = tiling_dim
         self.wrapwidths = [tiling_dim] * np.size(input_space.observation_space.low)
         self.hash_dim = hash_dim
+        # Store bounds for internal scaling to [0, 1]
+        self._obs_low = input_space.observation_space.low
+        self._obs_range = (
+            input_space.observation_space.high - input_space.observation_space.low
+        )
         self.tiles = tiles.Tiles(
             dims_min=input_space.observation_space.low,
             dims_max=input_space.observation_space.high,
@@ -203,7 +208,9 @@ class TileObservationActionFT(FTOp):
         output = np.zeros(
             shape=self.max_size, dtype=self.output_space.observation_space.dtype
         )
-        indices = self._tiles(example.observation, example.action)
+        # Scale observation to [0, 1] before tiling
+        obs_scaled_01 = (example.observation - self._obs_low) / self._obs_range
+        indices = self._tiles(obs_scaled_01, example.action)
         output[indices] = 1
         if self.hash_dim:
             output = mathutils.hashtrick(output, self.hash_dim)
@@ -216,11 +223,11 @@ class TileObservationActionFT(FTOp):
         """
         return self._output_space
 
-    def _tiles(self, scaled_observation: np.ndarray, action: ActType):
+    def _tiles(self, observation: np.ndarray, action: ActType):
         return tiles.tileswrap(
             self.iht,
             numtilings=self.num_tilings,
-            floats=scaled_observation * self.tiling_dim,  # type: ignore
+            floats=observation * self.tiling_dim,  # type: ignore
             wrapwidths=self.wrapwidths,
             ints=[action] if action is not None else (),
         )
@@ -252,6 +259,11 @@ class SpliceTileObservationActionFT(FTOp):
         self.tiling_dim = tiling_dim
         self.wrapwidths = [tiling_dim] * np.size(input_space.observation_space.low)
         self.hash_dim = hash_dim
+        # Store bounds for internal scaling to [0, 1]
+        self._obs_low = input_space.observation_space.low
+        self._obs_range = (
+            input_space.observation_space.high - input_space.observation_space.low
+        )
         self.tiles = tiles.Tiles(
             dims_min=input_space.observation_space.low,
             dims_max=input_space.observation_space.high,
@@ -286,7 +298,9 @@ class SpliceTileObservationActionFT(FTOp):
 
     def apply(self, example: Example) -> Example:
         output = np.zeros(shape=self.max_size)
-        indices = self._tiles(example.observation, example.action)
+        # Scale observation to [0, 1] before tiling
+        obs_scaled_01 = (example.observation - self._obs_low) / self._obs_range
+        indices = self._tiles(obs_scaled_01, example.action)
         output[indices] = 1
         if self.hash_dim:
             output = mathutils.hashtrick(output, self.hash_dim)
@@ -299,11 +313,11 @@ class SpliceTileObservationActionFT(FTOp):
         """
         return self._output_space
 
-    def _tiles(self, scaled_observation: np.ndarray, action: ActType):
+    def _tiles(self, observation: np.ndarray, action: ActType):
         return tiles.tileswrap(
             self.ihts[action],
             numtilings=self.num_tilings,
-            floats=scaled_observation * self.tiling_dim,  # type: ignore
+            floats=observation * self.tiling_dim,  # type: ignore
             wrapwidths=self.wrapwidths,
         )
 
