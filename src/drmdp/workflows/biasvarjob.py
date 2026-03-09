@@ -40,7 +40,7 @@ import tensorflow as tf
 
 from drmdp import core, envs, metrics, task, transform
 
-MAX_STEPS = 10_000
+MAX_STEPS_PER_EPISODE_GEM = 10_000
 REWARD_EVAL_SAMPLES = 25_000
 NUM_TASKS_PER_WRITER = 100
 
@@ -180,9 +180,6 @@ def bayes_least_lfa_specs(
 def experiment_specs() -> Sequence[Mapping[str, Any]]:
     """
     Returns experiment configurations.
-
-    Uses 8 environments from bayesleastjob.py with both least-lfa
-    and bayes-least-lfa estimators.
     """
     return (
         {
@@ -190,8 +187,9 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             "args": {
                 "reward_fn": "pos-enf",
                 "penalty_gamma": 1.0,
-                "constraint_violation_reward": 0.0,
-                "max_episode_steps": 200,
+                "constraint_violation_reward": -10,
+                "max_episode_steps": MAX_STEPS_PER_EPISODE_GEM,
+                "emit_state": False,
             },
             "feats_specs": [
                 [
@@ -202,7 +200,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 ]
             ],
             "rewest": least_lfa_specs(
-                attempt_estimation_episodes=(10, 50, 100),
+                attempt_estimation_episodes=(10,),
                 feat_specs=[
                     [
                         {"name": "scale-observation-ft", "args": None},
@@ -211,7 +209,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 ],
             )
             + bayes_least_lfa_specs(
-                init_attempt_estimation_episodes=(10, 50, 100),
+                init_attempt_estimation_episodes=(10,),
                 feat_specs=[
                     [
                         {"name": "scale-observation-ft", "args": None},
@@ -226,14 +224,15 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             "args": {
                 "reward_fn": "pos-enf",
                 "penalty_gamma": 1.0,
-                "constraint_violation_reward": 0.0,
-                "max_episode_steps": 200,
+                "constraint_violation_reward": -10,
+                "max_episode_steps": MAX_STEPS_PER_EPISODE_GEM,
+                "emit_state": False,
             },
             "feats_specs": [
                 [{"name": "tile-observation-action-ft", "args": {"tiling_dim": 3}}]
             ],
             "rewest": least_lfa_specs(
-                attempt_estimation_episodes=(10, 50, 100),
+                attempt_estimation_episodes=(10,),
                 feat_specs=[
                     [
                         {"name": "scale-observation-ft", "args": None},
@@ -242,7 +241,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 ],
             )
             + bayes_least_lfa_specs(
-                init_attempt_estimation_episodes=(10, 50, 100),
+                init_attempt_estimation_episodes=(10,),
                 feat_specs=[
                     [
                         {"name": "scale-observation-ft", "args": None},
@@ -257,8 +256,9 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             "args": {
                 "reward_fn": "pos-enf",
                 "penalty_gamma": 1.0,
-                "constraint_violation_reward": 0.0,
-                "max_episode_steps": 200,
+                "constraint_violation_reward": -10,
+                "max_episode_steps": MAX_STEPS_PER_EPISODE_GEM,
+                "emit_state": False,
             },
             "feats_specs": [
                 [
@@ -269,7 +269,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 ]
             ],
             "rewest": least_lfa_specs(
-                attempt_estimation_episodes=(10, 50, 100),
+                attempt_estimation_episodes=(10,),
                 feat_specs=[
                     [
                         {"name": "scale-observation-ft", "args": None},
@@ -278,7 +278,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 ],
             )
             + bayes_least_lfa_specs(
-                init_attempt_estimation_episodes=(10, 50, 100),
+                init_attempt_estimation_episodes=(10,),
                 feat_specs=[
                     [
                         {"name": "scale-observation-ft", "args": None},
@@ -293,8 +293,9 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             "args": {
                 "reward_fn": "pos-enf",
                 "penalty_gamma": 1.0,
-                "constraint_violation_reward": 0.0,
-                "max_episode_steps": 200,
+                "constraint_violation_reward": -10,
+                "max_episode_steps": MAX_STEPS_PER_EPISODE_GEM,
+                "emit_state": True,
             },
             "feats_specs": [
                 [
@@ -303,7 +304,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 ],
             ],
             "rewest": least_lfa_specs(
-                attempt_estimation_episodes=(10, 50, 100),
+                attempt_estimation_episodes=(10,),
                 feat_specs=[
                     [
                         {"name": "scale-observation-ft", "args": None},
@@ -312,7 +313,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 ],
             )
             + bayes_least_lfa_specs(
-                init_attempt_estimation_episodes=(10, 50, 100),
+                init_attempt_estimation_episodes=(10,),
                 feat_specs=[
                     [
                         {"name": "scale-observation-ft", "args": None},
@@ -327,14 +328,15 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             "args": {
                 "reward_fn": "pos-enf",
                 "penalty_gamma": 1.0,
-                "constraint_violation_reward": 0.0,
-                "max_episode_steps": 200,
+                "constraint_violation_reward": -10,
+                "max_episode_steps": MAX_STEPS_PER_EPISODE_GEM,
+                "emit_state": False,
             },
             "feats_specs": [
                 [{"name": "tile-observation-action-ft", "args": {"tiling_dim": 3}}]
             ],
             "rewest": least_lfa_specs(
-                attempt_estimation_episodes=(10, 50, 100),
+                attempt_estimation_episodes=(10,),
                 feat_specs=[
                     [
                         {"name": "scale-observation-ft", "args": None},
@@ -343,7 +345,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                 ],
             )
             + bayes_least_lfa_specs(
-                init_attempt_estimation_episodes=(10, 50, 100),
+                init_attempt_estimation_episodes=(10,),
                 feat_specs=[
                     [
                         {"name": "scale-observation-ft", "args": None},
@@ -354,96 +356,39 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             "epochs": 1,
         },
         {
-            "name": "RedGreen-v0",
-            "args": None,
-            "feats_specs": [
-                [{"name": "tile-observation-action-ft", "args": {"tiling_dim": 6}}],
-            ],
-            "rewest": least_lfa_specs(
-                attempt_estimation_episodes=(10, 50, 100),
-                feat_specs=[
-                    [
-                        {
-                            "name": "tile-observation-action-ft",
-                            "args": {"tiling_dim": 6},
-                        },
-                    ],
-                ],
-            )
-            + bayes_least_lfa_specs(
-                init_attempt_estimation_episodes=(10, 50, 100),
-                feat_specs=[
-                    [
-                        {
-                            "name": "tile-observation-action-ft",
-                            "args": {"tiling_dim": 6},
-                        },
-                    ],
-                ],
-            ),
-            "epochs": 100,
-        },
-        {
-            "name": "IceWorld-v0",
-            "args": None,
-            "feats_specs": [
-                [{"name": "tile-observation-action-ft", "args": {"tiling_dim": 6}}],
-            ],
-            "rewest": least_lfa_specs(
-                attempt_estimation_episodes=(10, 50, 100),
-                feat_specs=[
-                    [
-                        {
-                            "name": "tile-observation-action-ft",
-                            "args": {"tiling_dim": 6},
-                        },
-                    ],
-                ],
-            )
-            + bayes_least_lfa_specs(
-                init_attempt_estimation_episodes=(10, 50, 100),
-                feat_specs=[
-                    [
-                        {
-                            "name": "tile-observation-action-ft",
-                            "args": {"tiling_dim": 6},
-                        },
-                    ],
-                ],
-            ),
-            "epochs": 100,
-        },
-        {
-            "name": "MountainCar-v0",
+            "name": "FFinite-TC-ShuntDc-v0",
             "args": {
-                "max_episode_steps": 2500,
+                "reward_fn": "pos-enf",
+                "penalty_gamma": 1.0,
+                "constraint_violation_reward": -10,
+                "max_episode_steps": MAX_STEPS_PER_EPISODE_GEM,
+                "emit_state": True,
             },
             "feats_specs": [
-                [{"name": "tile-observation-action-ft", "args": {"tiling_dim": 6}}],
+                [
+                    {"name": "scale-observation-ft", "args": None},
+                    {"name": "action-segment-observation-ft", "args": None},
+                ]
             ],
             "rewest": least_lfa_specs(
-                attempt_estimation_episodes=(10, 50, 100),
+                attempt_estimation_episodes=(10,),
                 feat_specs=[
                     [
-                        {
-                            "name": "tile-observation-action-ft",
-                            "args": {"tiling_dim": 6},
-                        },
+                        {"name": "scale-observation-ft", "args": None},
+                        {"name": "action-segment-observation-ft", "args": None},
                     ],
                 ],
             )
             + bayes_least_lfa_specs(
-                init_attempt_estimation_episodes=(10, 50, 100),
+                init_attempt_estimation_episodes=(10,),
                 feat_specs=[
                     [
-                        {
-                            "name": "tile-observation-action-ft",
-                            "args": {"tiling_dim": 6},
-                        },
+                        {"name": "scale-observation-ft", "args": None},
+                        {"name": "action-segment-observation-ft", "args": None},
                     ],
                 ],
             ),
-            "epochs": 10,
+            "epochs": 1,
         },
     )
 
@@ -584,7 +529,7 @@ def run_bias_var_experiment(
 
         # Collect returns
         returns = []
-        for episode, snapshot in enumerate(results):
+        for _, snapshot in enumerate(results):
             returns.append(snapshot.returns)
 
         # Prepare result
@@ -991,65 +936,63 @@ def main():
     args = parse_args()
 
     # Initialize Ray
-    ray.init(address=os.environ.get("RAY_ADDRESS", "auto"))
-    logging.info("Ray initialized")
+    with ray.init(address=os.environ.get("RAY_ADDRESS", "auto")):
+        logging.info("Ray initialized")
 
-    # Create output directories
-    results_dir = os.path.join(args.output_path, "raw_results")
-    os.makedirs(results_dir, exist_ok=True)
+        # Create output directories
+        results_dir = os.path.join(args.output_path, "raw_results")
+        os.makedirs(results_dir, exist_ok=True)
 
-    # Create all job specifications
-    specs = experiment_specs()
-    job_specs = create_all_job_specs(
-        specs=specs,
-        num_runs=args.num_runs,
-        num_episodes=args.num_episodes,
-    )
-    logging.info("Created %d job specifications", len(job_specs))
+        # Create all job specifications
+        specs = experiment_specs()
+        job_specs = create_all_job_specs(
+            specs=specs,
+            num_runs=args.num_runs,
+            num_episodes=args.num_episodes,
+        )
+        logging.info("Created %d job specifications", len(job_specs))
 
-    # Shuffle jobs to balance workload
-    np.random.shuffle(job_specs)  # type: ignore
+        # Shuffle jobs to balance workload
+        np.random.shuffle(job_specs)  # type: ignore
 
-    # Create result writers
-    num_writers = max(math.floor(len(job_specs) / NUM_TASKS_PER_WRITER), 1)
-    result_writers = [
-        ResultWriter.remote(prefix=idx, output_path=results_dir)  # type: ignore
-        for idx in range(num_writers)
-    ]
-    logging.info("Created %d result writers", num_writers)
+        # Create result writers
+        num_writers = max(math.floor(len(job_specs) / NUM_TASKS_PER_WRITER), 1)
+        result_writers = [
+            ResultWriter.remote(prefix=idx, output_path=results_dir)  # type: ignore
+            for idx in range(num_writers)
+        ]
+        logging.info("Created %d result writers", num_writers)
 
-    # Submit all jobs
-    logging.info("Submitting %d experiment runs...", len(job_specs))
-    results_refs = [
-        run_bias_var_experiment.remote(job, result_writers[idx % num_writers])
-        for idx, job in enumerate(job_specs)
-    ]
+        # Submit all jobs
+        logging.info("Submitting %d experiment runs...", len(job_specs))
+        results_refs = [
+            run_bias_var_experiment.remote(job, result_writers[idx % num_writers])
+            for idx, job in enumerate(job_specs)
+        ]
 
-    # Wait for experiments to complete
-    wait_till_completion(results_refs, name="Bias-Var-Experiment")
+        # Wait for experiments to complete
+        wait_till_completion(results_refs, name="Bias-Var-Experiment")
 
-    # Flush writer buffers
-    wait_till_completion(
-        [writer.sync.remote() for writer in result_writers],  # type: ignore
-        name="Flush-Buffer",
-    )
+        # Flush writer buffers
+        wait_till_completion(
+            [writer.sync.remote() for writer in result_writers],  # type: ignore
+            name="Flush-Buffer",
+        )
 
-    logging.info("All experiments complete. Aggregating results...")
+        logging.info("All experiments complete. Aggregating results...")
 
-    # Load and process results
-    aligned_df = load_and_align_results(results_dir)
-    bias_var_df = compute_bias_variance(aligned_df)
-    summary_df = aggregate_over_windows(bias_var_df)
+        # Load and process results
+        aligned_df = load_and_align_results(results_dir)
+        bias_var_df = compute_bias_variance(aligned_df)
+        summary_df = aggregate_over_windows(bias_var_df)
 
-    # Export final results
-    output_dir = os.path.join(args.output_path, "aggregated")
-    export_results(bias_var_df, summary_df, output_dir)
+        # Export final results
+        output_dir = os.path.join(args.output_path, "aggregated")
+        export_results(bias_var_df, summary_df, output_dir)
 
-    logging.info("Bias-variance analysis complete!")
-    logging.info("Raw results: %s", results_dir)
-    logging.info("Aggregated results: %s", output_dir)
-
-    ray.shutdown()
+        logging.info("Bias-variance analysis complete!")
+        logging.info("Raw results: %s", results_dir)
+        logging.info("Aggregated results: %s", output_dir)
 
 
 def parse_args() -> Args:
