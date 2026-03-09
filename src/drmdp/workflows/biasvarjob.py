@@ -356,7 +356,7 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             "epochs": 1,
         },
         {
-            "name": "FFinite-TC-ShuntDc-v0",
+            "name": "Finite-TC-ShuntDc-v0",
             "args": {
                 "reward_fn": "pos-enf",
                 "penalty_gamma": 1.0,
