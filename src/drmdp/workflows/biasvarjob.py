@@ -52,6 +52,7 @@ class Args:
     num_runs: int
     num_episodes: int
     output_path: str
+    batch_size: int = 8  # Number of result files to process per batch
 
 
 @dataclasses.dataclass(frozen=True)
@@ -645,6 +646,274 @@ def read_records(
     return records
 
 
+def process_file_batch(file_paths: Sequence[str], batch_id: int) -> pd.DataFrame:
+    """
+    Process a batch of result files and return aligned rewards.
+
+    Similar to load_and_align_results but for a subset of files.
+    Reduces memory by processing incrementally.
+    """
+    logging.info("Processing batch %d with %d files", batch_id, len(file_paths))
+
+    rows = []
+    for file_path in file_paths:
+        records = read_records(file_path, gzip_compression=True)
+        for record in records:
+            # Extract metadata
+            env_name = record["env_name"]
+            rewest_method = record["rewest_method"]
+            delay = record["reward_delay"]
+            gamma = record["gamma"]
+            estimation_episode = record["estimation_episode"]
+            run_id = record["run_id"]
+
+            # Expand reward buffers
+            true_rewards = record["true_rewards"]
+            pred_rewards = record["pred_rewards"]
+            min_len = min(len(true_rewards), len(pred_rewards))
+
+            for i in range(min_len):
+                true_entry = true_rewards[i]
+                pred_entry = pred_rewards[i]
+
+                # Verify timestep alignment
+                if true_entry["global_step"] != pred_entry["global_step"]:
+                    logging.warning(
+                        "Timestep mismatch for run %s: true=%d, pred=%d",
+                        run_id,
+                        true_entry["global_step"],
+                        pred_entry["global_step"],
+                    )
+                    continue
+
+                rows.append(
+                    {
+                        "env_name": env_name,
+                        "rewest_method": rewest_method,
+                        "delay": delay,
+                        "gamma": gamma,
+                        "estimation_episode": estimation_episode,
+                        "run_id": run_id,
+                        "global_step": true_entry["global_step"],
+                        "episode": true_entry["episode"],
+                        "true_reward": true_entry["reward"],
+                        "pred_reward": pred_entry["reward"],
+                    }
+                )
+
+    df = pd.DataFrame(rows)
+    logging.info("Batch %d: loaded %d reward observations", batch_id, len(df))
+    return df
+
+
+def compute_bias_variance_incremental(
+    partial_stats: Dict[tuple, Dict], batch_df: pd.DataFrame
+) -> Dict[tuple, Dict]:
+    """
+    Incrementally update bias-variance statistics from a batch.
+
+    Uses online algorithm to accumulate statistics without storing all data.
+    For each group (config + timestep), accumulates:
+    - count: number of predictions seen
+    - pred_sum: sum of predictions
+    - pred_sum_sq: sum of squared predictions
+    - true_reward: ground truth (should be consistent across runs)
+
+    Args:
+        partial_stats: Accumulated statistics so far (modified in-place)
+        batch_df: New batch of aligned rewards
+
+    Returns:
+        Updated statistics dictionary
+    """
+    group_cols = [
+        "env_name",
+        "rewest_method",
+        "delay",
+        "gamma",
+        "estimation_episode",
+        "global_step",
+    ]
+
+    for group_key, group in batch_df.groupby(group_cols):
+        if group_key not in partial_stats:
+            partial_stats[group_key] = {
+                "count": 0,
+                "true_reward": None,
+                "pred_sum": 0.0,
+                "pred_sum_sq": 0.0,
+                "episode": group["episode"].iloc[0],
+            }
+
+        stats = partial_stats[group_key]
+
+        # Verify true rewards are consistent across runs
+        true_rewards = group["true_reward"].values
+        if stats["true_reward"] is None:
+            stats["true_reward"] = float(true_rewards[0])
+        elif not np.allclose(true_rewards, stats["true_reward"], rtol=1e-9):
+            logging.warning(
+                "True reward mismatch at %s: expected %.6f, got %.6f",
+                group_key,
+                stats["true_reward"],
+                true_rewards[0],
+            )
+
+        # Accumulate prediction statistics using online algorithm
+        pred_rewards = group["pred_reward"].values
+        stats["count"] += len(pred_rewards)
+        stats["pred_sum"] += np.sum(pred_rewards)
+        stats["pred_sum_sq"] += np.sum(pred_rewards**2)
+
+    return partial_stats
+
+
+def finalize_bias_variance_stats(partial_stats: Dict[tuple, Dict]) -> pd.DataFrame:
+    """
+    Convert accumulated statistics to bias-variance DataFrame.
+
+    Computes final metrics from accumulated sums:
+    - Mean = sum / count
+    - Variance = E[X²] - (E[X])² = (sum_sq / count) - (mean)²
+    - Bias = mean_pred - true_reward
+    - MSE = Bias² + Variance
+
+    Args:
+        partial_stats: Dictionary of accumulated statistics
+
+    Returns:
+        DataFrame with bias-variance decomposition per timestep
+    """
+    rows = []
+    group_cols = [
+        "env_name",
+        "rewest_method",
+        "delay",
+        "gamma",
+        "estimation_episode",
+        "global_step",
+    ]
+
+    for group_key, stats in partial_stats.items():
+        n = stats["count"]
+        true_reward = stats["true_reward"]
+
+        # Compute mean and variance from accumulated statistics
+        mean_pred = stats["pred_sum"] / n
+        # Variance = E[X²] - (E[X])²
+        variance = (stats["pred_sum_sq"] / n) - (mean_pred**2)
+
+        # Compute bias-variance decomposition
+        bias = mean_pred - true_reward
+        bias_squared = bias**2
+        mse = bias_squared + variance
+
+        # Verification: MSE should equal Bias² + Variance
+        verification_error = abs(mse - (bias_squared + variance))
+
+        row_dict = dict(zip(group_cols, group_key))
+        row_dict.update(
+            {
+                "episode": stats["episode"],
+                "true_reward": true_reward,
+                "mean_pred_reward": mean_pred,
+                "bias": bias,
+                "variance": variance,
+                "bias_squared": bias_squared,
+                "mse": mse,
+                "num_runs": n,
+                "verification_error": verification_error,
+            }
+        )
+        rows.append(row_dict)
+
+    df = pd.DataFrame(rows)
+    logging.info("Finalized %d timestep statistics", len(df))
+    return df
+
+
+def load_and_compute_in_batches(results_dir: str, batch_size: int = 8) -> pd.DataFrame:
+    """
+    Load result files in batches and compute bias-variance statistics.
+
+    Memory-efficient approach:
+    1. Find all result files
+    2. Process files in batches of `batch_size`
+    3. For each batch: load → expand → accumulate statistics
+    4. After all batches: finalize statistics → DataFrame
+
+    This avoids loading all 72M rows into memory at once.
+
+    Args:
+        results_dir: Directory containing result-*.jsonl.gzip files
+        batch_size: Number of files to process at once (default: 8)
+                   Lower values use less memory but process slower.
+
+    Returns:
+        DataFrame with bias-variance statistics per timestep
+    """
+    import gc
+
+    logging.info("Loading results from %s", results_dir)
+
+    # Find all result files
+    result_files = tf.io.gfile.glob(os.path.join(results_dir, "result-*.jsonl.gzip"))
+    logging.info("Found %d result files", len(result_files))
+
+    if len(result_files) == 0:
+        raise ValueError(f"No result files found in {results_dir}")
+
+    # Initialize accumulator for statistics
+    partial_stats: Dict[tuple, Dict] = {}
+
+    # Process files in batches
+    num_batches = math.ceil(len(result_files) / batch_size)
+    logging.info("Processing in %d batches (batch_size=%d)", num_batches, batch_size)
+
+    for batch_id in range(num_batches):
+        start_idx = batch_id * batch_size
+        end_idx = min((batch_id + 1) * batch_size, len(result_files))
+        batch_files = result_files[start_idx:end_idx]
+
+        logging.info(
+            "Batch %d/%d: Processing files %d-%d (%d files)",
+            batch_id + 1,
+            num_batches,
+            start_idx,
+            end_idx - 1,
+            len(batch_files),
+        )
+
+        # Process this batch
+        batch_df = process_file_batch(batch_files, batch_id)
+
+        # Update statistics incrementally
+        partial_stats = compute_bias_variance_incremental(partial_stats, batch_df)
+
+        # Clean up batch DataFrame to free memory
+        del batch_df
+        gc.collect()
+
+        logging.info(
+            "Batch %d/%d complete. Total groups tracked: %d",
+            batch_id + 1,
+            num_batches,
+            len(partial_stats),
+        )
+
+    # Finalize statistics to DataFrame
+    logging.info(
+        "Finalizing bias-variance statistics from %d groups...", len(partial_stats)
+    )
+    bias_var_df = finalize_bias_variance_stats(partial_stats)
+
+    # Clean up
+    del partial_stats
+    gc.collect()
+
+    return bias_var_df
+
+
 def load_and_align_results(results_dir: str) -> pd.DataFrame:
     """
     Load all experiment results and align rewards by timestep.
@@ -808,6 +1077,8 @@ def aggregate_over_windows(bias_var_df: pd.DataFrame) -> pd.DataFrame:
     - post_estimation: After estimation episode
     - episode ranges: Grouped by episode bins
     """
+    import gc
+
     logging.info("Aggregating over time windows")
 
     aggregations = []
@@ -821,7 +1092,10 @@ def aggregate_over_windows(bias_var_df: pd.DataFrame) -> pd.DataFrame:
         "estimation_episode",
     ]
 
-    for group_key, group_df in bias_var_df.groupby(group_cols):
+    num_groups = bias_var_df.groupby(group_cols).ngroups
+    logging.info("Processing %d configuration groups", num_groups)
+
+    for group_idx, (group_key, group_df) in enumerate(bias_var_df.groupby(group_cols)):
         config = dict(zip(group_cols, group_key))
         est_episode = config["estimation_episode"]
 
@@ -877,8 +1151,15 @@ def aggregate_over_windows(bias_var_df: pd.DataFrame) -> pd.DataFrame:
                 }
             )
 
+        # Periodic cleanup every 10 groups
+        if (group_idx + 1) % 10 == 0:
+            gc.collect()
+
     summary_df = pd.DataFrame(aggregations)
     logging.info("Created %d window aggregations", len(summary_df))
+
+    # Final cleanup
+    gc.collect()
     return summary_df
 
 
@@ -981,9 +1262,10 @@ def main():
 
         logging.info("All experiments complete. Aggregating results...")
 
-        # Load and process results
-        aligned_df = load_and_align_results(results_dir)
-        bias_var_df = compute_bias_variance(aligned_df)
+        # Load and process results in batches (memory-efficient)
+        bias_var_df = load_and_compute_in_batches(
+            results_dir, batch_size=args.batch_size
+        )
         summary_df = aggregate_over_windows(bias_var_df)
 
         # Export final results
@@ -1008,6 +1290,13 @@ def parse_args() -> Args:
     )
     arg_parser.add_argument(
         "--output-path", type=str, required=True, help="Output directory path"
+    )
+    arg_parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=8,
+        help="Number of result files to process per batch (default: 8). "
+        "Lower values use less memory but may be slower.",
     )
     known_args, _ = arg_parser.parse_known_args()
     return Args(**vars(known_args))
