@@ -4,16 +4,17 @@ Bias-Variance Decomposition Experiment for Reward Estimators.
 This module runs experiments to empirically measure the bias and variance
 of reward estimators (least-lfa and bayes-least-lfa) compared to true rewards.
 
-The experiment workflow:
-1. Runs multiple trials with identical configurations but different seeds
-2. Tracks both true and predicted rewards at each timestep
-3. Aligns rewards across runs by timestep
-4. Computes bias-variance decomposition at each timestep
-5. Aggregates statistics over time windows
-6. Exports results to parquet and CSV files
+Methodology
+1. Train reward estimator models with different seeds
+2. Collect one fixed dataset of (state, action, true_reward) samples
+3. Apply all models to predict rewards for each sample
+4. Compute bias/variance across the predictions for the same sample
+
+This ensures all predictions target the same true reward value, making the
+bias-variance decomposition mathematically valid.
 
 Mathematical Background:
-For predictions {ŷ₁, ŷ₂, ..., ŷₙ} at timestep t with true value y:
+For predictions {ŷ₁, ŷ₂, ..., ŷₙ} for the same sample with true value y:
 - Bias = mean(ŷ) - y
 - Variance = var(ŷ)
 - MSE = mean((ŷ - y)²) = Bias² + Variance
@@ -21,28 +22,24 @@ For predictions {ŷ₁, ŷ₂, ..., ŷₙ} at timestep t with true value y:
 
 import argparse
 import dataclasses
-import gzip
 import itertools
-import json
 import logging
-import math
 import os
-import sys
 import tempfile
 import uuid
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import gymnasium as gym
 import numpy as np
 import pandas as pd
 import ray
-import tensorflow as tf
+import ray.data
 
-from drmdp import core, envs, metrics, task, transform
+from drmdp import core, dataproc, envs, metrics, rewdelay, task, transform
 
 MAX_STEPS_PER_EPISODE_GEM = 10_000
-REWARD_EVAL_SAMPLES = 25_000
-NUM_TASKS_PER_WRITER = 100
+SAMPLES_PER_ENV = 100_000
+DATASET_SEED = 42
 
 
 @dataclasses.dataclass(frozen=True)
@@ -52,7 +49,6 @@ class Args:
     num_runs: int
     num_episodes: int
     output_path: str
-    batch_size: int = 8  # Number of result files to process per batch
 
 
 @dataclasses.dataclass(frozen=True)
@@ -73,66 +69,24 @@ class JobSpec:
     run_id: int
 
 
-class BiasVarRewardStoreWrapper(gym.Wrapper):
-    """
-    Stores rewards with timestep metadata for cross-run alignment.
+@dataclasses.dataclass(frozen=True)
+class RewardModelArtifact:
+    """Trained reward model artifact stored in memory."""
 
-    This wrapper tracks rewards along with global timestep and episode counters,
-    enabling alignment across multiple experimental runs.
-    """
-
-    def __init__(self, env, buffer_size: int):
-        super().__init__(env)
-        self.buffer_size = buffer_size
-        self.buffer: List[Dict[str, Any]] = []
-        self.global_step = 0
-        self.episode = 0
-
-    def step(self, action):
-        obs, reward, term, trunc, info = super().step(action)
-        # Store reward with metadata
-        if len(self.buffer) < self.buffer_size:
-            self.buffer.append(
-                {
-                    "reward": float(reward),
-                    "global_step": self.global_step,
-                    "episode": self.episode,
-                }
-            )
-        self.global_step += 1
-        if term or trunc:
-            self.episode += 1
-        return obs, reward, term, trunc, info
-
-
-@ray.remote
-class ResultWriter:
-    """Remote task to export results to disk."""
-
-    def __init__(self, prefix: str, output_path: str, partition_size: int = 100):
-        self.prefix = prefix
-        self.output_path = output_path
-        self.partition_size = partition_size
-        self.results: List[Any] = []
-        self.partition = 0
-
-    def write(self, result):
-        """Add data to buffer, sync if partition size reached."""
-        self.results.append(result)
-        if len(self.results) >= self.partition_size:
-            self.sync()
-
-    def sync(self):
-        """Write buffered data to file and clear buffer."""
-        if self.results:
-            write_records(
-                os.path.join(
-                    self.output_path, f"result-{self.prefix}-{self.partition}.jsonl"
-                ),
-                records=self.results,
-            )
-            self.results = []
-            self.partition += 1
+    model_id: str
+    run_id: int
+    env_name: str
+    rewest_method: str
+    estimation_episode: int
+    reward_delay: int
+    gamma: float
+    weights: np.ndarray
+    use_bias: bool
+    ft_op_spec: List[Mapping[str, Any]]
+    # Bayesian-specific fields
+    mv_normal_mean: Optional[np.ndarray] = None
+    mv_normal_cov: Optional[np.ndarray] = None
+    estimation_meta: Optional[Dict[str, Any]] = None
 
 
 def least_lfa_specs(
@@ -407,9 +361,9 @@ def create_all_job_specs(
     Generates jobs for all combinations of:
     - environments
     - estimators (least-lfa, bayes-least-lfa)
-    - estimation episodes (10, 50, 100)
-    - delays (2, 4, 6, 8)
-    - gammas (1.0, 0.99)
+    - estimation episodes e.g. (10, 50, 100)
+    - delays e.g. (2, 4, 6, 8)
+    - gammas e.g. (1.0, 0.99)
     - runs (0 to num_runs-1)
     """
     jobs = []
@@ -446,111 +400,9 @@ def create_all_job_specs(
     return jobs
 
 
-@ray.remote
-def run_bias_var_experiment(
-    job_spec: JobSpec, result_writer: ResultWriter
-) -> Dict[str, Any]:
-    """
-    Execute single bias-variance experiment run with dual reward tracking.
-
-    This function:
-    1. Creates the environment
-    2. Wraps it BEFORE delay to track true rewards
-    3. Applies delay wrapper
-    4. Applies reward mapper (least-lfa or bayes-least-lfa)
-    5. Wraps it AFTER mapper to track predicted rewards
-    6. Trains the algorithm
-    7. Returns results with both reward buffers
-    """
-    task_id = str(uuid.uuid4())
-    logging.info("Starting task %s: %s", task_id, job_spec)
-
-    try:
-        # Create experiment instance
-        exp_instance = create_exp_instance(job_spec)
-
-        # Setup environment with dual reward tracking
-        env_spec = exp_instance.experiment.env_spec
-        problem_spec = exp_instance.experiment.problem_spec
-
-        # Create base environment
-        env = envs.make(
-            env_name=env_spec.name,
-            **env_spec.args if env_spec.args else {},
-        )
-        proxy_env = envs.make(
-            env_name=env_spec.name,
-            **env_spec.args if env_spec.args else {},
-        )
-
-        # Add monitor
-        env, monitor = task.monitor_wrapper(env)
-
-        # Wrap BEFORE delay to capture true rewards
-        true_wrapper = BiasVarRewardStoreWrapper(env, buffer_size=REWARD_EVAL_SAMPLES)
-
-        # Apply delay
-        rew_delay = task.reward_delay_distribution(problem_spec.delay_config)
-        env_delayed = task.delay_wrapper(true_wrapper, rew_delay)
-
-        # Apply reward mapper
-        env_mapped = task.reward_mapper(
-            env_delayed,
-            proxy_env=proxy_env,
-            mapping_spec=problem_spec.reward_mapper,
-        )
-
-        # Wrap AFTER mapper to capture predicted rewards
-        pred_wrapper = BiasVarRewardStoreWrapper(
-            env_mapped, buffer_size=REWARD_EVAL_SAMPLES
-        )
-
-        # Create algorithm
-        feats_op = transform.transform_pipeline(
-            env=pred_wrapper, specs=env_spec.feats_spec
-        )
-        lr = task.learning_rate(**problem_spec.learning_rate_config)
-        algorithm = task.create_algorithm(
-            env=pred_wrapper,
-            ft_op=feats_op,
-            delay_reward=rew_delay,
-            lr=lr,
-            gamma=problem_spec.gamma,
-            epsilon=problem_spec.epsilon,
-            policy_type=problem_spec.policy_type,
-            base_seed=exp_instance.instance_id,
-        )
-
-        # Train
-        results = algorithm.train(
-            env=pred_wrapper,
-            num_episodes=exp_instance.run_config.episodes_per_run,
-            monitor=monitor,
-        )
-
-        # Collect returns
-        returns = []
-        for _, snapshot in enumerate(results):
-            returns.append(snapshot.returns)
-
-        # Prepare result
-        result = {
-            "task_id": task_id,
-            **dataclasses.asdict(job_spec),
-            "true_rewards": true_wrapper.buffer,
-            "pred_rewards": pred_wrapper.buffer,
-            "returns": returns,
-        }
-
-        env.close()
-        proxy_env.close()
-
-        logging.info("Completed task %s: %s", task_id, job_spec)
-        return result_writer.write.remote(result)  # type: ignore
-
-    except Exception as err:
-        logging.error("Error in experiment %s: %s", task_id, err)
-        raise RuntimeError(f"Task {task_id} `{job_spec}` failed") from err
+def fixed_delay_config(delay: int) -> Dict[str, Any]:
+    """Create a fixed delay configuration."""
+    return {"name": "fixed", "args": {"delay": delay}}
 
 
 def create_exp_instance(job_spec: JobSpec) -> core.ExperimentInstance:
@@ -567,7 +419,7 @@ def create_exp_instance(job_spec: JobSpec) -> core.ExperimentInstance:
             "args": job_spec.rewest_args,
         },
         delay_config=fixed_delay_config(job_spec.reward_delay),
-        epsilon=0.2,
+        epsilon=0.1,
         gamma=job_spec.gamma,
         learning_rate_config={
             "name": "constant",
@@ -593,498 +445,361 @@ def create_exp_instance(job_spec: JobSpec) -> core.ExperimentInstance:
     )
 
 
-def fixed_delay_config(delay: int) -> Dict[str, Any]:
-    """Create a fixed delay configuration."""
-    return {"name": "fixed", "args": {"delay": delay}}
+def extract_reward_model_from_wrapper(
+    wrapper: gym.Wrapper, job_spec: JobSpec
+) -> Optional[RewardModelArtifact]:
+    """
+    Extract reward model components from trained wrapper.
+
+    Args:
+        wrapper: Trained reward wrapper (LeastLfa or BayesLeastLfa)
+        job_spec: Job specification containing ft_op_spec
+
+    Returns:
+        RewardModelArtifact if estimation succeeded, None otherwise
+    """
+    # Get ft_op_spec from job_spec
+    ft_op_spec = list(job_spec.rewest_args.get("feats_spec", []))
+
+    model_id = f"{job_spec.env_name}_{job_spec.rewest_method}_d{job_spec.reward_delay}_g{job_spec.gamma}_e{job_spec.estimation_episode}_r{job_spec.run_id}"
+
+    if isinstance(wrapper, rewdelay.LeastLfaGenerativeRewardWrapper):
+        if wrapper.weights is None:
+            logging.warning("Model %s has no weights - estimation failed", model_id)
+            return None
+
+        return RewardModelArtifact(
+            model_id=model_id,
+            run_id=job_spec.run_id,
+            env_name=job_spec.env_name,
+            rewest_method=job_spec.rewest_method,
+            estimation_episode=job_spec.estimation_episode,
+            reward_delay=job_spec.reward_delay,
+            gamma=job_spec.gamma,
+            weights=wrapper.weights.copy(),
+            use_bias=wrapper.use_bias,
+            ft_op_spec=ft_op_spec,
+            mv_normal_mean=None,
+            mv_normal_cov=None,
+            estimation_meta=dict(wrapper.estimation_meta)
+            if wrapper.estimation_meta
+            else None,
+        )
+
+    elif isinstance(wrapper, rewdelay.BayesLeastLfaGenerativeRewardWrapper):
+        if wrapper.mv_normal_rewards is None:
+            logging.warning("Model %s has no posterior - estimation failed", model_id)
+            return None
+
+        return RewardModelArtifact(
+            model_id=model_id,
+            run_id=job_spec.run_id,
+            env_name=job_spec.env_name,
+            rewest_method=job_spec.rewest_method,
+            estimation_episode=job_spec.estimation_episode,
+            reward_delay=job_spec.reward_delay,
+            gamma=job_spec.gamma,
+            weights=wrapper.mv_normal_rewards.mean.copy(),
+            use_bias=wrapper.use_bias,
+            ft_op_spec=ft_op_spec,
+            mv_normal_mean=wrapper.mv_normal_rewards.mean.copy(),
+            mv_normal_cov=wrapper.mv_normal_rewards.cov.copy(),
+            estimation_meta=dict(wrapper.estimation_meta)
+            if wrapper.estimation_meta
+            else None,
+        )
+
+    else:
+        raise ValueError(f"Unknown wrapper type: {type(wrapper)}")
 
 
-def write_records(
-    output_path: str,
-    records: Sequence[Mapping[str, Any]],
-    gzip_compression: bool = True,
-) -> None:
-    """Export records to JSON files."""
-    bytes_size = sys.getsizeof(records)
-    if gzip_compression and not output_path.endswith(".gzip"):
-        output_path = ".".join([output_path, "gzip"])
+@ray.remote
+def train_reward_model_run(job_spec: JobSpec) -> Optional[RewardModelArtifact]:
+    """
+    Phase 1: Train single reward estimator and extract model components.
 
-    logging.debug(
-        "Writing partition of %fMB to %s",
-        bytes_size / 1024 / 1024,
-        output_path,
+    Returns:
+        RewardModelArtifact if training succeeded, None otherwise
+    """
+    task_id = str(uuid.uuid4())
+    logging.info(
+        "Training model for task %s: %s",
+        task_id,
+        job_spec.model_id if hasattr(job_spec, "model_id") else job_spec.run_id,
     )
 
-    if gzip_compression:
-        with tf.io.gfile.GFile(output_path, "wb") as writable:
-            with gzip.GzipFile(fileobj=writable, mode="wb") as writer:
-                for record in records:
-                    content = "".join([json.dumps(record), "\n"])
-                    writer.write(content.encode("UTF-8"))
-    else:
-        with tf.io.gfile.GFile(output_path, "w") as writable:
-            for record in records:
-                json.dump(record, fp=writable)
-                writable.write("\n")
+    try:
+        # Create experiment instance
+        exp_instance = create_exp_instance(job_spec)
+
+        # Setup environment
+        env_spec = exp_instance.experiment.env_spec
+        problem_spec = exp_instance.experiment.problem_spec
+
+        # Create base environment
+        env = envs.make(
+            env_name=env_spec.name,
+            **env_spec.args if env_spec.args else {},
+        )
+        proxy_env = envs.make(
+            env_name=env_spec.name,
+            **env_spec.args if env_spec.args else {},
+        )
+
+        # Add monitor
+        env, monitor = task.monitor_wrapper(env)
+
+        # Apply delay
+        rew_delay = task.reward_delay_distribution(problem_spec.delay_config)
+        env_delayed = task.delay_wrapper(env, rew_delay)
+
+        # Apply reward mapper (this creates the wrapper we need to extract)
+        env_mapped = task.reward_mapper(
+            env_delayed,
+            proxy_env=proxy_env,
+            mapping_spec=problem_spec.reward_mapper,
+        )
+
+        # Create algorithm
+        feats_op = transform.transform_pipeline(
+            env=env_mapped, specs=env_spec.feats_spec
+        )
+        lr = task.learning_rate(**problem_spec.learning_rate_config)
+        algorithm = task.create_algorithm(
+            env=env_mapped,
+            ft_op=feats_op,
+            delay_reward=rew_delay,
+            lr=lr,
+            gamma=problem_spec.gamma,
+            epsilon=problem_spec.epsilon,
+            policy_type=problem_spec.policy_type,
+            base_seed=exp_instance.instance_id,
+        )
+
+        # Train
+        snapshots = algorithm.train(
+            env=env_mapped,
+            num_episodes=exp_instance.run_config.episodes_per_run,
+            monitor=monitor,
+        )
+
+        # Trigger training (`train` returns a generator)
+        for _ in snapshots:
+            pass
+
+        # Extract model artifact from the reward wrapper
+        # The reward wrapper is env_mapped
+        model_artifact = extract_reward_model_from_wrapper(env_mapped, job_spec)
+
+        env.close()
+        proxy_env.close()
+
+        if model_artifact is not None:
+            logging.info("Extracted model %s", model_artifact.model_id)
+        else:
+            logging.warning("Failed to extract model for task %s", task_id)
+
+        return model_artifact
+
+    except Exception as err:
+        logging.error("Error training model for task %s: %s", task_id, err)
+        return None
 
 
-def read_records(
-    input_path: str, gzip_compression: bool = True
-) -> Sequence[Mapping[str, Any]]:
-    """Read records from JSON."""
-    logging.debug("Reading file %s", input_path)
-
-    records = []
-    if gzip_compression:
-        with tf.io.gfile.GFile(input_path, "rb") as readable:
-            with gzip.GzipFile(fileobj=readable, mode="rb") as reader:
-                for line in reader:
-                    records.append(json.loads(line.decode("UTF-8")))
-    else:
-        with tf.io.gfile.GFile(input_path, "r") as readable:
-            for line in readable:
-                records.append(json.loads(line))
-    return records
-
-
-def process_file_batch(file_paths: Sequence[str], batch_id: int) -> pd.DataFrame:
+@ray.remote
+def collect_sample_dataset(
+    env_name: str, env_args: Mapping[str, Any], num_samples: int, seed: int
+) -> Dict[str, Any]:
     """
-    Process a batch of result files and return aligned rewards.
+    Phase 2: Collect fixed dataset using random exploration.
 
-    Similar to load_and_align_results but for a subset of files.
-    Reduces memory by processing incrementally.
+    Returns:
+        Dictionary with observations, actions, rewards, sample_ids
     """
-    logging.info("Processing batch %d with %d files", batch_id, len(file_paths))
+    logging.info("Collecting %d samples for %s", num_samples, env_name)
 
-    rows = []
-    for file_path in file_paths:
-        records = read_records(file_path, gzip_compression=True)
-        for record in records:
-            # Extract metadata
-            env_name = record["env_name"]
-            rewest_method = record["rewest_method"]
-            delay = record["reward_delay"]
-            gamma = record["gamma"]
-            estimation_episode = record["estimation_episode"]
-            run_id = record["run_id"]
+    env = envs.make(env_name, **env_args)
+    buffer = dataproc.collection_traj_data(env, steps=num_samples, seed=seed)
 
-            # Expand reward buffers
-            true_rewards = record["true_rewards"]
-            pred_rewards = record["pred_rewards"]
-            min_len = min(len(true_rewards), len(pred_rewards))
+    # Convert to arrays
+    observations = np.array([obs for obs, _, _, _ in buffer])
+    actions = np.array([action for _, action, _, _ in buffer])
+    rewards = np.array([rew for _, _, _, rew in buffer])
+    sample_ids = np.arange(len(buffer))
 
-            for i in range(min_len):
-                true_entry = true_rewards[i]
-                pred_entry = pred_rewards[i]
+    env.close()
 
-                # Verify timestep alignment
-                if true_entry["global_step"] != pred_entry["global_step"]:
-                    logging.warning(
-                        "Timestep mismatch for run %s: true=%d, pred=%d",
-                        run_id,
-                        true_entry["global_step"],
-                        pred_entry["global_step"],
-                    )
-                    continue
+    dataset = {
+        "observations": observations,
+        "actions": actions,
+        "rewards": rewards,
+        "sample_ids": sample_ids,
+        "env_name": env_name,
+    }
 
-                rows.append(
-                    {
-                        "env_name": env_name,
-                        "rewest_method": rewest_method,
-                        "delay": delay,
-                        "gamma": gamma,
-                        "estimation_episode": estimation_episode,
-                        "run_id": run_id,
-                        "global_step": true_entry["global_step"],
-                        "episode": true_entry["episode"],
-                        "true_reward": true_entry["reward"],
-                        "pred_reward": pred_entry["reward"],
-                    }
-                )
+    logging.info("Collected %d samples for %s", len(sample_ids), env_name)
+    return dataset
 
-    df = pd.DataFrame(rows)
-    logging.info("Batch %d: loaded %d reward observations", batch_id, len(df))
+
+def create_predict_fn(artifact: RewardModelArtifact, env: gym.Env):
+    """
+    Create prediction function from in-memory artifact.
+
+    Args:
+        artifact: Trained model artifact
+        env: Environment (for creating feature transformation pipeline)
+
+    Returns:
+        Function that predicts rewards: predict(obs, action) -> reward
+    """
+    # Reconstruct feature transformation pipeline from spec
+    ft_op = transform.transform_pipeline(env=env, specs=artifact.ft_op_spec)
+
+    def predict(obs: np.ndarray, action: int) -> float:
+        """Predict reward for (observation, action) pair."""
+        # Transform observation-action pair to features
+        example = ft_op.apply(transform.Example(observation=obs, action=action))
+        features = example.observation
+
+        # Apply linear model
+        reward = float(np.dot(features, artifact.weights))
+        return reward
+
+    return predict
+
+
+@ray.remote
+def predict_on_dataset(
+    model_artifact: RewardModelArtifact,
+    dataset: Dict[str, Any],
+    env_args: Mapping[str, Any],
+) -> pd.DataFrame:
+    """
+    Phase 3: Apply in-memory model to all samples in dataset.
+
+    Args:
+        model_artifact: Trained model
+        dataset: Fixed sample dataset
+        env_args: Environment arguments for creating prediction function
+
+    Returns:
+        DataFrame with predictions for each sample
+    """
+    logging.info(
+        "Predicting with model %s on %d samples",
+        model_artifact.model_id,
+        len(dataset["sample_ids"]),
+    )
+
+    # Create temporary environment for feature transformation
+    env = envs.make(model_artifact.env_name, **env_args)
+    predict_fn = create_predict_fn(model_artifact, env)
+
+    # Vectorized prediction
+    predictions = []
+    for obs, action, true_reward, sample_id in zip(
+        dataset["observations"],
+        dataset["actions"],
+        dataset["rewards"],
+        dataset["sample_ids"],
+    ):
+        pred_reward = predict_fn(obs, action)
+        predictions.append(
+            {
+                "sample_id": int(sample_id),
+                "model_id": model_artifact.model_id,
+                "run_id": model_artifact.run_id,
+                "pred_reward": pred_reward,
+                "true_reward": true_reward,
+                "env_name": model_artifact.env_name,
+                "rewest_method": model_artifact.rewest_method,
+                "estimation_episode": model_artifact.estimation_episode,
+                "delay": model_artifact.reward_delay,
+                "gamma": model_artifact.gamma,
+            }
+        )
+
+    env.close()
+
+    df = pd.DataFrame(predictions)
+    logging.info(
+        "Generated %d predictions for model %s", len(df), model_artifact.model_id
+    )
     return df
 
 
-def compute_bias_variance_incremental(
-    partial_stats: Dict[tuple, Dict], batch_df: pd.DataFrame
-) -> Dict[tuple, Dict]:
+def compute_bias_variance_from_predictions(
+    ds_predictions: ray.data.Dataset,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Incrementally update bias-variance statistics from a batch.
-
-    Uses online algorithm to accumulate statistics without storing all data.
-    For each group (config + timestep), accumulates:
-    - count: number of predictions seen
-    - pred_sum: sum of predictions
-    - pred_sum_sq: sum of squared predictions
-    - true_reward: ground truth (should be consistent across runs)
+    Phase 4: Compute bias-variance statistics from predictions.
 
     Args:
-        partial_stats: Accumulated statistics so far (modified in-place)
-        batch_df: New batch of aligned rewards
+        predictions_dir: Directory containing prediction parquet files
 
     Returns:
-        Updated statistics dictionary
+        Tuple of (sample_level_df, summary_df)
     """
+    logging.info("Computing bias-variance from predictions")
+
+    # Read all predictions
+    logging.info("Loaded predictions dataset")
+
+    # Group by sample_id and configuration
     group_cols = [
+        "sample_id",
         "env_name",
         "rewest_method",
         "delay",
         "gamma",
         "estimation_episode",
-        "global_step",
     ]
 
-    for group_key, group in batch_df.groupby(group_cols):
-        if group_key not in partial_stats:
-            partial_stats[group_key] = {
-                "count": 0,
-                "true_reward": None,
-                "pred_sum": 0.0,
-                "pred_sum_sq": 0.0,
-                "episode": group["episode"].iloc[0],
-            }
+    def compute_bias_var_for_group(group: pd.DataFrame) -> Dict[str, Any]:
+        """Compute bias-variance for a single sample across all runs."""
+        # All predictions for the same sample
+        predictions = group["pred_reward"].values
+        true_reward = group["true_reward"].iloc[0]  # Should be same for all
 
-        stats = partial_stats[group_key]
-
-        # Verify true rewards are consistent across runs
-        true_rewards = group["true_reward"].values
-        if stats["true_reward"] is None:
-            stats["true_reward"] = float(true_rewards[0])
-        elif not np.allclose(true_rewards, stats["true_reward"], rtol=1e-9):
+        # Verify all true rewards are the same
+        if not np.allclose(group["true_reward"].values, true_reward):
             logging.warning(
-                "True reward mismatch at %s: expected %.6f, got %.6f",
-                group_key,
-                stats["true_reward"],
-                true_rewards[0],
+                "True reward mismatch for sample %d: %s",
+                group["sample_id"].iloc[0],
+                group["true_reward"].values,
             )
-
-        # Accumulate prediction statistics using online algorithm
-        pred_rewards = group["pred_reward"].values
-        stats["count"] += len(pred_rewards)
-        stats["pred_sum"] += np.sum(pred_rewards)
-        stats["pred_sum_sq"] += np.sum(pred_rewards**2)
-
-    return partial_stats
-
-
-def finalize_bias_variance_stats(partial_stats: Dict[tuple, Dict]) -> pd.DataFrame:
-    """
-    Convert accumulated statistics to bias-variance DataFrame.
-
-    Computes final metrics from accumulated sums:
-    - Mean = sum / count
-    - Variance = E[X²] - (E[X])² = (sum_sq / count) - (mean)²
-    - Bias = mean_pred - true_reward
-    - MSE = Bias² + Variance
-
-    Args:
-        partial_stats: Dictionary of accumulated statistics
-
-    Returns:
-        DataFrame with bias-variance decomposition per timestep
-    """
-    rows = []
-    group_cols = [
-        "env_name",
-        "rewest_method",
-        "delay",
-        "gamma",
-        "estimation_episode",
-        "global_step",
-    ]
-
-    for group_key, stats in partial_stats.items():
-        n = stats["count"]
-        true_reward = stats["true_reward"]
-
-        # Compute mean and variance from accumulated statistics
-        mean_pred = stats["pred_sum"] / n
-        # Variance = E[X²] - (E[X])²
-        variance = (stats["pred_sum_sq"] / n) - (mean_pred**2)
 
         # Compute bias-variance decomposition
-        bias = mean_pred - true_reward
-        bias_squared = bias**2
-        mse = bias_squared + variance
+        bv_stats = metrics.bias_variance_decomposition(predictions, true_reward)
 
-        # Verification: MSE should equal Bias² + Variance
-        verification_error = abs(mse - (bias_squared + variance))
+        # Batch Op expects batch output, i.e. either
+        # a dict where each value is a list of a DataFrame
+        result = {
+            "sample_id": int(group["sample_id"].iloc[0]),
+            "true_reward": float(true_reward),
+            "num_models": len(predictions),
+            "env_name": group["env_name"].iloc[0],
+            "rewest_method": group["rewest_method"].iloc[0],
+            "estimation_episode": int(group["estimation_episode"].iloc[0]),
+            "delay": int(group["delay"].iloc[0]),
+            "gamma": float(group["gamma"].iloc[0]),
+            **bv_stats,
+        }
+        return {key: [value] for key, value in result.items()}
 
-        row_dict = dict(zip(group_cols, group_key))
-        row_dict.update(
-            {
-                "episode": stats["episode"],
-                "true_reward": true_reward,
-                "mean_pred_reward": mean_pred,
-                "bias": bias,
-                "variance": variance,
-                "bias_squared": bias_squared,
-                "mse": mse,
-                "num_runs": n,
-                "verification_error": verification_error,
-            }
-        )
-        rows.append(row_dict)
-
-    df = pd.DataFrame(rows)
-    logging.info("Finalized %d timestep statistics", len(df))
-    return df
-
-
-def load_and_compute_in_batches(results_dir: str, batch_size: int = 8) -> pd.DataFrame:
-    """
-    Load result files in batches and compute bias-variance statistics.
-
-    Memory-efficient approach:
-    1. Find all result files
-    2. Process files in batches of `batch_size`
-    3. For each batch: load → expand → accumulate statistics
-    4. After all batches: finalize statistics → DataFrame
-
-    This avoids loading all 72M rows into memory at once.
-
-    Args:
-        results_dir: Directory containing result-*.jsonl.gzip files
-        batch_size: Number of files to process at once (default: 8)
-                   Lower values use less memory but process slower.
-
-    Returns:
-        DataFrame with bias-variance statistics per timestep
-    """
-    import gc
-
-    logging.info("Loading results from %s", results_dir)
-
-    # Find all result files
-    result_files = tf.io.gfile.glob(os.path.join(results_dir, "result-*.jsonl.gzip"))
-    logging.info("Found %d result files", len(result_files))
-
-    if len(result_files) == 0:
-        raise ValueError(f"No result files found in {results_dir}")
-
-    # Initialize accumulator for statistics
-    partial_stats: Dict[tuple, Dict] = {}
-
-    # Process files in batches
-    num_batches = math.ceil(len(result_files) / batch_size)
-    logging.info("Processing in %d batches (batch_size=%d)", num_batches, batch_size)
-
-    for batch_id in range(num_batches):
-        start_idx = batch_id * batch_size
-        end_idx = min((batch_id + 1) * batch_size, len(result_files))
-        batch_files = result_files[start_idx:end_idx]
-
-        logging.info(
-            "Batch %d/%d: Processing files %d-%d (%d files)",
-            batch_id + 1,
-            num_batches,
-            start_idx,
-            end_idx - 1,
-            len(batch_files),
-        )
-
-        # Process this batch
-        batch_df = process_file_batch(batch_files, batch_id)
-
-        # Update statistics incrementally
-        partial_stats = compute_bias_variance_incremental(partial_stats, batch_df)
-
-        # Clean up batch DataFrame to free memory
-        del batch_df
-        gc.collect()
-
-        logging.info(
-            "Batch %d/%d complete. Total groups tracked: %d",
-            batch_id + 1,
-            num_batches,
-            len(partial_stats),
-        )
-
-    # Finalize statistics to DataFrame
-    logging.info(
-        "Finalizing bias-variance statistics from %d groups...", len(partial_stats)
-    )
-    bias_var_df = finalize_bias_variance_stats(partial_stats)
-
-    # Clean up
-    del partial_stats
-    gc.collect()
-
-    return bias_var_df
-
-
-def load_and_align_results(results_dir: str) -> pd.DataFrame:
-    """
-    Load all experiment results and align rewards by timestep.
-
-    Reads result-*.jsonl.gzip files, expands reward buffers into rows,
-    and groups by configuration + timestep to align predictions across runs.
-    """
-    logging.info("Loading results from %s", results_dir)
-
-    # Find all result files
-    result_files = tf.io.gfile.glob(os.path.join(results_dir, "result-*.jsonl.gzip"))
-    logging.info("Found %d result files", len(result_files))
-
-    # Load and flatten all results
-    rows = []
-    for file_path in result_files:
-        records = read_records(file_path, gzip_compression=True)
-        for record in records:
-            # Extract metadata
-            env_name = record["env_name"]
-            rewest_method = record["rewest_method"]
-            delay = record["reward_delay"]
-            gamma = record["gamma"]
-            estimation_episode = record["estimation_episode"]
-            run_id = record["run_id"]
-
-            # Expand reward buffers
-            true_rewards = record["true_rewards"]
-            pred_rewards = record["pred_rewards"]
-
-            # Align by using minimum length
-            min_len = min(len(true_rewards), len(pred_rewards))
-
-            for i in range(min_len):
-                true_entry = true_rewards[i]
-                pred_entry = pred_rewards[i]
-
-                # Verify timestep alignment
-                if true_entry["global_step"] != pred_entry["global_step"]:
-                    logging.warning(
-                        "Timestep mismatch for run %s: true=%d, pred=%d",
-                        run_id,
-                        true_entry["global_step"],
-                        pred_entry["global_step"],
-                    )
-                    continue
-
-                rows.append(
-                    {
-                        "env_name": env_name,
-                        "rewest_method": rewest_method,
-                        "delay": delay,
-                        "gamma": gamma,
-                        "estimation_episode": estimation_episode,
-                        "run_id": run_id,
-                        "global_step": true_entry["global_step"],
-                        "episode": true_entry["episode"],
-                        "true_reward": true_entry["reward"],
-                        "pred_reward": pred_entry["reward"],
-                    }
-                )
-
-    df = pd.DataFrame(rows)
-    logging.info("Loaded %d reward observations", len(df))
-    return df
-
-
-def compute_bias_variance(aligned_df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Compute bias, variance, and MSE at each timestep.
-
-    Groups by configuration + timestep and computes bias-variance decomposition
-    for all predictions at that timestep.
-    """
-    logging.info("Computing bias-variance decomposition")
-
-    def decompose(group):
-        """Compute bias-variance statistics for a group."""
-        # Verify all true rewards are identical
-        true_rewards = group["true_reward"].values
-        if not np.allclose(true_rewards, true_rewards[0], rtol=1e-9):
-            logging.warning(
-                "True rewards not identical at timestep %d: %s",
-                group["global_step"].iloc[0],
-                true_rewards,
-            )
-
-        true_reward = float(true_rewards[0])
-        pred_rewards = group["pred_reward"].values
-
-        # Compute decomposition
-        decomp = metrics.bias_variance_decomposition(pred_rewards, true_reward)
-
-        return pd.Series(
-            {
-                "true_reward": true_reward,
-                "mean_pred_reward": float(np.mean(pred_rewards)),
-                "bias": decomp["bias"],
-                "variance": decomp["variance"],
-                "bias_squared": decomp["bias_squared"],
-                "mse": decomp["mse"],
-                "num_runs": len(pred_rewards),
-                "verification_error": decomp["verification_error"],
-            }
-        )
-
-    result = (
-        aligned_df.groupby(
-            [
-                "env_name",
-                "rewest_method",
-                "delay",
-                "gamma",
-                "estimation_episode",
-                "global_step",
-            ]
-        )
-        .apply(decompose)
-        .reset_index()
+    # Apply groupby and compute stats
+    logging.info("Grouping by %s and computing bias-variance...", group_cols)
+    result_ds = ds_predictions.groupby(group_cols).map_groups(
+        compute_bias_var_for_group, batch_format="pandas"
     )
 
-    # Add episode information (take from first run)
-    episode_info = (
-        aligned_df.groupby(
-            [
-                "env_name",
-                "rewest_method",
-                "delay",
-                "gamma",
-                "estimation_episode",
-                "global_step",
-            ]
-        )["episode"]
-        .first()
-        .reset_index()
-    )
+    # Convert to pandas
+    sample_df = result_ds.to_pandas()
+    logging.info("Computed bias-variance for %d samples", len(sample_df))
 
-    result = result.merge(
-        episode_info,
-        on=[
-            "env_name",
-            "rewest_method",
-            "delay",
-            "gamma",
-            "estimation_episode",
-            "global_step",
-        ],
-    )
-
-    logging.info("Computed bias-variance for %d timesteps", len(result))
-    return result
-
-
-def aggregate_over_windows(bias_var_df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Aggregate bias/variance statistics over different time windows.
-
-    Creates aggregations for:
-    - overall: All timesteps
-    - pre_estimation: Before estimation episode
-    - post_estimation: After estimation episode
-    - episode ranges: Grouped by episode bins
-    """
-    import gc
-
-    logging.info("Aggregating over time windows")
-
-    aggregations = []
-
-    # Group by configuration (excluding timestep)
-    group_cols = [
+    # Aggregate summary statistics
+    logging.info("Computing summary statistics...")
+    summary_group_cols = [
         "env_name",
         "rewest_method",
         "delay",
@@ -1092,89 +807,41 @@ def aggregate_over_windows(bias_var_df: pd.DataFrame) -> pd.DataFrame:
         "estimation_episode",
     ]
 
-    num_groups = bias_var_df.groupby(group_cols).ngroups
-    logging.info("Processing %d configuration groups", num_groups)
-
-    for group_idx, (group_key, group_df) in enumerate(bias_var_df.groupby(group_cols)):
-        config = dict(zip(group_cols, group_key))
-        est_episode = config["estimation_episode"]
-
-        # Overall statistics
-        aggregations.append(
+    summary_stats = []
+    for group_key, group_df in sample_df.groupby(summary_group_cols):
+        config = dict(zip(summary_group_cols, group_key))
+        summary_stats.append(
             {
                 **config,
-                "window": "overall",
-                "window_start": group_df["global_step"].min(),
-                "window_end": group_df["global_step"].max(),
-                "num_timesteps": len(group_df),
+                "num_samples": len(group_df),
                 "mean_bias": group_df["bias"].mean(),
+                "std_bias": group_df["bias"].std(),
                 "mean_variance": group_df["variance"].mean(),
+                "std_variance": group_df["variance"].std(),
                 "mean_mse": group_df["mse"].mean(),
+                "std_mse": group_df["mse"].std(),
                 "mean_bias_squared": group_df["bias_squared"].mean(),
                 "mean_verification_error": group_df["verification_error"].mean(),
+                "max_verification_error": group_df["verification_error"].max(),
             }
         )
 
-        # Pre-estimation statistics
-        pre_est = group_df[group_df["episode"] < est_episode]
-        if len(pre_est) > 0:
-            aggregations.append(
-                {
-                    **config,
-                    "window": "pre_estimation",
-                    "window_start": pre_est["global_step"].min(),
-                    "window_end": pre_est["global_step"].max(),
-                    "num_timesteps": len(pre_est),
-                    "mean_bias": pre_est["bias"].mean(),
-                    "mean_variance": pre_est["variance"].mean(),
-                    "mean_mse": pre_est["mse"].mean(),
-                    "mean_bias_squared": pre_est["bias_squared"].mean(),
-                    "mean_verification_error": pre_est["verification_error"].mean(),
-                }
-            )
+    summary_df = pd.DataFrame(summary_stats)
+    logging.info("Computed summary for %d configurations", len(summary_df))
 
-        # Post-estimation statistics
-        post_est = group_df[group_df["episode"] >= est_episode]
-        if len(post_est) > 0:
-            aggregations.append(
-                {
-                    **config,
-                    "window": "post_estimation",
-                    "window_start": post_est["global_step"].min(),
-                    "window_end": post_est["global_step"].max(),
-                    "num_timesteps": len(post_est),
-                    "mean_bias": post_est["bias"].mean(),
-                    "mean_variance": post_est["variance"].mean(),
-                    "mean_mse": post_est["mse"].mean(),
-                    "mean_bias_squared": post_est["bias_squared"].mean(),
-                    "mean_verification_error": post_est["verification_error"].mean(),
-                }
-            )
-
-        # Periodic cleanup every 10 groups
-        if (group_idx + 1) % 10 == 0:
-            gc.collect()
-
-    summary_df = pd.DataFrame(aggregations)
-    logging.info("Created %d window aggregations", len(summary_df))
-
-    # Final cleanup
-    gc.collect()
-    return summary_df
+    return sample_df, summary_df
 
 
-def export_results(
-    timestep_df: pd.DataFrame, summary_df: pd.DataFrame, output_dir: str
-):
+def export_results(sample_df: pd.DataFrame, summary_df: pd.DataFrame, output_dir: str):
     """Export results to parquet and CSV files."""
     os.makedirs(output_dir, exist_ok=True)
 
-    # Export timestep-level results
-    timestep_parquet = os.path.join(output_dir, "bias_var_timestep.parquet")
-    timestep_csv = os.path.join(output_dir, "bias_var_timestep.csv")
-    timestep_df.to_parquet(timestep_parquet, index=False)
-    timestep_df.to_csv(timestep_csv, index=False)
-    logging.info("Exported timestep results to %s", timestep_parquet)
+    # Export sample-level results
+    sample_parquet = os.path.join(output_dir, "bias_var_sample.parquet")
+    sample_csv = os.path.join(output_dir, "bias_var_sample.csv")
+    sample_df.to_parquet(sample_parquet, index=False)
+    sample_df.to_csv(sample_csv, index=False)
+    logging.info("Exported sample results to %s", sample_parquet)
 
     # Export summary results
     summary_parquet = os.path.join(output_dir, "bias_var_summary.parquet")
@@ -1184,97 +851,97 @@ def export_results(
     logging.info("Exported summary results to %s", summary_parquet)
 
 
-def wait_till_completion(tasks_refs, name: Optional[str] = None):
-    """Wait for all Ray tasks to complete."""
-    unfinished_tasks = tasks_refs
-    while True:
-        finished_tasks, unfinished_tasks = ray.wait(unfinished_tasks)
-        logging.info(
-            "Completed %d %s task(s). %d left out of %d.",
-            len(finished_tasks),
-            name,
-            len(unfinished_tasks),
-            len(tasks_refs),
-        )
-
-        if len(unfinished_tasks) == 0:
-            break
-
-
 def main():
     """
     Main entry point for bias-variance experiment.
 
-    Workflow:
-    1. Parse arguments
-    2. Initialize Ray
-    3. Create all job specifications
-    4. Submit jobs to Ray cluster
-    5. Wait for completion
-    6. Load and aggregate results
-    7. Export final statistics
+    4-Phase Workflow:
+    1. Train reward models (in-memory artifacts)
+    2. Collect fixed sample datasets
+    3. Generate predictions (models applied to fixed datasets)
+    4. Compute bias-variance and export results
     """
     args = parse_args()
+
+    # Create output directories
+    predictions_dir = os.path.join(args.output_path, "predictions")
+    results_dir = os.path.join(args.output_path, "results")
+    os.makedirs(predictions_dir, exist_ok=True)
+    os.makedirs(results_dir, exist_ok=True)
+
+    # Create all job specifications
+    specs = experiment_specs()
+    job_specs = create_all_job_specs(
+        specs=specs,
+        num_runs=args.num_runs,
+        num_episodes=args.num_episodes,
+    )
+    logging.info("Created %d job specifications", len(job_specs))
+
+    # Shuffle jobs to balance workload
+    np.random.shuffle(job_specs)  # type: ignore
 
     # Initialize Ray
     with ray.init(address=os.environ.get("RAY_ADDRESS", "auto")):
         logging.info("Ray initialized")
 
-        # Create output directories
-        results_dir = os.path.join(args.output_path, "raw_results")
-        os.makedirs(results_dir, exist_ok=True)
-
-        # Create all job specifications
-        specs = experiment_specs()
-        job_specs = create_all_job_specs(
-            specs=specs,
-            num_runs=args.num_runs,
-            num_episodes=args.num_episodes,
-        )
-        logging.info("Created %d job specifications", len(job_specs))
-
-        # Shuffle jobs to balance workload
-        np.random.shuffle(job_specs)  # type: ignore
-
-        # Create result writers
-        num_writers = max(math.floor(len(job_specs) / NUM_TASKS_PER_WRITER), 1)
-        result_writers = [
-            ResultWriter.remote(prefix=idx, output_path=results_dir)  # type: ignore
-            for idx in range(num_writers)
+        # PHASE 1: Train models and extract artifacts (in-memory)
+        logging.info("PHASE 1: Training %d reward models...", len(job_specs))
+        model_refs = [train_reward_model_run.remote(spec) for spec in job_specs]
+        model_artifacts: Sequence[Optional[RewardModelArtifact]] = ray.get(model_refs)
+        model_artifacts: Sequence[RewardModelArtifact] = [
+            model_artifact
+            for model_artifact in model_artifacts
+            if model_artifact is not None
         ]
-        logging.info("Created %d result writers", num_writers)
-
-        # Submit all jobs
-        logging.info("Submitting %d experiment runs...", len(job_specs))
-        results_refs = [
-            run_bias_var_experiment.remote(job, result_writers[idx % num_writers])
-            for idx, job in enumerate(job_specs)
-        ]
-
-        # Wait for experiments to complete
-        wait_till_completion(results_refs, name="Bias-Var-Experiment")
-
-        # Flush writer buffers
-        wait_till_completion(
-            [writer.sync.remote() for writer in result_writers],  # type: ignore
-            name="Flush-Buffer",
+        logging.info(
+            "Phase 1 complete: %d/%d models trained successfully",
+            len(model_artifacts),
+            len(job_specs),
         )
 
-        logging.info("All experiments complete. Aggregating results...")
+        # Envs with omodels
+        envs_with_model = set([artifact.env_name for artifact in model_artifacts])
 
-        # Load and process results in batches (memory-efficient)
-        bias_var_df = load_and_compute_in_batches(
-            results_dir, batch_size=args.batch_size
+        # PHASE 2: Collect fixed sample datasets
+        logging.info("PHASE 2: Collecting sample datasets...")
+        env_configs = {spec["name"]: spec["args"] for spec in specs}
+        dataset_refs = {
+            env_name: collect_sample_dataset.remote(
+                env_name, env_configs[env_name], SAMPLES_PER_ENV, DATASET_SEED
+            )
+            for env_name in sorted(envs_with_model)
+        }
+        # datasets = {env_name: ray.get(ref) for env_name, ref in dataset_refs.items()}
+        logging.info(
+            "Phase 2 complete: Collected datasets for %d environments",
+            len(dataset_refs),
         )
-        summary_df = aggregate_over_windows(bias_var_df)
+
+        # PHASE 3: Generate predictions
+        logging.info(
+            "PHASE 3: Generating predictions for %d models...", len(model_artifacts)
+        )
+        pred_refs = []
+        for artifact in model_artifacts:
+            dataset_ref = dataset_refs[artifact.env_name]
+            env_args = env_configs[artifact.env_name]
+            pred_refs.append(predict_on_dataset.remote(artifact, dataset_ref, env_args))
+
+        ds_predictions = ray.data.from_pandas_refs(pred_refs)
+        # PHASE 4: Compute bias-variance
+        logging.info("PHASE 4: Computing bias-variance statistics...")
+        sample_df, summary_df = compute_bias_variance_from_predictions(ds_predictions)
 
         # Export final results
-        output_dir = os.path.join(args.output_path, "aggregated")
-        export_results(bias_var_df, summary_df, output_dir)
+        export_results(sample_df, summary_df, results_dir)
 
         logging.info("Bias-variance analysis complete!")
-        logging.info("Raw results: %s", results_dir)
-        logging.info("Aggregated results: %s", output_dir)
+        logging.info("Predictions: %s", predictions_dir)
+        logging.info("Results: %s", results_dir)
+        logging.info(
+            "Summary: %d samples, %d configurations", len(sample_df), len(summary_df)
+        )
 
 
 def parse_args() -> Args:
@@ -1283,20 +950,22 @@ def parse_args() -> Args:
         description="Run bias-variance decomposition experiments"
     )
     arg_parser.add_argument(
-        "--num-runs", type=int, required=True, help="Number of runs per configuration"
-    )
-    arg_parser.add_argument(
-        "--num-episodes", type=int, required=True, help="Number of episodes per run"
-    )
-    arg_parser.add_argument(
-        "--output-path", type=str, required=True, help="Output directory path"
-    )
-    arg_parser.add_argument(
-        "--batch-size",
+        "--num-runs",
         type=int,
-        default=8,
-        help="Number of result files to process per batch (default: 8). "
-        "Lower values use less memory but may be slower.",
+        required=True,
+        help="Number of runs per configuration",
+    )
+    arg_parser.add_argument(
+        "--num-episodes",
+        type=int,
+        required=True,
+        help="Number of episodes per run",
+    )
+    arg_parser.add_argument(
+        "--output-path",
+        type=str,
+        required=True,
+        help="Output directory path",
     )
     known_args, _ = arg_parser.parse_known_args()
     return Args(**vars(known_args))
