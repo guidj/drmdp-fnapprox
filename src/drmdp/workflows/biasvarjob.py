@@ -772,8 +772,6 @@ def compute_bias_variance_from_predictions(
         # Compute bias-variance decomposition
         bv_stats = metrics.bias_variance_decomposition(predictions, true_reward)
 
-        # Batch Op expects batch output, i.e. either
-        # a dict where each value is a list of a DataFrame
         result = {
             "sample_id": int(group["sample_id"].iloc[0]),
             "true_reward": float(true_reward),
@@ -785,6 +783,8 @@ def compute_bias_variance_from_predictions(
             "gamma": float(group["gamma"].iloc[0]),
             **bv_stats,
         }
+        # Batch Op expects batch output, i.e. either
+        # a dict where each value is a list of a DataFrame
         return {key: [value] for key, value in result.items()}
 
     # Apply groupby and compute stats
@@ -882,7 +882,7 @@ def main():
     np.random.shuffle(job_specs)  # type: ignore
 
     # Initialize Ray
-    with ray.init(address=os.environ.get("RAY_ADDRESS", "auto")):
+    with ray.init():
         logging.info("Ray initialized")
 
         # PHASE 1: Train models and extract artifacts (in-memory)
@@ -972,8 +972,4 @@ def parse_args() -> Args:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
     main()
