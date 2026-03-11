@@ -804,10 +804,7 @@ class HCDecompositionLinearFnApproxPolicy(core.PyValueFnPolicy):
     @property
     def model(self):
         """Return combined model weights."""
-        return {
-            "head": self.head_weights,
-            "critic": self.critic_weights,
-        }
+        return np.concatenate([self.head_weights.flatten(), self.critic_weights.flatten()])
 
 
 class HCDecompositionSemigradientSARSAFnApprox(FnApproxAlgorithm):
