@@ -790,7 +790,7 @@ def compute_bias_variance_from_predictions(
     # Apply groupby and compute stats
     logging.info("Columns: %s", ds_predictions.columns())
     logging.info("Grouping by %s and computing bias-variance...", group_cols)
-    result_ds = ds_predictions.groupby(group_cols).map_groups(
+    ds_result = ds_predictions.groupby(group_cols).map_groups(
         # Require 2GB per task
         compute_bias_var_for_group,
         batch_format="pandas",
@@ -798,8 +798,8 @@ def compute_bias_variance_from_predictions(
     )
 
     # Convert to pandas
-    sample_df = result_ds.to_pandas()
-    logging.info("Computed bias-variance for %d samples", len(sample_df))
+    df_sample = ds_result.to_pandas()
+    logging.info("Computed bias-variance for %d samples", len(df_sample))
 
     # Aggregate summary statistics
     logging.info("Computing summary statistics...")
@@ -812,43 +812,41 @@ def compute_bias_variance_from_predictions(
     ]
 
     summary_stats = []
-    for group_key, group_df in sample_df.groupby(summary_group_cols):
+    for group_key, df_group in df_sample.groupby(summary_group_cols):
         config = dict(zip(summary_group_cols, group_key))
         summary_stats.append(
             {
                 **config,
-                "num_samples": len(group_df),
-                "mean_bias": group_df["bias"].mean(),
-                "std_bias": group_df["bias"].std(),
-                "mean_variance": group_df["variance"].mean(),
-                "std_variance": group_df["variance"].std(),
-                "mean_mse": group_df["mse"].mean(),
-                "std_mse": group_df["mse"].std(),
-                "mean_bias_squared": group_df["bias_squared"].mean(),
-                "mean_verification_error": group_df["verification_error"].mean(),
-                "max_verification_error": group_df["verification_error"].max(),
+                "num_samples": len(df_group),
+                "mean_bias": df_group["bias"].mean(),
+                "std_bias": df_group["bias"].std(),
+                "mean_variance": df_group["variance"].mean(),
+                "std_variance": df_group["variance"].std(),
+                "mean_mse": df_group["mse"].mean(),
+                "std_mse": df_group["mse"].std(),
+                "mean_bias_squared": df_group["bias_squared"].mean(),
+                "mean_verification_error": df_group["verification_error"].mean(),
+                "max_verification_error": df_group["verification_error"].max(),
             }
         )
 
-    summary_df = pd.DataFrame(summary_stats)
-    logging.info("Computed summary for %d configurations", len(summary_df))
+    df_summary = pd.DataFrame(summary_stats)
+    logging.info("Computed summary for %d configurations", len(df_summary))
 
-    return sample_df, summary_df
+    return df_sample, df_summary
 
 
-def export_results(sample_df: pd.DataFrame, summary_df: pd.DataFrame, output_dir: str):
+def export_results(df_sample: pd.DataFrame, df_summary: pd.DataFrame, output_dir: str):
     """Export results to parquet."""
-    os.makedirs(output_dir, exist_ok=True)
-
     # Export sample-level results
-    sample_parquet = os.path.join(output_dir, "bias_var_sample.parquet")
-    sample_df.to_parquet(sample_parquet, index=False)
-    logging.info("Exported sample results to %s", sample_parquet)
+    sample_parquet_path = os.path.join(output_dir, "bias_var_sample.parquet")
+    df_sample.to_parquet(sample_parquet_path, index=False)
+    logging.info("Exported sample results to %s", sample_parquet_path)
 
     # Export summary results
-    summary_parquet = os.path.join(output_dir, "bias_var_summary.parquet")
-    summary_df.to_parquet(summary_parquet, index=False)
-    logging.info("Exported summary results to %s", summary_parquet)
+    summary_parquet_path = os.path.join(output_dir, "bias_var_summary.parquet")
+    df_summary.to_parquet(summary_parquet_path, index=False)
+    logging.info("Exported summary results to %s", summary_parquet_path)
 
 
 def main():
@@ -862,12 +860,6 @@ def main():
     4. Compute bias-variance and export results
     """
     args = parse_args()
-
-    # Create output directories
-    predictions_dir = os.path.join(args.output_path, "predictions")
-    results_dir = os.path.join(args.output_path, "results")
-    os.makedirs(predictions_dir, exist_ok=True)
-    os.makedirs(results_dir, exist_ok=True)
 
     # Create all job specifications
     specs = experiment_specs()
@@ -932,16 +924,15 @@ def main():
         ds_predictions = ray.data.from_pandas_refs(pred_refs)
         # PHASE 4: Compute bias-variance
         logging.info("PHASE 4: Computing bias-variance statistics...")
-        sample_df, summary_df = compute_bias_variance_from_predictions(ds_predictions)
+        df_sample, df_summary = compute_bias_variance_from_predictions(ds_predictions)
 
         # Export final results
-        export_results(sample_df, summary_df, results_dir)
+        export_results(df_sample, df_summary, args.output_path)
 
         logging.info("Bias-variance analysis complete!")
-        logging.info("Predictions: %s", predictions_dir)
-        logging.info("Results: %s", results_dir)
+        logging.info("Results: %s", args.output_path)
         logging.info(
-            "Summary: %d samples, %d configurations", len(sample_df), len(summary_df)
+            "Summary: %d samples, %d configurations", len(df_sample), len(df_summary)
         )
 
 
