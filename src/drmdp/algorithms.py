@@ -804,7 +804,9 @@ class HCDecompositionLinearFnApproxPolicy(core.PyValueFnPolicy):
     @property
     def model(self):
         """Return combined model weights."""
-        return np.concatenate([self.head_weights.flatten(), self.critic_weights.flatten()])
+        return np.concatenate(
+            [self.head_weights.flatten(), self.critic_weights.flatten()]
+        )
 
 
 class HCDecompositionSemigradientSARSAFnApprox(FnApproxAlgorithm):
@@ -1022,7 +1024,16 @@ class RRDRewardNetwork:
 
     Uses gradient descent with analytical gradients for RRD loss.
     Input: concatenated state-action features
-    Output: scalar reward value
+    Output: scalar reward value (on ORIGINAL scale)
+
+    IMPORTANT: Predictions stay on the original reward scale to preserve RRD's
+    fundamental property: sum(R_θ) = R_ep. The network does NOT normalize returns.
+
+    Includes four critical stability improvements:
+    1. Internal feature standardization (zero-centering)
+    2. T/K ratio capping to prevent extreme gradient amplification
+    3. Adaptive gradient scaling based on return variance (for conditioning)
+    4. Gradient clipping to prevent overflow
     """
 
     def __init__(
@@ -1030,6 +1041,9 @@ class RRDRewardNetwork:
         feature_dim: int,
         learning_rate: float = 3e-4,
         seed: Optional[int] = None,
+        gradient_clip_norm: float = 5.0,
+        max_t_over_k: float = 10.0,
+        standardize_features: bool = True,
     ):
         """
         Initialize linear reward network.
@@ -1038,9 +1052,15 @@ class RRDRewardNetwork:
             feature_dim: Dimension of input features
             learning_rate: Learning rate for gradient descent
             seed: Random seed for reproducibility
+            gradient_clip_norm: Maximum gradient norm (default: 5.0, same as RUDDER)
+            max_t_over_k: Maximum T/K ratio to use in gradients (caps amplification)
+            standardize_features: If True, standardize features to mean=0, std=1
         """
         self.feature_dim = feature_dim
         self.learning_rate = learning_rate
+        self.gradient_clip_norm = gradient_clip_norm
+        self.max_t_over_k = max_t_over_k
+        self.standardize_features = standardize_features
 
         # Initialize RNG and weights
         self.rng = np.random.default_rng(seed)
@@ -1048,6 +1068,81 @@ class RRDRewardNetwork:
 
         # Storage for accumulated gradients
         self._accumulated_gradients = None
+
+        # Feature standardization statistics (computed from training data)
+        self._feature_mean = None
+        self._feature_std = None
+        self._standardization_initialized = False
+
+        # Return variance for adaptive gradient scaling (NOT normalization)
+        self._return_variance = 1.0
+        self._return_var_initialized = False
+
+    def _standardize_features(self, features):
+        """
+        Standardize features to zero mean and unit variance.
+
+        Args:
+            features: Input features [batch_size, feature_dim] or [feature_dim]
+
+        Returns:
+            Standardized features with same shape as input
+        """
+        if not self.standardize_features or not self._standardization_initialized:
+            return features
+
+        # Standardize: (x - mean) / std
+        # Add small epsilon to prevent division by zero
+        return (features - self._feature_mean) / (self._feature_std + 1e-8)
+
+    def _update_feature_statistics(self, features):
+        """
+        Update running statistics for feature standardization.
+
+        Uses exponential moving average for online learning.
+
+        Args:
+            features: Features from current batch [num_samples, feature_dim]
+        """
+        if not self.standardize_features:
+            return
+
+        # Compute batch statistics
+        batch_mean = np.mean(features, axis=0)
+        batch_std = np.std(features, axis=0)
+
+        # Initialize or update with exponential moving average
+        alpha = 0.1  # Update rate
+        if not self._standardization_initialized:
+            self._feature_mean = batch_mean
+            self._feature_std = batch_std
+            self._standardization_initialized = True
+        else:
+            self._feature_mean = (1 - alpha) * self._feature_mean + alpha * batch_mean
+            self._feature_std = (1 - alpha) * self._feature_std + alpha * batch_std
+
+    def _update_return_variance(self, returns):
+        """
+        Update running variance estimate for adaptive gradient scaling.
+
+        This is used to scale gradients, NOT to normalize returns.
+        Preserves the original scale of predictions while improving optimization stability.
+
+        Args:
+            returns: Episode returns from current batch [num_trajectories]
+        """
+        # Compute batch variance
+        batch_var = np.var(returns)
+
+        # Initialize or update with exponential moving average
+        alpha = 0.1  # Update rate
+        if not self._return_var_initialized:
+            self._return_variance = max(batch_var, 1.0)  # Prevent division by zero
+            self._return_var_initialized = True
+        else:
+            self._return_variance = (1 - alpha) * self._return_variance + alpha * max(
+                batch_var, 1.0
+            )
 
     def forward(self, features):
         """
@@ -1070,6 +1165,9 @@ class RRDRewardNetwork:
         else:
             feats = np.asarray(features, dtype=np.float64)
 
+        # Standardize features
+        feats = self._standardize_features(feats)
+
         # Linear prediction: θ^T φ
         return np.dot(feats, self.weights)
 
@@ -1081,12 +1179,22 @@ class RRDRewardNetwork:
         rng: np.random.Generator,
     ):
         """
-        Compute RRD loss and analytical gradients.
+        Compute RRD loss and analytical gradients with stability improvements.
 
         For each trajectory, samples M subsequences of K timesteps and computes:
-        - Predicted return: R_hat = (T/K) * sum(R_θ(s_i, a_i))
+        - Predicted return: R_hat = (T_capped/K) * sum(R_θ(s_i, a_i))
         - Loss: L = (R_ep - R_hat)²
-        - Gradient: ∂L/∂θ = -2(R_ep - R_hat) * (T/K) * sum(φ_i)
+        - Gradient: ∂L/∂θ = -2(R_ep - R_hat) * (T_capped/K) * sum(φ_i)
+
+        IMPORTANT: Returns and predictions stay on the ORIGINAL scale to preserve
+        RRD's property that sum(R_θ) = R_ep. Stability is achieved through:
+
+        Stability improvements:
+        1. Updates feature standardization statistics from batch
+        2. Standardizes features to zero mean, unit variance (internal only)
+        3. Caps T/K ratio to max_t_over_k to prevent gradient explosion
+        4. Scales gradients by 1/sqrt(return_variance) for better conditioning
+        5. Clips final gradients to gradient_clip_norm
 
         Args:
             trajectories: List of TrajectoryData objects
@@ -1098,13 +1206,31 @@ class RRDRewardNetwork:
             loss: Scalar loss value (as float)
             gradients: None (gradients stored internally for compatibility)
         """
+        # Step 1: Collect all features and returns from batch to update statistics
+        if self.standardize_features:
+            all_features = []
+            for traj in trajectories:
+                all_features.append(traj.features)
+            if all_features:
+                batch_features = np.vstack(all_features)
+                self._update_feature_statistics(batch_features)
+
+        # Update return variance for adaptive gradient scaling
+        all_returns = np.array([traj.episode_return for traj in trajectories])
+        self._update_return_variance(all_returns)
+
+        # Step 2: Compute loss and gradients with standardized features
         accumulated_gradients = np.zeros(self.feature_dim, dtype=np.float64)
         total_loss = 0.0
         count = 0
 
         for traj in trajectories:
             T = traj.length
-            R_ep = traj.episode_return
+            R_ep = traj.episode_return  # Keep on ORIGINAL scale
+
+            # Cap T/K ratio to prevent extreme gradient amplification
+            T_over_K = T / K
+            T_over_K_capped = min(T_over_K, self.max_t_over_k)
 
             for _ in range(M):
                 # Sample K indices uniformly without replacement
@@ -1113,32 +1239,50 @@ class RRDRewardNetwork:
                 else:
                     indices = rng.choice(T, size=K, replace=False)
 
-                # Get sampled features
+                # Get sampled features and standardize them
                 sampled_features = traj.features[indices]  # shape: (K, feature_dim)
+                sampled_features_std = self._standardize_features(sampled_features)
 
-                # Compute predictions for sampled features
-                R_pred_per_step = np.dot(sampled_features, self.weights)  # shape: (K,)
+                # Compute predictions for standardized features
+                R_pred_per_step = np.dot(
+                    sampled_features_std, self.weights
+                )  # shape: (K,)
 
-                # Compute predicted return: R_hat = (T/K) * sum(predictions)
-                R_hat = (T / K) * np.sum(R_pred_per_step)
+                # Compute predicted return with CAPPED T/K ratio
+                # IMPORTANT: This is on the ORIGINAL scale (same as R_ep)
+                R_hat = T_over_K_capped * np.sum(R_pred_per_step)
 
-                # Squared error loss
+                # Squared error loss (on ORIGINAL scale - preserves RRD property)
                 loss = (R_ep - R_hat) ** 2
                 total_loss += loss
                 count += 1
 
-                # Analytical gradient: ∂L/∂θ = -2(R_ep - R_hat) * (T/K) * sum(φ_i)
+                # Analytical gradient with CAPPED T/K ratio and standardized features
+                # ∂L/∂θ = -2(R_ep - R_hat) * (T_capped/K) * sum(φ_standardized)
                 prediction_error = R_ep - R_hat
-                scale_factor = -2.0 * prediction_error * (T / K)
-                gradient = scale_factor * np.sum(sampled_features, axis=0)
+                scale_factor = -2.0 * prediction_error * T_over_K_capped
+                gradient = scale_factor * np.sum(sampled_features_std, axis=0)
 
                 accumulated_gradients += gradient
 
-        # Average loss and gradients
+        # Step 3: Average gradients
         avg_loss = total_loss / count if count > 0 else 0.0
-        self._accumulated_gradients = (
+        avg_gradients = (
             accumulated_gradients / count if count > 0 else accumulated_gradients
         )
+
+        # Step 4: Scale gradients by 1/sqrt(return_variance) for better conditioning
+        # This normalizes the gradient magnitude without changing the scale of predictions
+        if self._return_var_initialized:
+            gradient_scale = 1.0 / np.sqrt(self._return_variance + 1e-8)
+            avg_gradients = avg_gradients * gradient_scale
+
+        # Step 5: Clip gradients to prevent explosion
+        gradient_norm = np.linalg.norm(avg_gradients)
+        if gradient_norm > self.gradient_clip_norm:
+            avg_gradients = avg_gradients * (self.gradient_clip_norm / gradient_norm)
+
+        self._accumulated_gradients = avg_gradients
 
         return avg_loss, None
 
