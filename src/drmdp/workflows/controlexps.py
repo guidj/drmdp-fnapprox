@@ -174,6 +174,107 @@ def common_problem_specs(
     return tuple(specs)
 
 
+def rrd_specs(
+    delays: Sequence[int] = (2, 4, 6, 8),
+    discounts: Sequence[float] = (1.0, 0.99),
+    K_values: Sequence[int] = (64,),
+    reward_network_lrs: Sequence[float] = (1e-4,),
+    policy_lr: float = 0.01,
+) -> Sequence[Mapping[str, Any]]:
+    """
+    RRD (Randomized Return Decomposition) algorithm configuration specs.
+
+    RRD learns a reward redistribution network to handle sparse episodic rewards
+    by redistributing them across timesteps (Ren et al., ICLR 2022).
+
+    Args:
+        delays: Reward delay values (Poisson lambda)
+        discounts: Discount factors (gamma)
+        K_values: Subsequence lengths for RRD sampling
+        reward_network_lrs: Learning rates for reward network
+        policy_lr: Learning rate for policy network
+
+    Returns:
+        Sequence of problem specifications for RRD experiments with delayed rewards
+    """
+    specs = []
+    for delay, gamma, K, rew_lr in itertools.product(
+        delays, discounts, K_values, reward_network_lrs
+    ):
+        specs.append(
+            {
+                "policy_type": "rrd",
+                "reward_mapper": {"name": "identity", "args": None},
+                "delay_config": poisson_delay_config(delay),
+                "epsilon": EPSILON,
+                "gamma": gamma,
+                "learning_rate_config": {
+                    "name": "constant",
+                    "args": {
+                        "initial_lr": policy_lr,
+                        # RRD-specific hyperparameters
+                        "K": K,
+                        "M": 1,
+                        "reward_network_lr": rew_lr,
+                        "reward_update_freq": 10,
+                        "trajectory_buffer_capacity": 10000,
+                        "batch_size": 256,
+                    },
+                },
+            },
+        )
+    return tuple(specs)
+
+
+def hc_decomposition_specs(
+    delays: Sequence[int] = (2, 4, 6, 8),
+    discounts: Sequence[float] = (1.0, 0.99),
+    history_windows: Sequence[int] = (10,),
+    lr_head_values: Sequence[float] = (0.01,),
+    lr_critic_values: Sequence[float] = (0.01,),
+) -> Sequence[Mapping[str, Any]]:
+    """
+    Head-Critic Decomposition algorithm configuration specs.
+
+    HC-Decomposition decomposes Q-function into historical (Head) and current
+    (Critic) components for delayed rewards (Han et al., ICML 2022).
+
+    Args:
+        delays: Reward delay values (Poisson lambda)
+        discounts: Discount factors (gamma)
+        history_windows: History buffer window sizes
+        lr_head_values: Learning rates for Head network
+        lr_critic_values: Learning rates for Critic network
+
+    Returns:
+        Sequence of problem specifications for HC-Decomposition experiments
+    """
+    specs = []
+    for delay, gamma, history_window, lr_head, lr_critic in itertools.product(
+        delays, discounts, history_windows, lr_head_values, lr_critic_values
+    ):
+        specs.append(
+            {
+                "policy_type": "hc-decomposition",
+                "reward_mapper": {"name": "identity", "args": None},
+                "delay_config": poisson_delay_config(delay),
+                "epsilon": EPSILON,
+                "gamma": gamma,
+                "learning_rate_config": {
+                    "name": "constant",
+                    "args": {
+                        "initial_lr": 0.01,  # Fallback
+                        # HC-Decomposition specific hyperparameters
+                        "lr_head": lr_head,
+                        "lr_critic": lr_critic,
+                        "history_window": history_window,
+                    },
+                },
+            },
+        )
+    return tuple(specs)
+
+
 def experiment_specs() -> Sequence[Mapping[str, Any]]:
     """
     Control experiment specs.

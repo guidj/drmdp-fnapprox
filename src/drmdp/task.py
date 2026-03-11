@@ -50,6 +50,7 @@ def policy_control(exp_instance: core.ExperimentInstance):
         gamma=problem_spec.gamma,
         epsilon=problem_spec.epsilon,
         policy_type=problem_spec.policy_type,
+        algo_config=problem_spec.learning_rate_config.get("args"),
         base_seed=exp_instance.instance_id,
     )
 
@@ -284,6 +285,7 @@ def reward_mapper(env: gym.Env, proxy_env: gym.Env, mapping_spec: Mapping[str, A
             ft_op=ft_op,
             **m_args,
         )
+
     raise ValueError(f"Unknown mapping_method: {mapping_spec}")
 
 
@@ -315,11 +317,16 @@ def create_algorithm(
     lr: optsol.LearningRateSchedule,
     gamma: float,
     epsilon: float,
+    algo_config: Optional[Mapping[str, Any]] = None,
     base_seed: Optional[int] = None,
 ):
     """
     Creates an algorithm instance based on the provided
     arguments.
+
+    Args:
+        algo_config: Optional algorithm-specific configuration parameters.
+            E.g. neural network hyper-parameters.
     """
     if policy_type == "markovian":
         return algorithms.SemigradientSARSAFnApprox(
@@ -378,6 +385,70 @@ def create_algorithm(
                 options_length_range=delay_reward.range(),
             ),
             base_seed=base_seed,
+        )
+    elif policy_type == "rrd":
+        # RRD requires delayed rewards to learn reward redistribution
+        if delay_reward is None:
+            raise ValueError(
+                "RRD algorithm requires `delay_reward` to be configured. "
+                "Set delay_config in ProblemSpec."
+            )
+
+        # Extract RRD hyperparameters from algo_config
+        config = algo_config or {}
+
+        return algorithms.RRDSemigradientSARSAFnApprox(
+            lr=lr,
+            gamma=gamma,
+            epsilon=epsilon,
+            policy=algorithms.LinearFnApproxPolicy(
+                ft_op=ft_op, action_space=env.action_space
+            ),
+            ft_op=ft_op,
+            K=config.get("K", 64),
+            M=config.get("M", 1),
+            reward_network_lr=config.get("reward_network_lr", 0.001),
+            reward_update_freq=config.get("reward_update_freq", 10),
+            trajectory_buffer_capacity=config.get("trajectory_buffer_capacity", 10000),
+            batch_size=config.get("batch_size", 256),
+            base_seed=base_seed,
+            verbose=True,
+        )
+    elif policy_type == "hc-decomposition":
+        # HC-Decomposition requires delayed rewards for head-critic split
+        if delay_reward is None:
+            raise ValueError(
+                "HC-Decomposition algorithm requires `delay_reward` to be configured. "
+                "Set delay_config in ProblemSpec."
+            )
+
+        # Extract HC-Decomposition hyperparameters from algo_config
+        config = algo_config or {}
+
+        # Get separate learning rates for head and critic components
+        # Use the main lr as fallback for both
+        lr_head_value = config.get("lr_head", config.get("initial_lr", 0.01))
+        lr_critic_value = config.get("lr_critic", config.get("initial_lr", 0.01))
+
+        # Create separate LR schedules (both use constant for now)
+        lr_head = learning_rate(name="constant", args={"initial_lr": lr_head_value})
+        lr_critic = learning_rate(name="constant", args={"initial_lr": lr_critic_value})
+
+        history_window = config.get("history_window", 10)
+
+        return algorithms.HCDecompositionSemigradientSARSAFnApprox(
+            lr_head=lr_head,
+            lr_critic=lr_critic,
+            gamma=gamma,
+            epsilon=epsilon,
+            policy=algorithms.HCDecompositionLinearFnApproxPolicy(
+                ft_op=ft_op,
+                action_space=env.action_space,
+                history_window=history_window,
+                seed=base_seed,
+            ),
+            base_seed=base_seed,
+            verbose=True,
         )
 
     raise ValueError(f"Unknown policy_type: {policy_type}")
