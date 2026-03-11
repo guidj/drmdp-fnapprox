@@ -870,9 +870,13 @@ class HCDecompositionSemigradientSARSAFnApprox(FnApproxAlgorithm):
                 # Treat None rewards as 0 (delayed rewards not yet received)
                 reward_value = reward if reward is not None else 0.0
 
+                # Extract critic value: Q^C(s,a) = Q(h,s,a) - Q^H(h)
+                critic_value = state_qvalues[policy_step.action] - head_value
+
                 if term or trunc:
-                    # Terminal state: target = reward only
+                    # Terminal state: no bootstrapping
                     # Update Head: learns historical component
+                    # Target for Head = r (terminal reward is the accumulated historical reward)
                     head_td_error = reward_value - head_value
                     head_scaled_gradients = (
                         self.lr_head(episode, monitor.step)
@@ -880,8 +884,10 @@ class HCDecompositionSemigradientSARSAFnApprox(FnApproxAlgorithm):
                         * history_features
                     )
 
-                    # Update Critic: learns current action value
-                    critic_td_error = reward_value - state_qvalues[policy_step.action]
+                    # Update Critic: learns residual (what Head didn't explain)
+                    # Target for Critic = r - Q^H(h) (residual after Head contribution)
+                    critic_target = reward_value - head_value
+                    critic_td_error = critic_target - critic_value
                     critic_scaled_gradients = (
                         self.lr_critic(episode, monitor.step)
                         * critic_td_error
@@ -901,11 +907,9 @@ class HCDecompositionSemigradientSARSAFnApprox(FnApproxAlgorithm):
                 next_critic_gradients = next_policy_step.info["critic_gradients"]
                 next_history_features = next_policy_step.info["history_features"]
 
-                # SARSA target with HC decomposition
-                # Target = r + γ * [Q^H(h') + Q^C(s', a')]
-                target = (
-                    reward_value
-                    + self.gamma * next_state_qvalues[next_policy_step.action]
+                # Extract next critic value: Q^C(s',a') = Q(h',s',a') - Q^H(h')
+                next_critic_value = (
+                    next_state_qvalues[next_policy_step.action] - next_head_value
                 )
 
                 # Update Head: learns to predict historical reward component
@@ -918,9 +922,11 @@ class HCDecompositionSemigradientSARSAFnApprox(FnApproxAlgorithm):
                     * history_features
                 )
 
-                # Update Critic: learns current action value
-                # Target for Critic is adjusted by removing Head component
-                critic_td_error = target - state_qvalues[policy_step.action]
+                # Update Critic: bootstraps only from next Critic value
+                # Target for Critic = r + γ * Q^C(s', a')
+                # (explicit decomposition as per paper: target = y - Q^H(h'))
+                critic_target = reward_value + self.gamma * next_critic_value
+                critic_td_error = critic_target - critic_value
                 critic_scaled_gradients = (
                     self.lr_critic(episode, monitor.step)
                     * critic_td_error
