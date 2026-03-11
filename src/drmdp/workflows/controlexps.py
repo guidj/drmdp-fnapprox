@@ -175,6 +175,7 @@ def common_problem_specs(
 
 
 def rrd_specs(
+    feats_specs: Sequence[Sequence[Mapping[str, Any]]],
     delays: Sequence[int] = (2, 4, 6, 8),
     discounts: Sequence[float] = (1.0, 0.99),
     K_values: Sequence[int] = (64,),
@@ -188,6 +189,7 @@ def rrd_specs(
     by redistributing them across timesteps (Ren et al., ICLR 2022).
 
     Args:
+        feats_specs: Feature transformation specifications for rewards network
         delays: Reward delay values (Poisson lambda)
         discounts: Discount factors (gamma)
         K_values: Subsequence lengths for RRD sampling
@@ -198,8 +200,8 @@ def rrd_specs(
         Sequence of problem specifications for RRD experiments with delayed rewards
     """
     specs = []
-    for delay, gamma, K, rew_lr in itertools.product(
-        delays, discounts, K_values, reward_network_lrs
+    for delay, gamma, K, rew_lr, feats_spec in itertools.product(
+        delays, discounts, K_values, reward_network_lrs, feats_specs
     ):
         specs.append(
             {
@@ -219,6 +221,7 @@ def rrd_specs(
                         "reward_update_freq": 10,
                         "trajectory_buffer_capacity": 10000,
                         "batch_size": 256,
+                        "feats_spec": feats_spec,
                     },
                 },
             },
@@ -250,8 +253,18 @@ def hc_decomposition_specs(
         Sequence of problem specifications for HC-Decomposition experiments
     """
     specs = []
-    for delay, gamma, history_window, lr_head, lr_critic in itertools.product(
-        delays, discounts, history_windows, lr_head_values, lr_critic_values
+    for (
+        delay,
+        gamma,
+        history_window,
+        lr_head,
+        lr_critic,
+    ) in itertools.product(
+        delays,
+        discounts,
+        history_windows,
+        lr_head_values,
+        lr_critic_values,
     ):
         specs.append(
             {
@@ -315,7 +328,16 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                         {"name": "action-segment-observation-ft", "args": None},
                     ]
                 ],
-            ),
+            )
+            + rrd_specs(
+                feats_specs=[
+                    [
+                        {"name": "scale-observation-ft", "args": None},
+                        {"name": "action-segment-observation-ft", "args": None},
+                    ]
+                ],
+            )
+            + hc_decomposition_specs(),
             "epochs": 1,
         },
         {
@@ -348,7 +370,16 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                         {"name": "action-segment-observation-ft", "args": None},
                     ]
                 ],
-            ),
+            )
+            + rrd_specs(
+                feats_specs=[
+                    [
+                        {"name": "scale-observation-ft", "args": None},
+                        {"name": "action-segment-observation-ft", "args": None},
+                    ]
+                ],
+            )
+            + hc_decomposition_specs(),
             "epochs": 1,
         },
         {
@@ -386,7 +417,16 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                         {"name": "action-segment-observation-ft", "args": None},
                     ]
                 ],
-            ),
+            )
+            + rrd_specs(
+                feats_specs=[
+                    [
+                        {"name": "scale-observation-ft", "args": None},
+                        {"name": "action-segment-observation-ft", "args": None},
+                    ]
+                ],
+            )
+            + hc_decomposition_specs(),
             "epochs": 1,
         },
         {
@@ -422,7 +462,16 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                         {"name": "action-segment-observation-ft", "args": None},
                     ]
                 ],
-            ),
+            )
+            + rrd_specs(
+                feats_specs=[
+                    [
+                        {"name": "scale-observation-ft", "args": None},
+                        {"name": "action-segment-observation-ft", "args": None},
+                    ]
+                ],
+            )
+            + hc_decomposition_specs(),
             "epochs": 1,
         },
         {
@@ -455,7 +504,16 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                         {"name": "action-segment-observation-ft", "args": None},
                     ]
                 ],
-            ),
+            )
+            + rrd_specs(
+                feats_specs=[
+                    [
+                        {"name": "scale-observation-ft", "args": None},
+                        {"name": "action-segment-observation-ft", "args": None},
+                    ]
+                ],
+            )
+            + hc_decomposition_specs(),
             "epochs": 1,
         },
         {
@@ -491,7 +549,16 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
                         {"name": "action-segment-observation-ft", "args": None},
                     ]
                 ],
-            ),
+            )
+            + rrd_specs(
+                feats_specs=[
+                    [
+                        {"name": "scale-observation-ft", "args": None},
+                        {"name": "action-segment-observation-ft", "args": None},
+                    ]
+                ],
+            )
+            + hc_decomposition_specs(),
             "epochs": 1,
         },
     ]

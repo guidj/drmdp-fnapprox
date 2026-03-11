@@ -397,6 +397,10 @@ def create_algorithm(
         # Extract RRD hyperparameters from algo_config
         config = algo_config or {}
 
+        # Use custom feats_spec for RRD reward network if provided
+        # Policy uses the standard ft_op, reward network uses algorithm-specific ft_op
+        reward_ft_op = transform.transform_pipeline(env=env, specs=config["feats_spec"])
+
         return algorithms.RRDSemigradientSARSAFnApprox(
             lr=lr,
             gamma=gamma,
@@ -404,7 +408,7 @@ def create_algorithm(
             policy=algorithms.LinearFnApproxPolicy(
                 ft_op=ft_op, action_space=env.action_space
             ),
-            ft_op=ft_op,
+            ft_op=reward_ft_op,
             K=config.get("K", 64),
             M=config.get("M", 1),
             reward_network_lr=config.get("reward_network_lr", 0.001),
@@ -425,6 +429,11 @@ def create_algorithm(
         # Extract HC-Decomposition hyperparameters from algo_config
         config = algo_config or {}
 
+        # Use custom feats_spec for HC decomposition if provided
+        hc_ft_op = ft_op
+        if "feats_spec" in config:
+            hc_ft_op = transform.transform_pipeline(env=env, specs=config["feats_spec"])
+
         # Get separate learning rates for head and critic components
         # Use the main lr as fallback for both
         lr_head_value = config.get("lr_head", config.get("initial_lr", 0.01))
@@ -442,7 +451,7 @@ def create_algorithm(
             gamma=gamma,
             epsilon=epsilon,
             policy=algorithms.HCDecompositionLinearFnApproxPolicy(
-                ft_op=ft_op,
+                ft_op=hc_ft_op,
                 action_space=env.action_space,
                 history_window=history_window,
                 seed=base_seed,
