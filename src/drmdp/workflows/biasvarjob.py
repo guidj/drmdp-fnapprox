@@ -837,21 +837,17 @@ def compute_bias_variance_from_predictions(
 
 
 def export_results(sample_df: pd.DataFrame, summary_df: pd.DataFrame, output_dir: str):
-    """Export results to parquet and CSV files."""
+    """Export results to parquet."""
     os.makedirs(output_dir, exist_ok=True)
 
     # Export sample-level results
     sample_parquet = os.path.join(output_dir, "bias_var_sample.parquet")
-    sample_csv = os.path.join(output_dir, "bias_var_sample.csv")
     sample_df.to_parquet(sample_parquet, index=False)
-    sample_df.to_csv(sample_csv, index=False)
     logging.info("Exported sample results to %s", sample_parquet)
 
     # Export summary results
     summary_parquet = os.path.join(output_dir, "bias_var_summary.parquet")
-    summary_csv = os.path.join(output_dir, "bias_var_summary.csv")
     summary_df.to_parquet(summary_parquet, index=False)
-    summary_df.to_csv(summary_csv, index=False)
     logging.info("Exported summary results to %s", summary_parquet)
 
 
