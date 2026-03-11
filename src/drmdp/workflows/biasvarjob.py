@@ -788,9 +788,13 @@ def compute_bias_variance_from_predictions(
         return {key: [value] for key, value in result.items()}
 
     # Apply groupby and compute stats
+    logging.info("Columns: %s", ds_predictions.columns())
     logging.info("Grouping by %s and computing bias-variance...", group_cols)
     result_ds = ds_predictions.groupby(group_cols).map_groups(
-        compute_bias_var_for_group, batch_format="pandas"
+        # Require 2GB per task
+        compute_bias_var_for_group,
+        batch_format="pandas",
+        memory=2 * 1024**3,
     )
 
     # Convert to pandas
@@ -888,7 +892,9 @@ def main():
         # PHASE 1: Train models and extract artifacts (in-memory)
         logging.info("PHASE 1: Training %d reward models...", len(job_specs))
         model_refs = [train_reward_model_run.remote(spec) for spec in job_specs]
-        model_artifacts: Sequence[Optional[RewardModelArtifact]] = ray.get(model_refs)
+        model_artifacts: Sequence[Optional[RewardModelArtifact]] = wait_till_completion(
+            model_refs
+        )
         model_artifacts: Sequence[RewardModelArtifact] = [
             model_artifact
             for model_artifact in model_artifacts
@@ -912,7 +918,6 @@ def main():
             )
             for env_name in sorted(envs_with_model)
         }
-        # datasets = {env_name: ray.get(ref) for env_name, ref in dataset_refs.items()}
         logging.info(
             "Phase 2 complete: Collected datasets for %d environments",
             len(dataset_refs),
@@ -942,6 +947,27 @@ def main():
         logging.info(
             "Summary: %d samples, %d configurations", len(sample_df), len(summary_df)
         )
+
+
+def wait_till_completion(tasks_refs):
+    """
+    Waits for every ray task to complete.
+    """
+    results = []
+    unfinished_tasks = tasks_refs
+    while True:
+        finished_tasks, unfinished_tasks = ray.wait(unfinished_tasks)
+        results.extend([ray.get(task) for task in finished_tasks])
+        logging.info(
+            "Completed %d task(s). %d left out of %d.",
+            len(finished_tasks),
+            len(unfinished_tasks),
+            len(tasks_refs),
+        )
+
+        if len(unfinished_tasks) == 0:
+            break
+    return results
 
 
 def parse_args() -> Args:
