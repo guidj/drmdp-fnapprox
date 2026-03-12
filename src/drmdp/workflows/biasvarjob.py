@@ -37,7 +37,7 @@ import ray
 import ray.data
 from ray.data import aggregate
 
-from drmdp import core, dataproc, envs, metrics, rewdelay, task, transform
+from drmdp import core, dataproc, envs, ioutils, metrics, rewdelay, task, transform
 
 MAX_STEPS_PER_EPISODE_GEM = 10_000
 SAMPLES_PER_ENV = 100_000
@@ -465,8 +465,8 @@ def create_all_job_specs(
     specs: Sequence[Mapping[str, Any]],
     num_runs: int,
     num_episodes: int,
-    delays: Sequence[int] = (2, 4, 6, 8),
-    gammas: Sequence[float] = (1.0, 0.99),
+    delays: Sequence[int] = (2,),  # 4, 6, 8),
+    gammas: Sequence[float] = (1.0,),  # 0.99),
 ) -> Sequence[JobSpec]:
     """
     Create all job specifications for the bias-variance experiment.
@@ -786,7 +786,8 @@ def predict_on_dataset(
     model_artifact: RewardModelArtifact,
     dataset: Dict[str, Any],
     env_args: Mapping[str, Any],
-) -> pd.DataFrame:
+    output_path: str,
+) -> str:
     """
     Phase 3: Apply in-memory model to all samples in dataset.
 
@@ -796,7 +797,7 @@ def predict_on_dataset(
         env_args: Environment arguments for creating prediction function
 
     Returns:
-        DataFrame with predictions for each sample
+        Path of predictions.
     """
     logging.info(
         "Predicting with model %s on %d samples",
@@ -833,12 +834,11 @@ def predict_on_dataset(
         )
 
     env.close()
-
-    df = pd.DataFrame(predictions)
+    ioutils.write_records_json(output_path, predictions, gzip_compression=False)
     logging.info(
-        "Generated %d predictions for model %s", len(df), model_artifact.model_id
+        "Generated %d predictions for model %s. Exported to: %s", len(predictions), model_artifact.model_id, output_path
     )
-    return df
+    return output_path
 
 
 def compute_bias_variance_from_predictions(
@@ -952,7 +952,7 @@ def main():
     np.random.shuffle(job_specs)  # type: ignore
 
     # Initialize Ray
-    with ray.init():
+    with ray.init({"env_vars": {"RAY_DEFAULT_OBJECT_STORE_MEMORY_PROPORTION": 0.5}}):
         logging.info("Ray initialized")
         # PHASE 1: Train models and extract artifacts (in-memory)
         logging.info("PHASE 1: Training %d reward models...", len(job_specs))
@@ -999,11 +999,9 @@ def main():
             pred_refs.append(predict_on_dataset.remote(artifact, dataset_ref, env_args))
 
         # Wait till all predictions are complete
-        completed_pred_refs = wait_till_completion(pred_refs)
+        prediction_file_paths = wait_till_completion(pred_refs, fetch=True)
 
-        # model_paths = tf.io.gfile.glob(os.path.join(args.output_path, "predictions", "*.parquet"))
-        # logging.info("Loading models: %s", model_paths)
-        ds_predictions = ray.data.from_pandas_refs(completed_pred_refs)
+        ds_predictions = ray.data.read_json(prediction_file_paths, lines=True)
 
         # # PHASE 4: Compute bias-variance
         logging.info("PHASE 4: Computing bias-variance statistics...")
