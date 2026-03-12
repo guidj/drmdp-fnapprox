@@ -34,6 +34,8 @@ import numpy as np
 import pandas as pd
 import ray
 import ray.data
+import tensorflow as tf
+from ray.data import context as ray_data_context
 
 from drmdp import core, dataproc, envs, metrics, rewdelay, task, transform
 
@@ -791,10 +793,8 @@ def compute_bias_variance_from_predictions(
     logging.info("Columns: %s", ds_predictions.columns())
     logging.info("Grouping by %s and computing bias-variance...", group_cols)
     ds_result = ds_predictions.groupby(group_cols).map_groups(
-        # Require 2GB per task
         compute_bias_var_for_group,
         batch_format="pandas",
-        memory=2 * 1024**3,
     )
 
     # Convert to pandas
@@ -876,12 +876,12 @@ def main():
     # Initialize Ray
     with ray.init():
         logging.info("Ray initialized")
-
         # PHASE 1: Train models and extract artifacts (in-memory)
         logging.info("PHASE 1: Training %d reward models...", len(job_specs))
         model_refs = [train_reward_model_run.remote(spec) for spec in job_specs]
         model_artifacts: Sequence[Optional[RewardModelArtifact]] = wait_till_completion(
-            model_refs
+            model_refs,
+            fetch=True
         )
         model_artifacts: Sequence[RewardModelArtifact] = [
             model_artifact
@@ -921,8 +921,14 @@ def main():
             env_args = env_configs[artifact.env_name]
             pred_refs.append(predict_on_dataset.remote(artifact, dataset_ref, env_args))
 
-        ds_predictions = ray.data.from_pandas_refs(pred_refs)
-        # PHASE 4: Compute bias-variance
+        # Wait till all predictions are complete
+        completed_pred_refs = wait_till_completion(pred_refs)
+
+        # model_paths = tf.io.gfile.glob(os.path.join(args.output_path, "predictions", "*.parquet"))
+        # logging.info("Loading models: %s", model_paths)
+        ds_predictions = ray.data.from_pandas_refs(completed_pred_refs)
+        
+        # # PHASE 4: Compute bias-variance
         logging.info("PHASE 4: Computing bias-variance statistics...")
         df_sample, df_summary = compute_bias_variance_from_predictions(ds_predictions)
 
@@ -936,7 +942,7 @@ def main():
         )
 
 
-def wait_till_completion(tasks_refs):
+def wait_till_completion(tasks_refs, fetch: bool = False) -> Sequence[ray.ObjectRef | Any]:
     """
     Waits for every ray task to complete.
     """
@@ -944,7 +950,8 @@ def wait_till_completion(tasks_refs):
     unfinished_tasks = tasks_refs
     while True:
         finished_tasks, unfinished_tasks = ray.wait(unfinished_tasks)
-        results.extend([ray.get(task) for task in finished_tasks])
+        if fetch:
+            results.extend([ray.get(task) if fetch else task for task in finished_tasks])
         logging.info(
             "Completed %d task(s). %d left out of %d.",
             len(finished_tasks),
