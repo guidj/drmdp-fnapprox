@@ -1,13 +1,10 @@
 import argparse
 import copy
 import dataclasses
-import gzip
 import itertools
-import json
 import logging
 import math
 import os.path
-import sys
 import tempfile
 import uuid
 from typing import Any, Dict, List, Mapping, Optional, Sequence
@@ -15,11 +12,11 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence
 import gymnasium as gym
 import numpy as np
 import ray
-import tensorflow as tf
 
 from drmdp import (
     core,
     envs,
+    ioutils,
     logger,
     mathutils,
     metrics,
@@ -100,7 +97,7 @@ class ResultWriter:
         the buffer.
         """
         if self.results:
-            write_records(
+            ioutils.write_records_json(
                 os.path.join(
                     self.output_path, f"result-{self.prefix}-{self.partition}.jsonl"
                 ),
@@ -786,61 +783,6 @@ def setup_experiment(exp_instance: core.ExperimentInstance):
         base_seed=exp_instance.instance_id,
     )
     return env, algorithm, monitor, opt_logs
-
-
-def write_records(
-    output_path: str,
-    records: Sequence[Mapping[str, Any]],
-    gzip_compression: bool = True,
-) -> None:
-    """
-    Exports records into JSON files.
-    """
-    bytes_size = sys.getsizeof(records)
-    if gzip_compression and not output_path.endswith(".gzip"):
-        output_path = ".".join([output_path, "gzip"])
-
-    logging.debug(
-        "Writing partition of %fMB to %s",
-        bytes_size / 1024 / 1024,
-        output_path,
-    )
-
-    if gzip_compression:
-        with tf.io.gfile.GFile(output_path, "wb") as writable:
-            with gzip.GzipFile(fileobj=writable, mode="wb") as writer:
-                for record in records:
-                    content = "".join([json.dumps(record), "\n"])
-                    writer.write(content.encode("UTF-8"))
-    else:
-        with tf.io.gfile.GFile(output_path, "w") as writable:
-            for record in records:
-                json.dump(record, fp=writable)
-                writable.write("\n")
-
-
-def read_records(
-    input_path: str, gzip_compression: bool = True
-) -> Sequence[Mapping[str, Any]]:
-    """
-    Read records from JSON.
-    """
-    logging.debug(
-        "Reading file %s",
-        input_path,
-    )
-
-    records = []
-    if gzip_compression:
-        with tf.io.gfile.GFile(input_path, "rb") as readable:
-            with gzip.GzipFile(fileobj=readable, mode="rb") as reader:
-                for line in reader:
-                    records.append(json.loads(line.decode("UTF-8")))
-    else:
-        with tf.io.gfile.GFile(input_path, "r") as readable:
-            for line in readable:
-                records.append(json.loads(line))
-    return records
 
 
 def main():
