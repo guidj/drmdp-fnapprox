@@ -444,6 +444,8 @@ def create_algorithm(
         lr_critic = learning_rate(name="constant", args={"initial_lr": lr_critic_value})
 
         history_window = config.get("history_window", 10)
+        # Alpha parameter for coupling strength (default 1.0 for full coupling)
+        alpha = config.get("alpha", 1.0)
 
         return algorithms.HCDecompositionSemigradientSARSAFnApprox(
             lr_head=lr_head,
@@ -458,6 +460,7 @@ def create_algorithm(
             ),
             base_seed=base_seed,
             verbose=True,
+            alpha=alpha,
         )
 
     raise ValueError(f"Unknown policy_type: {policy_type}")
