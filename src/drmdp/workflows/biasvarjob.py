@@ -23,6 +23,7 @@ For predictions {ŷ₁, ŷ₂, ..., ŷₙ} for the same sample with true value y
 import argparse
 import copy
 import dataclasses
+import functools
 import itertools
 import logging
 import os
@@ -836,7 +837,10 @@ def predict_on_dataset(
     env.close()
     ioutils.write_records_json(output_path, predictions, gzip_compression=False)
     logging.info(
-        "Generated %d predictions for model %s. Exported to: %s", len(predictions), model_artifact.model_id, output_path
+        "Generated %d predictions for model %s. Exported to: %s",
+        len(predictions),
+        model_artifact.model_id,
+        output_path,
     )
     return output_path
 
@@ -853,6 +857,10 @@ def compute_bias_variance_from_predictions(
     Returns:
         Tuple of (sample_level_df, summary_df)
     """
+
+    def extract_field(key: str, rs: Mapping[str, Any]):
+        return rs[key]
+
     logging.info("Computing bias-variance from predictions")
 
     # Read all predictions
@@ -877,7 +885,18 @@ def compute_bias_variance_from_predictions(
 
     # Convert to pandas
     df_sample = ds_result.to_pandas()
-    logging.info("Computed bias-variance for %d samples", len(df_sample))
+    example = df_sample.iloc[0]
+    for key in example["bias_variance_agg"]:
+        df_sample[key] = df_sample["bias_variance_agg"].apply(
+            functools.partial(extract_field, key)
+        )
+    del df_sample["bias_variance_agg"]
+    logging.info(
+        "Computed bias-variance for %d samples. Columns: %s",
+        len(df_sample),
+        df_sample.columns,
+    )
+    logging.info("Example: %s", df_sample.iloc[0])
 
     # Aggregate summary statistics
     logging.info("Computing summary statistics...")
@@ -952,7 +971,7 @@ def main():
     np.random.shuffle(job_specs)  # type: ignore
 
     # Initialize Ray
-    with ray.init(runtime_env={"env_vars": {"RAY_DEFAULT_OBJECT_STORE_MEMORY_PROPORTION": 0.5}}):
+    with ray.init():
         logging.info("Ray initialized")
         # PHASE 1: Train models and extract artifacts (in-memory)
         logging.info("PHASE 1: Training %d reward models...", len(job_specs))
@@ -993,10 +1012,13 @@ def main():
             "PHASE 3: Generating predictions for %d models...", len(model_artifacts)
         )
         pred_refs = []
-        for artifact in model_artifacts:
+        for idx, artifact in enumerate(model_artifacts):
             dataset_ref = dataset_refs[artifact.env_name]
             env_args = env_configs[artifact.env_name]
-            pred_refs.append(predict_on_dataset.remote(artifact, dataset_ref, env_args))
+            pred_path = os.path.join(args.output_path, f"predictions/pred_{idx}.json")
+            pred_refs.append(
+                predict_on_dataset.remote(artifact, dataset_ref, env_args, pred_path)
+            )
 
         # Wait till all predictions are complete
         prediction_file_paths = wait_till_completion(pred_refs, fetch=True)
