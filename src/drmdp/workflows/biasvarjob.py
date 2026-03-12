@@ -952,7 +952,7 @@ def main():
     np.random.shuffle(job_specs)  # type: ignore
 
     # Initialize Ray
-    with ray.init({"env_vars": {"RAY_DEFAULT_OBJECT_STORE_MEMORY_PROPORTION": 0.5}}):
+    with ray.init(runtime_env={"env_vars": {"RAY_DEFAULT_OBJECT_STORE_MEMORY_PROPORTION": 0.5}}):
         logging.info("Ray initialized")
         # PHASE 1: Train models and extract artifacts (in-memory)
         logging.info("PHASE 1: Training %d reward models...", len(job_specs))
