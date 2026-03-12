@@ -466,8 +466,8 @@ def create_all_job_specs(
     specs: Sequence[Mapping[str, Any]],
     num_runs: int,
     num_episodes: int,
-    delays: Sequence[int] = (2,),  # 4, 6, 8),
-    gammas: Sequence[float] = (1.0,),  # 0.99),
+    delays: Sequence[int] = (2, 4, 6, 8),
+    gammas: Sequence[float] = (1.0, 0.99),
 ) -> Sequence[JobSpec]:
     """
     Create all job specifications for the bias-variance experiment.
@@ -1023,6 +1023,8 @@ def main():
         # Wait till all predictions are complete
         prediction_file_paths = wait_till_completion(pred_refs, fetch=True)
 
+        # Read exported predictions into distributed
+        # dataset
         ds_predictions = ray.data.read_json(prediction_file_paths, lines=True)
 
         # # PHASE 4: Compute bias-variance
