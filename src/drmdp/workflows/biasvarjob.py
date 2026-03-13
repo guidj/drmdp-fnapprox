@@ -21,7 +21,9 @@ For predictions {ŷ₁, ŷ₂, ..., ŷₙ} for the same sample with true value y
 """
 
 import argparse
+import copy
 import dataclasses
+import functools
 import itertools
 import logging
 import os
@@ -34,12 +36,124 @@ import numpy as np
 import pandas as pd
 import ray
 import ray.data
+from ray.data import aggregate
 
-from drmdp import core, dataproc, envs, metrics, rewdelay, task, transform
+from drmdp import core, dataproc, envs, ioutils, metrics, rewdelay, task, transform
 
 MAX_STEPS_PER_EPISODE_GEM = 10_000
 SAMPLES_PER_ENV = 100_000
 DATASET_SEED = 42
+
+
+class BiasVarianceAggregator(aggregate.AggregateFn):
+    """
+    Aggregates predictions to compute bias-variance decomposition.
+    """
+
+    def __init__(self, name: str = "BiasVarianceAggregator"):
+        super().__init__(
+            init=self._init,
+            accumulate_row=self._accumulate_row,
+            merge=self._merge,
+            finalize=self._finalize,
+            name=name,
+        )
+
+    def _init(self, key: Any) -> Dict[str, Any]:
+        """Initialize empty accumulator."""
+        del key
+        return {
+            "predictions": [],
+            "true_reward": None,
+            "metadata": {},
+            "count": 0,
+            "true_reward_mismatch": False,
+        }
+
+    def _accumulate_row(
+        self, acc: Dict[str, Any], row: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Accumulate a single row."""
+        new_acc = copy.deepcopy(acc)
+
+        # Append prediction
+        new_acc["predictions"].append(row["pred_reward"])
+
+        # Set or verify true_reward
+        if new_acc["true_reward"] is None:
+            new_acc["true_reward"] = row["true_reward"]
+        elif not np.isclose(new_acc["true_reward"], row["true_reward"]):
+            new_acc["true_reward_mismatch"] = True
+
+        # Extract metadata from first row
+        if new_acc["count"] == 0:
+            new_acc["metadata"] = {
+                "sample_id": int(row["sample_id"]),
+                "env_name": row["env_name"],
+                "rewest_method": row["rewest_method"],
+                "estimation_episode": int(row["estimation_episode"]),
+                "delay": int(row["delay"]),
+                "gamma": float(row["gamma"]),
+            }
+
+        new_acc["count"] += 1
+        return new_acc
+
+    def _merge(
+        self, acc_left: Dict[str, Any], acc_right: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Merge two accumulators."""
+        acc = copy.deepcopy(acc_left)
+
+        # Combine predictions
+        acc["predictions"].extend(acc_right["predictions"])
+
+        # Verify true_reward consistency
+        if acc["true_reward"] is None:
+            acc["true_reward"] = acc_right["true_reward"]
+        elif acc_right["true_reward"] is not None:
+            if not np.isclose(acc["true_reward"], acc_right["true_reward"]):
+                acc["true_reward_mismatch"] = True
+
+        # Merge metadata (prefer non-empty)
+        if not acc["metadata"] and acc_right["metadata"]:
+            acc["metadata"] = acc_right["metadata"]
+
+        # Combine counts and mismatch flags
+        acc["count"] += acc_right["count"]
+        acc["true_reward_mismatch"] = (
+            acc["true_reward_mismatch"] or acc_right["true_reward_mismatch"]
+        )
+
+        return acc
+
+    def _finalize(self, acc: Dict[str, Any]) -> Dict[str, Any]:
+        """Compute bias-variance statistics and return flat dict."""
+        # Validate
+        if acc["count"] == 0:
+            raise ValueError("Empty group - no predictions to aggregate")
+
+        # Log warning for true_reward mismatch
+        if acc["true_reward_mismatch"]:
+            logging.warning(
+                "True reward mismatch detected for sample %s",
+                acc["metadata"].get("sample_id", "unknown"),
+            )
+
+        # Convert predictions to numpy array
+        predictions = np.array(acc["predictions"])
+        true_reward = acc["true_reward"]
+
+        # Compute bias-variance decomposition
+        bv_stats = metrics.bias_variance_decomposition(predictions, true_reward)
+
+        # Return flat dict with metadata + stats
+        return {
+            **acc["metadata"],
+            "true_reward": float(true_reward),
+            "num_models": acc["count"],
+            **bv_stats,
+        }
 
 
 @dataclasses.dataclass(frozen=True)
@@ -673,7 +787,8 @@ def predict_on_dataset(
     model_artifact: RewardModelArtifact,
     dataset: Dict[str, Any],
     env_args: Mapping[str, Any],
-) -> pd.DataFrame:
+    output_path: str,
+) -> str:
     """
     Phase 3: Apply in-memory model to all samples in dataset.
 
@@ -683,7 +798,7 @@ def predict_on_dataset(
         env_args: Environment arguments for creating prediction function
 
     Returns:
-        DataFrame with predictions for each sample
+        Path of predictions.
     """
     logging.info(
         "Predicting with model %s on %d samples",
@@ -720,12 +835,14 @@ def predict_on_dataset(
         )
 
     env.close()
-
-    df = pd.DataFrame(predictions)
+    ioutils.write_records_json(output_path, predictions, gzip_compression=False)
     logging.info(
-        "Generated %d predictions for model %s", len(df), model_artifact.model_id
+        "Generated %d predictions for model %s. Exported to: %s",
+        len(predictions),
+        model_artifact.model_id,
+        output_path,
     )
-    return df
+    return output_path
 
 
 def compute_bias_variance_from_predictions(
@@ -740,6 +857,10 @@ def compute_bias_variance_from_predictions(
     Returns:
         Tuple of (sample_level_df, summary_df)
     """
+
+    def extract_field(key: str, rs: Mapping[str, Any]):
+        return rs[key]
+
     logging.info("Computing bias-variance from predictions")
 
     # Read all predictions
@@ -755,51 +876,27 @@ def compute_bias_variance_from_predictions(
         "estimation_episode",
     ]
 
-    def compute_bias_var_for_group(group: pd.DataFrame) -> Dict[str, Any]:
-        """Compute bias-variance for a single sample across all runs."""
-        # All predictions for the same sample
-        predictions = group["pred_reward"].values
-        true_reward = group["true_reward"].iloc[0]  # Should be same for all
-
-        # Verify all true rewards are the same
-        if not np.allclose(group["true_reward"].values, true_reward):
-            logging.warning(
-                "True reward mismatch for sample %d: %s",
-                group["sample_id"].iloc[0],
-                group["true_reward"].values,
-            )
-
-        # Compute bias-variance decomposition
-        bv_stats = metrics.bias_variance_decomposition(predictions, true_reward)
-
-        result = {
-            "sample_id": int(group["sample_id"].iloc[0]),
-            "true_reward": float(true_reward),
-            "num_models": len(predictions),
-            "env_name": group["env_name"].iloc[0],
-            "rewest_method": group["rewest_method"].iloc[0],
-            "estimation_episode": int(group["estimation_episode"].iloc[0]),
-            "delay": int(group["delay"].iloc[0]),
-            "gamma": float(group["gamma"].iloc[0]),
-            **bv_stats,
-        }
-        # Batch Op expects batch output, i.e. either
-        # a dict where each value is a list of a DataFrame
-        return {key: [value] for key, value in result.items()}
-
     # Apply groupby and compute stats
     logging.info("Columns: %s", ds_predictions.columns())
     logging.info("Grouping by %s and computing bias-variance...", group_cols)
-    ds_result = ds_predictions.groupby(group_cols).map_groups(
-        # Require 2GB per task
-        compute_bias_var_for_group,
-        batch_format="pandas",
-        memory=2 * 1024**3,
+    ds_result = ds_predictions.groupby(group_cols).aggregate(
+        BiasVarianceAggregator(name="bias_variance_agg")
     )
 
     # Convert to pandas
     df_sample = ds_result.to_pandas()
-    logging.info("Computed bias-variance for %d samples", len(df_sample))
+    example = df_sample.iloc[0]
+    for key in example["bias_variance_agg"]:
+        df_sample[key] = df_sample["bias_variance_agg"].apply(
+            functools.partial(extract_field, key)
+        )
+    del df_sample["bias_variance_agg"]
+    logging.info(
+        "Computed bias-variance for %d samples. Columns: %s",
+        len(df_sample),
+        df_sample.columns,
+    )
+    logging.info("Example: %s", df_sample.iloc[0])
 
     # Aggregate summary statistics
     logging.info("Computing summary statistics...")
@@ -876,12 +973,11 @@ def main():
     # Initialize Ray
     with ray.init():
         logging.info("Ray initialized")
-
         # PHASE 1: Train models and extract artifacts (in-memory)
         logging.info("PHASE 1: Training %d reward models...", len(job_specs))
         model_refs = [train_reward_model_run.remote(spec) for spec in job_specs]
         model_artifacts: Sequence[Optional[RewardModelArtifact]] = wait_till_completion(
-            model_refs
+            model_refs, fetch=True
         )
         model_artifacts: Sequence[RewardModelArtifact] = [
             model_artifact
@@ -916,13 +1012,22 @@ def main():
             "PHASE 3: Generating predictions for %d models...", len(model_artifacts)
         )
         pred_refs = []
-        for artifact in model_artifacts:
+        for idx, artifact in enumerate(model_artifacts):
             dataset_ref = dataset_refs[artifact.env_name]
             env_args = env_configs[artifact.env_name]
-            pred_refs.append(predict_on_dataset.remote(artifact, dataset_ref, env_args))
+            pred_path = os.path.join(args.output_path, f"predictions/pred_{idx}.json")
+            pred_refs.append(
+                predict_on_dataset.remote(artifact, dataset_ref, env_args, pred_path)
+            )
 
-        ds_predictions = ray.data.from_pandas_refs(pred_refs)
-        # PHASE 4: Compute bias-variance
+        # Wait till all predictions are complete
+        prediction_file_paths = wait_till_completion(pred_refs, fetch=True)
+
+        # Read exported predictions into distributed
+        # dataset
+        ds_predictions = ray.data.read_json(prediction_file_paths, lines=True)
+
+        # # PHASE 4: Compute bias-variance
         logging.info("PHASE 4: Computing bias-variance statistics...")
         df_sample, df_summary = compute_bias_variance_from_predictions(ds_predictions)
 
@@ -936,7 +1041,9 @@ def main():
         )
 
 
-def wait_till_completion(tasks_refs):
+def wait_till_completion(
+    tasks_refs, fetch: bool = False
+) -> Sequence[ray.ObjectRef | Any]:
     """
     Waits for every ray task to complete.
     """
@@ -944,7 +1051,10 @@ def wait_till_completion(tasks_refs):
     unfinished_tasks = tasks_refs
     while True:
         finished_tasks, unfinished_tasks = ray.wait(unfinished_tasks)
-        results.extend([ray.get(task) for task in finished_tasks])
+        if fetch:
+            results.extend(
+                [ray.get(task) if fetch else task for task in finished_tasks]
+            )
         logging.info(
             "Completed %d task(s). %d left out of %d.",
             len(finished_tasks),

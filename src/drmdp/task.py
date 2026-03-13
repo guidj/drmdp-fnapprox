@@ -50,6 +50,7 @@ def policy_control(exp_instance: core.ExperimentInstance):
         gamma=problem_spec.gamma,
         epsilon=problem_spec.epsilon,
         policy_type=problem_spec.policy_type,
+        algo_config=problem_spec.learning_rate_config.get("args"),
         base_seed=exp_instance.instance_id,
     )
 
@@ -284,6 +285,7 @@ def reward_mapper(env: gym.Env, proxy_env: gym.Env, mapping_spec: Mapping[str, A
             ft_op=ft_op,
             **m_args,
         )
+
     raise ValueError(f"Unknown mapping_method: {mapping_spec}")
 
 
@@ -315,11 +317,16 @@ def create_algorithm(
     lr: optsol.LearningRateSchedule,
     gamma: float,
     epsilon: float,
+    algo_config: Optional[Mapping[str, Any]] = None,
     base_seed: Optional[int] = None,
 ):
     """
     Creates an algorithm instance based on the provided
     arguments.
+
+    Args:
+        algo_config: Optional algorithm-specific configuration parameters.
+            E.g. neural network hyper-parameters.
     """
     if policy_type == "markovian":
         return algorithms.SemigradientSARSAFnApprox(
@@ -379,7 +386,6 @@ def create_algorithm(
             ),
             base_seed=base_seed,
         )
-
     raise ValueError(f"Unknown policy_type: {policy_type}")
 
 
