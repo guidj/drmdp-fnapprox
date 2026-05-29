@@ -98,9 +98,11 @@ def get_path_mrp(num_states=8):
     transition = np.zeros((num_states, num_states))
     for i in range(num_states):
         if i == 0:
-            transition[i, 1] = 1.0
+            transition[i, 1] = 0.5
+            transition[i, i] = 0.5
         elif i == num_states - 1:
-            transition[i, num_states - 2] = 1.0
+            transition[i, num_states - 2] = 0.5
+            transition[i, i] = 0.5
         else:
             transition[i, i - 1], transition[i, i + 1] = 0.5, 0.5
     rewards = np.zeros(num_states)
@@ -213,3 +215,7 @@ def is_aperiodic(transition: np.ndarray) -> bool:
                 if cycle_len > 0:
                     period = gcd(period, cycle_len)
     return period == 1
+
+
+def is_ergodic(transition: np.ndarray):
+    return is_irreducible(transition) and is_aperiodic(transition)
