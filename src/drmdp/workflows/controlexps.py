@@ -393,6 +393,48 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             ),
             "epochs": 1,
         },
+        {
+            "name": "GridWorld-v0",
+            "args": {"grid": MINES_GW_GRID, "max_episode_steps": 200},
+            "feats_specs": [
+                [{"name": "tile-observation-action-ft", "args": {"tiling_dim": 7}}]
+            ],
+            "problem_specs": common_problem_specs(impute_value=1)
+            + least_specs(
+                attempt_estimation_episodes=(10,),
+                feats_specs=[
+                    [{"name": "tile-observation-action-ft", "args": {"tiling_dim": 7}}]
+                ],
+            )
+            + bayes_least_specs(
+                init_attempt_estimation_episodes=(10,),
+                feats_specs=[
+                    [{"name": "tile-observation-action-ft", "args": {"tiling_dim": 7}}]
+                ],
+            ),
+            "epochs": 5,
+        },
+        {
+            "name": "IceWorld-v0",
+            "args": {"map_name": "8x8", "max_episode_steps": 200},
+            "feats_specs": [
+                [{"name": "tile-observation-action-ft", "args": {"tiling_dim": 7}}]
+            ],
+            "problem_specs": common_problem_specs(impute_value=1)
+            + least_specs(
+                attempt_estimation_episodes=(10,),
+                feats_specs=[
+                    [{"name": "tile-observation-action-ft", "args": {"tiling_dim": 7}}]
+                ],
+            )
+            + bayes_least_specs(
+                init_attempt_estimation_episodes=(10,),
+                feats_specs=[
+                    [{"name": "tile-observation-action-ft", "args": {"tiling_dim": 7}}]
+                ],
+            ),
+            "epochs": 5,
+        },
     ]
     return tuple(specs)
 
