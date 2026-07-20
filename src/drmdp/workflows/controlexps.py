@@ -174,7 +174,7 @@ def common_problem_specs(
     return tuple(specs)
 
 
-def experiment_specs() -> Sequence[Mapping[str, Any]]:
+def electric_motor_experiment_specs() -> Sequence[Mapping[str, Any]]:
     """
     Control experiment specs.
     """
@@ -393,6 +393,15 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             ),
             "epochs": 1,
         },
+    ]
+    return tuple(specs)
+
+
+def grid_experiments_specs() -> Sequence[Mapping[str, Any]]:
+    """
+    Control experiment specs.
+    """
+    specs = [
         {
             "name": "GridWorld-v0",
             "args": {"grid": MINES_GW_GRID, "max_episode_steps": 200},
@@ -402,8 +411,10 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             "problem_specs": common_problem_specs(impute_value=1)
             + least_specs(
                 attempt_estimation_episodes=(10,),
+                use_next_state=False,
+                check_factors=True,
                 feats_specs=[
-                    [{"name": "tile-observation-action-ft", "args": {"tiling_dim": 7}}]
+                    [{"name": "flat-grid-observation-action-ft", "args": {}}]
                 ],
             )
             + bayes_least_specs(
@@ -423,8 +434,10 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
             "problem_specs": common_problem_specs(impute_value=1)
             + least_specs(
                 attempt_estimation_episodes=(10,),
+                use_next_state=False,
+                check_factors=True,
                 feats_specs=[
-                    [{"name": "tile-observation-action-ft", "args": {"tiling_dim": 7}}]
+                    [{"name": "flat-grid-observation-action-ft", "args": {}}]
                 ],
             )
             + bayes_least_specs(
