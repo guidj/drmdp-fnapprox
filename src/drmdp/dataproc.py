@@ -28,7 +28,16 @@ POLICY_TYPES = {
     "single-action-options": "OP-S",
 }
 
-ORDERED_METHODS = ["BLADE-TD", "BLADE-TD[N-B]", "LEAST", "IMR", "OP-A", "OP-S", "DMR", "FR"]
+ORDERED_METHODS = [
+    "BLADE-TD",
+    "BLADE-TD[N-B]",
+    "LEAST",
+    "IMR",
+    "OP-A",
+    "OP-S",
+    "DMR",
+    "FR",
+]
 
 FEAT_PROCS = {
     "func-ft": "custom",

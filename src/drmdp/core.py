@@ -124,6 +124,7 @@ class EnvSpec:
     name: str
     args: Optional[Mapping[str, Any]]
     feats_spec: Sequence[Mapping[str, Any]]
+    metadata: Optional[Mapping[str, Any]] = None
 
 
 @dataclasses.dataclass(frozen=True)

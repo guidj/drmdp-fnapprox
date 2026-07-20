@@ -422,6 +422,7 @@ def parse_experiments(
                             name=spec["name"],
                             args=spec["args"],
                             feats_spec=feat_tfx_spec,
+                            metadata=spec.get("metadata"),
                         ),
                         problem_spec=core.ProblemSpec(**problem_spec),
                         epochs=spec["epochs"],

@@ -1,7 +1,8 @@
 import itertools
-from typing import Any, Mapping, Optional, Sequence
+from typing import Any, List, Mapping, Optional, Sequence, Tuple
 
 from drmdp import mathutils
+from drmdp.envs import gridutils
 
 EPSILON = 0.1
 MAX_STEPS_PER_EPISODE_GEM = 10_000
@@ -397,58 +398,79 @@ def electric_motor_experiment_specs() -> Sequence[Mapping[str, Any]]:
     return tuple(specs)
 
 
-def grid_experiments_specs() -> Sequence[Mapping[str, Any]]:
+def grid_experiments_specs(
+    dimensions: Sequence[Tuple[int, int]] = ((25, 25),),
+    num_grids: int = 6,
+    cliff_ratio: float = 0.25,
+    min_distance: int = 3,
+) -> Sequence[Mapping[str, Any]]:
     """
-    Control experiment specs.
+    Control experiment specs for generated grid environments.
     """
-    specs = [
-        {
-            "name": "GridWorld-v0",
-            "args": {"grid": MINES_GW_GRID, "max_episode_steps": 200},
-            "feats_specs": [
-                [{"name": "tile-observation-action-ft", "args": {"tiling_dim": 7}}]
-            ],
-            "problem_specs": common_problem_specs(impute_value=1)
-            + least_specs(
-                attempt_estimation_episodes=(10,),
-                use_next_state=False,
-                check_factors=True,
-                feats_specs=[
-                    [{"name": "flat-grid-observation-action-ft", "args": {}}]
-                ],
+    specs: List[Mapping[str, Any]] = []
+    for nrows, ncols in dimensions:
+        num_cliffs = int(cliff_ratio * nrows * ncols)
+        seed = 0
+        for _ in range(num_grids):
+            while True:
+                grid, start, end = gridutils.create_grid(
+                    size=(nrows, ncols), num_cliffs=num_cliffs, seed=seed
+                )
+                distance = gridutils.grid_bfs(grid, source=start, target=end)
+                if distance >= min_distance:
+                    break
+                seed += 1
+            gid = gridutils.grid_id(size=(nrows, ncols), seed=seed)
+            specs.append(
+                {
+                    "name": f"grid-{gid}",
+                    "args": {
+                        "grid": gridutils.grid_to_strings(grid),
+                        "max_episode_steps": 200,
+                    },
+                    "metadata": {
+                        "size": [nrows, ncols],
+                        "seed": seed,
+                        "distance": distance,
+                        "num_cliffs": num_cliffs,
+                    },
+                    "feats_specs": [
+                        [
+                            {
+                                "name": "tile-observation-action-ft",
+                                "args": {"tiling_dim": 7},
+                            }
+                        ]
+                    ],
+                    "problem_specs": common_problem_specs(impute_value=1)
+                    + least_specs(
+                        attempt_estimation_episodes=(10,),
+                        use_next_state=False,
+                        check_factors=True,
+                        feats_specs=[
+                            [
+                                {
+                                    "name": "flat-grid-observation-action-ft",
+                                    "args": {},
+                                }
+                            ]
+                        ],
+                    )
+                    + bayes_least_specs(
+                        init_attempt_estimation_episodes=(10,),
+                        feats_specs=[
+                            [
+                                {
+                                    "name": "tile-observation-action-ft",
+                                    "args": {"tiling_dim": 7},
+                                }
+                            ]
+                        ],
+                    ),
+                    "epochs": 5,
+                }
             )
-            + bayes_least_specs(
-                init_attempt_estimation_episodes=(10,),
-                feats_specs=[
-                    [{"name": "tile-observation-action-ft", "args": {"tiling_dim": 7}}]
-                ],
-            ),
-            "epochs": 5,
-        },
-        {
-            "name": "IceWorld-v0",
-            "args": {"map_name": "8x8", "max_episode_steps": 200},
-            "feats_specs": [
-                [{"name": "tile-observation-action-ft", "args": {"tiling_dim": 7}}]
-            ],
-            "problem_specs": common_problem_specs(impute_value=1)
-            + least_specs(
-                attempt_estimation_episodes=(10,),
-                use_next_state=False,
-                check_factors=True,
-                feats_specs=[
-                    [{"name": "flat-grid-observation-action-ft", "args": {}}]
-                ],
-            )
-            + bayes_least_specs(
-                init_attempt_estimation_episodes=(10,),
-                feats_specs=[
-                    [{"name": "tile-observation-action-ft", "args": {"tiling_dim": 7}}]
-                ],
-            ),
-            "epochs": 5,
-        },
-    ]
+            seed += 1
     return tuple(specs)
 
 
