@@ -136,10 +136,10 @@ class TestMrpGenerators:
 
     def test_path_boundary_conditions(self):
         transition, _ = mrps.get_path_mrp(num_states=5)
-        assert transition[0, 1] == pytest.approx(1.0)
-        assert transition[4, 3] == pytest.approx(1.0)
-        assert transition[0, 0] == 0.0
-        assert transition[4, 4] == 0.0
+        assert transition[0, 1] == pytest.approx(0.5)
+        assert transition[4, 3] == pytest.approx(0.5)
+        assert transition[0, 0] == pytest.approx(0.5)
+        assert transition[4, 4] == pytest.approx(0.5)
 
     def test_path_interior_transitions(self):
         transition, _ = mrps.get_path_mrp(num_states=6)
@@ -344,9 +344,9 @@ class TestIsAperiodic:
         transition = np.array([[1.0]])
         assert mrps.is_aperiodic(transition)
 
-    def test_path_graph_periodic(self):
+    def test_path_graph_aperiodic(self):
         transition, _ = mrps.get_path_mrp(4)
-        assert not mrps.is_aperiodic(transition)
+        assert mrps.is_aperiodic(transition)
 
     def test_dumbbell_aperiodic(self):
         transition, _ = mrps.get_dumbbell_mrp(clique_size=3)

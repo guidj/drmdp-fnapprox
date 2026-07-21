@@ -87,7 +87,8 @@ def get_path_mrp(num_states=8):
     """Random walk on a path (line) graph of num_states states with reflecting boundaries.
 
     Interior states transition to each neighbor with probability 0.5. Boundary
-    states deterministically transition to their sole neighbor. Reward is placed
+    states transition to their sole neighbor with probability 0.5 and self-loop
+    with probability 0.5 (lazy walk). Reward is placed
     at the far end (R=10 at state num_states-1), producing a monotonically increasing
     value function along the path.
 
