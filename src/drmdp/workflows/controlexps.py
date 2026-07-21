@@ -423,7 +423,7 @@ def grid_experiments_specs(
             gid = gridutils.grid_id(size=(nrows, ncols), seed=seed)
             specs.append(
                 {
-                    "name": f"grid-{gid}",
+                    "name": f"GridWorld-{gid}",
                     "args": {
                         "grid": gridutils.grid_to_strings(grid),
                         "max_episode_steps": 200,

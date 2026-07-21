@@ -78,7 +78,7 @@ class RedgreenObsAsVectorWrapper(gym.ObservationWrapper):
 
 
 def make(env_name: str, wrapper: Optional[str] = None, **kwargs) -> gym.Env:
-    if env_name == "GridWorld-v0":
+    if env_name.startswith("GridWorld-"):
         grid = kwargs.get("grid", DEFAULT_GW_GRID)
         size, cliffs, exits, start = gridworld.parse_grid_from_text(grid)
         env = GridWorldObsAsVectorWrapper(
