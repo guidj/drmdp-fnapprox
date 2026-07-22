@@ -426,7 +426,9 @@ def grid_experiments_specs(
                     "name": f"GridWorld-{gid}",
                     "args": {
                         "grid": gridutils.grid_to_strings(grid),
-                        "max_episode_steps": 200,
+                        "max_episode_steps": gridutils.grid_max_episode_steps(
+                            size=(nrows, ncols)
+                        ),
                     },
                     "metadata": {
                         "size": [nrows, ncols],
