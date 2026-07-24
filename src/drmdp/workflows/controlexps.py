@@ -400,7 +400,7 @@ def electric_motor_experiment_specs() -> Sequence[Mapping[str, Any]]:
 
 def grid_experiments_specs(
     dimensions: Sequence[Tuple[int, int]] = ((25, 25),),
-    num_grids: int = 6,
+    num_grids: int = 3,
     cliff_ratio: float = 0.25,
     min_distance: int = 3,
 ) -> Sequence[Mapping[str, Any]]:
@@ -426,9 +426,7 @@ def grid_experiments_specs(
                     "name": f"GridWorld-{gid}",
                     "args": {
                         "grid": gridutils.grid_to_strings(grid),
-                        "max_episode_steps": gridutils.grid_max_episode_steps(
-                            size=(nrows, ncols)
-                        ),
+                        "max_episode_steps": 200
                     },
                     "metadata": {
                         "size": [nrows, ncols],
