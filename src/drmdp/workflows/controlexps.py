@@ -421,12 +421,16 @@ def grid_experiments_specs(
                     break
                 seed += 1
             gid = gridutils.grid_id(size=(nrows, ncols), seed=seed)
+            exit_pos = divmod(end, ncols)
+            dead_ohe = gridutils.grid_dead_ohe_indices(
+                grid, exits=[exit_pos], nactions=4
+            )
             specs.append(
                 {
                     "name": f"GridWorld-{gid}",
                     "args": {
                         "grid": gridutils.grid_to_strings(grid),
-                        "max_episode_steps": 200
+                        "max_episode_steps": 200,
                     },
                     "metadata": {
                         "size": [nrows, ncols],
@@ -452,7 +456,11 @@ def grid_experiments_specs(
                                 {
                                     "name": "flat-grid-observation-action-ft",
                                     "args": {},
-                                }
+                                },
+                                {
+                                    "name": "drop-observation-dims-ft",
+                                    "args": {"axis_dims": {0: dead_ohe}},
+                                },
                             ]
                         ],
                     )

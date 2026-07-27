@@ -1,6 +1,6 @@
 import collections
 import hashlib
-from typing import List, Tuple
+from typing import List, Sequence, Tuple
 
 import numpy as np
 
@@ -64,6 +64,34 @@ def grid_bfs(grid: np.ndarray, source: int, target: int) -> int:
     return -1
 
 
+def grid_reachable_cells(grid: np.ndarray, start: int) -> frozenset[Tuple[int, int]]:
+    """All (row, col) positions reachable from *start* via 4-directional moves.
+
+    Cliffs are impassable; every other cell type is traversable.
+    """
+    nrows, ncols = grid.shape
+    start_row, start_col = divmod(start, ncols)
+    if grid[start_row, start_col] == CELL_CLIFF:
+        return frozenset()
+
+    visited: set[Tuple[int, int]] = {(start_row, start_col)}
+    queue = collections.deque([(start_row, start_col)])
+
+    while queue:
+        row, col = queue.popleft()
+        for d_row, d_col in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            next_row, next_col = row + d_row, col + d_col
+            if (
+                0 <= next_row < nrows
+                and 0 <= next_col < ncols
+                and (next_row, next_col) not in visited
+                and grid[next_row, next_col] != CELL_CLIFF
+            ):
+                visited.add((next_row, next_col))
+                queue.append((next_row, next_col))
+    return frozenset(visited)
+
+
 def grid_to_strings(grid: np.ndarray) -> List[str]:
     return ["".join(GRID_CHAR[int(cell)] for cell in row) for row in grid]
 
@@ -71,6 +99,45 @@ def grid_to_strings(grid: np.ndarray) -> List[str]:
 def grid_max_episode_steps(size: Tuple[int, int]) -> int:
     nrows, ncols = size
     return nrows * ncols
+
+
+def grid_dead_ohe_indices(
+    grid: np.ndarray,
+    exits: Sequence[Tuple[int, int]],
+    nactions: int,
+) -> List[int]:
+    """Indices of OHE columns for unobservable states.
+
+    A state is unobservable (permanently zero in the estimation matrix)
+    if the agent can never occupy it as a pre-action observation:
+    cliff cells, terminal/exit cells, and cells unreachable from the
+    start position (e.g. open cells walled off by cliffs).
+    """
+    nrows, ncols = grid.shape
+    nstates = nrows * ncols
+
+    start_positions = list(zip(*np.where(grid == CELL_START)))
+    if start_positions:
+        start_flat = start_positions[0][0] * ncols + start_positions[0][1]
+        reachable = grid_reachable_cells(grid, start_flat)
+    else:
+        reachable = None
+
+    exit_set = set(exits)
+    dead_states: List[int] = []
+    for row in range(nrows):
+        for col in range(ncols):
+            if grid[row, col] == CELL_CLIFF:
+                dead_states.append(row * ncols + col)
+            elif (row, col) in exit_set:
+                dead_states.append(row * ncols + col)
+            elif reachable is not None and (row, col) not in reachable:
+                dead_states.append(row * ncols + col)
+    indices: List[int] = []
+    for state_idx in dead_states:
+        for action in range(nactions):
+            indices.append(action * nstates + state_idx)
+    return sorted(indices)
 
 
 def grid_id(size: Tuple[int, int], seed: int) -> str:
