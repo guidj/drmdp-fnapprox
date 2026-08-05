@@ -469,9 +469,13 @@ def grid_experiments_specs(
                         feats_specs=[
                             [
                                 {
-                                    "name": "tile-observation-action-ft",
-                                    "args": {"tiling_dim": 7},
-                                }
+                                    "name": "flat-grid-observation-action-ft",
+                                    "args": {},
+                                },
+                                {
+                                    "name": "drop-observation-dims-ft",
+                                    "args": {"axis_dims": {0: dead_ohe}},
+                                },
                             ]
                         ],
                     ),
