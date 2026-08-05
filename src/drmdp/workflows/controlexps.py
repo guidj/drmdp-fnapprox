@@ -1,7 +1,6 @@
 import itertools
 from typing import Any, List, Mapping, Optional, Sequence, Tuple
 
-from drmdp import mathutils
 from drmdp.envs import gridutils
 
 EPSILON = 0.1
@@ -53,7 +52,7 @@ def least_specs(
                         "check_factors": check_factors,
                     },
                 },
-                "delay_config": poisson_delay_config(delay),
+                "delay_config": uniform_delay_config(delay),
                 "epsilon": EPSILON,
                 "gamma": gamma,
                 "learning_rate_config": LEARNING_RATE_SPEC,
@@ -89,7 +88,7 @@ def bayes_least_specs(
                         "estimation_buffer_mult": 25,
                     },
                 },
-                "delay_config": poisson_delay_config(delay),
+                "delay_config": uniform_delay_config(delay),
                 "epsilon": EPSILON,
                 "gamma": gamma,
                 "learning_rate_config": LEARNING_RATE_SPEC,
@@ -125,7 +124,7 @@ def common_problem_specs(
                     {
                         "policy_type": "drop-missing",
                         "reward_mapper": {"name": "identity", "args": None},
-                        "delay_config": poisson_delay_config(delay),
+                        "delay_config": uniform_delay_config(delay),
                         "epsilon": EPSILON,
                         "gamma": gamma,
                         "learning_rate_config": LEARNING_RATE_SPEC,
@@ -136,7 +135,7 @@ def common_problem_specs(
                             "name": "impute-missing",
                             "args": {"impute_value": impute_value},
                         },
-                        "delay_config": poisson_delay_config(delay),
+                        "delay_config": uniform_delay_config(delay),
                         "epsilon": EPSILON,
                         "gamma": gamma,
                         "learning_rate_config": LEARNING_RATE_SPEC,
@@ -153,7 +152,7 @@ def common_problem_specs(
                         {
                             "policy_type": "options",
                             "reward_mapper": {"name": "identity", "args": None},
-                            "delay_config": poisson_delay_config(
+                            "delay_config": uniform_delay_config(
                                 delay, max_delay=delay
                             ),
                             "epsilon": EPSILON,
@@ -163,7 +162,7 @@ def common_problem_specs(
                         {
                             "policy_type": "single-action-options",
                             "reward_mapper": {"name": "identity", "args": None},
-                            "delay_config": poisson_delay_config(
+                            "delay_config": uniform_delay_config(
                                 delay, max_delay=delay
                             ),
                             "epsilon": EPSILON,
@@ -403,7 +402,7 @@ def grid_experiments_specs(
     num_grids: int = 3,
     cliff_ratio: float = 0.25,
     min_distance: int = 3,
-    max_episode_steps = 200
+    max_episode_steps=200,
 ) -> Sequence[Mapping[str, Any]]:
     """
     Control experiment specs for generated grid environments.
@@ -487,20 +486,14 @@ def grid_experiments_specs(
     return tuple(specs)
 
 
-def poisson_delay_config(lam: int, max_delay: Optional[int] = None):
+def uniform_delay_config(min_delay: int, max_delay: Optional[int] = None):
     """
-    Natural Poisson bounds:
-    low, lambda, high
-    0 2 5
-    0 3 7
-    1 4 8
-    1 5 10
-    2 6 11
-    2 7 13
-    3 8 14
+    Uniform delay config: [min, max].
     """
-    lb, _ = mathutils.poisson_exact_confidence_interval(lam)
     return {
-        "name": "clipped-poisson",
-        "args": {"lam": lam, "min_delay": max(2, lb), "max_delay": max_delay},
+        "name": "uniform",
+        "args": {
+            "min_delay": max(2, min_delay),
+            "max_delay": max_delay or min_delay + 5,
+        },
     }
