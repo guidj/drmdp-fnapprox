@@ -399,7 +399,7 @@ def electric_motor_experiment_specs() -> Sequence[Mapping[str, Any]]:
 
 
 def grid_experiments_specs(
-    dimensions: Sequence[Tuple[int, int]] = ((25, 25),),
+    dimensions: Sequence[Tuple[int, int]] = ((15, 15),),
     num_grids: int = 3,
     cliff_ratio: float = 0.25,
     min_distance: int = 3,
