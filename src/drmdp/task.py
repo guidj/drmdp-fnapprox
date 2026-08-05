@@ -63,15 +63,17 @@ def policy_control(exp_instance: core.ExperimentInstance):
     with logger.ExperimentLogger(
         log_dir=exp_instance.run_config.output_dir, experiment_instance=exp_instance
     ) as exp_logger:
-        returns = []
+        eval_returns: List[float] = []
         try:
             for episode, snapshot in enumerate(results):
-                returns.append(snapshot.returns)
                 if episode % exp_instance.run_config.log_episode_frequency == 0:
+                    eval_returns.append(
+                        evaluate_policy(proxied_env.proxy, algorithm.policy, rew_delay)
+                    )
                     exp_logger.log(
                         episode=episode,
                         steps=snapshot.steps,
-                        returns=np.mean(returns).item(),
+                        returns=np.mean(eval_returns).item(),
                         info={},
                     )
                     if exp_instance.export_model:
@@ -86,7 +88,7 @@ def policy_control(exp_instance: core.ExperimentInstance):
                 "\nReturns for run %d of %s:\n%s",
                 exp_instance.instance_id,
                 exp_instance.exp_id,
-                np.mean(returns),
+                np.mean(eval_returns),
             )
         except Exception as err:
             logging.error(
@@ -99,6 +101,33 @@ def policy_control(exp_instance: core.ExperimentInstance):
                 f"Task {exp_instance.exp_id}, run {exp_instance.instance_id} failed"
             ) from err
     env.close()
+
+
+def evaluate_policy(
+    env: gym.Env,
+    policy: core.PyPolicy,
+    rew_delay: rewdelay.RewardDelay,
+    num_episodes: int = 10,
+) -> float:
+    """Evaluate a policy greedily (epsilon=0) and return mean returns."""
+    returns = []
+    for idx in range(num_episodes):
+        obs, _ = env.reset(seed=idx)
+        episode_reward = 0.0
+        done = False
+        while not done:
+            delay = rew_delay.sample()
+            policy_step = policy.action(obs, epsilon=0.0, policy_state=(delay,))
+            actions = policy_step.info.get("actions", None) or (policy_step.action,)
+            for action in actions:
+                next_obs, reward, term, trunc, _ = env.step(action)
+                episode_reward += reward
+                obs = next_obs
+                if term or trunc:
+                    done = True
+                    break
+        returns.append(episode_reward)
+    return float(np.mean(returns))
 
 
 def create_env(name: str, args: Optional[Mapping[str, Any]]) -> core.ProxiedEnv:
