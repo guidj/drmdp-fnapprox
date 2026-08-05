@@ -650,7 +650,8 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
             )
 
         step_features = self._extract_step_features(latest_step_feats)
-        self._accumulate_step_features(step_features)
+        if not self._has_estimate() or self._should_buffer_when_estimated():
+            self._accumulate_step_features(step_features)
 
         # Buffer segment data at segment end (for continual learning)
         if (

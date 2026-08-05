@@ -697,43 +697,20 @@ class TestLeastLfaFeatureAccumulation:
         wrapper.step(0)
         np.testing.assert_allclose(wrapper._segment_features, per_step)
 
-    def test_segment_features_accumulate_after_estimation(self):
-        """_segment_features accumulates across segment boundaries after
-        estimation (internal learning state, not used for inference)."""
+    def test_segment_features_stop_accumulating_after_estimation(self):
+        """For one-shot estimators, _segment_features stops accumulating
+        after estimation since the result is never buffered."""
         wrapper = self._make_wrapper(term_steps=8, delay=2)
         self._force_estimate(wrapper)
 
-        per_step = np.array([0.5, -0.5, 0.5, -0.5])
-
         wrapper.reset()
-        for step_idx in range(1, 9):
+        for _ in range(8):
             wrapper.step(0)
-            expected = per_step * step_idx
             np.testing.assert_allclose(
                 wrapper._segment_features,
-                expected,
+                np.zeros(4),
                 atol=1e-10,
-                err_msg=f"step {step_idx}: features should accumulate without reset",
             )
-
-    def test_segment_features_reset_on_episode_boundary(self):
-        """After estimation, _segment_features resets when reset() is called."""
-        wrapper = self._make_wrapper(term_steps=4, delay=2)
-        self._force_estimate(wrapper)
-
-        per_step = np.array([0.5, -0.5, 0.5, -0.5])
-
-        # Episode 1: accumulates across segment boundary
-        wrapper.reset()
-        for _ in range(4):
-            wrapper.step(0)
-        np.testing.assert_allclose(wrapper._segment_features, per_step * 4)
-
-        # Episode 2: resets to zero, starts fresh
-        wrapper.reset()
-        np.testing.assert_allclose(wrapper._segment_features, np.zeros(4), atol=1e-10)
-        wrapper.step(0)
-        np.testing.assert_allclose(wrapper._segment_features, per_step)
 
     def test_predicted_reward_is_per_step_after_estimation(self):
         """After estimation, each step returns the per-step reward
@@ -874,3 +851,53 @@ class TestDiscretisedLeastLfaInference:
         # Rewards should not grow — each should be a single weight value
         for reward in rewards:
             assert abs(reward) <= np.max(np.abs(wrapper.weights)) + 1e-6
+
+
+class TestBayesSegmentAccumulationAfterEstimation:
+    """Continual learners keep accumulating and resetting _segment_features
+    at segment boundaries after estimation (needed for posterior updates)."""
+
+    def _make_wrapper(self, term_steps, delay):
+        env = DummyEnv(term_steps=term_steps)
+        ft_op = DummyFTOp(env)
+        delayed = rewdelay.DelayedRewardWrapper(env, rewdelay.FixedDelay(delay=delay))
+        wrapper = rewdelay.BayesLeastLfaGenerativeRewardWrapper(
+            delayed,
+            ft_op=ft_op,
+            init_attempt_estimation_episode=1,
+            use_bias=False,
+            check_factors=False,
+        )
+        return wrapper
+
+    def _force_estimate(self, wrapper):
+        mdim = wrapper.mdim
+        while wrapper.est_buffer.size() < mdim:
+            wrapper.reset()
+            done = False
+            while not done:
+                _, _, term, trunc, _ = wrapper.step(0)
+                done = term or trunc
+        wrapper.estimate_rewards()
+        assert wrapper._has_estimate()
+
+    def test_segment_features_accumulate_and_reset_after_estimation(self):
+        """After estimation, _segment_features still accumulates within
+        segments and resets at segment boundaries for continual learning."""
+        wrapper = self._make_wrapper(term_steps=8, delay=2)
+        self._force_estimate(wrapper)
+
+        per_step = np.array([0.5, -0.5, 0.5, -0.5])
+
+        wrapper.reset()
+        # Step 1 of segment 0
+        wrapper.step(0)
+        np.testing.assert_allclose(wrapper._segment_features, per_step)
+
+        # Step 2 of segment 0 (segment end) — resets
+        wrapper.step(0)
+        np.testing.assert_allclose(wrapper._segment_features, np.zeros(4), atol=1e-10)
+
+        # Step 1 of segment 1 — fresh accumulation
+        wrapper.step(0)
+        np.testing.assert_allclose(wrapper._segment_features, per_step)
