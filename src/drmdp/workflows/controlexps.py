@@ -403,6 +403,7 @@ def grid_experiments_specs(
     num_grids: int = 3,
     cliff_ratio: float = 0.25,
     min_distance: int = 3,
+    max_episode_steps = 200
 ) -> Sequence[Mapping[str, Any]]:
     """
     Control experiment specs for generated grid environments.
@@ -417,7 +418,7 @@ def grid_experiments_specs(
                     size=(nrows, ncols), num_cliffs=num_cliffs, seed=seed
                 )
                 distance = gridutils.grid_bfs(grid, source=start, target=end)
-                if distance >= min_distance:
+                if distance >= min_distance and distance < max_episode_steps:
                     break
                 seed += 1
             gid = gridutils.grid_id(size=(nrows, ncols), seed=seed)
