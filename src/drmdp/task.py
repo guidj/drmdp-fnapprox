@@ -106,7 +106,7 @@ def policy_control(exp_instance: core.ExperimentInstance):
 def evaluate_policy(
     env: gym.Env,
     policy: core.PyPolicy,
-    rew_delay: rewdelay.RewardDelay,
+    rew_delay: Optional[rewdelay.RewardDelay],
     num_episodes: int = 10,
 ) -> float:
     """Evaluate a policy greedily (epsilon=0) and return mean returns."""
@@ -116,7 +116,7 @@ def evaluate_policy(
         episode_reward = 0.0
         done = False
         while not done:
-            delay = rew_delay.sample()
+            delay = rew_delay.sample() if rew_delay else None
             policy_step = policy.action(obs, epsilon=0.0, policy_state=(delay,))
             actions = policy_step.info.get("actions", None) or (policy_step.action,)
             for action in actions:
