@@ -14,7 +14,9 @@ ray job submit \
     python $PARENT_DIR/src/$BASE/workflows/controljob.py \
         --num-runs=1 \
         --num-episodes=100 \
-        --output-dir=$HOME/fs/$BASE/workflows/controljob/logs/$TIMESTAMP \
+        --output-dir=$HOME/fs/$BASE/control/fnapprox/logs/$TIMESTAMP \
         --task-prefix $TIMESTAMP \
         --log-episode-frequency=5 \
+        --problem-set grid-world \
+        --grids-file $PARENT_DIR/assets/grids.json \
         --use-seed
