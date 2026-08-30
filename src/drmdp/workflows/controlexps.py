@@ -22,8 +22,6 @@ DEFAULT_UNIFORM_DELAY_RANGE = 5
 DEFAULT_IMPUTE_VALUE = 0
 DEFAULT_DELAY_CONFIGS = (
     {"name": "uniform", "args": {"min_delay": 2, "max_delay": 7}},
-    {"name": "uniform", "args": {"min_delay": 4, "max_delay": 9}},
-    {"name": "uniform", "args": {"min_delay": 6, "max_delay": 11}},
     {"name": "uniform", "args": {"min_delay": 8, "max_delay": 13}},
 )
 DEFAULT_DISCOUNT_FACTORS = (1.0, 0.99)
@@ -127,6 +125,7 @@ def common_problem_specs(
     delay_configs: Sequence[Dict[str, Any]] = DEFAULT_DELAY_CONFIGS,
     discounts: Sequence[float] = DEFAULT_DISCOUNT_FACTORS,
     impute_value: float = DEFAULT_IMPUTE_VALUE,
+    include_options: bool = True
 ):
     """
     Specs that apply to every env.
@@ -167,9 +166,8 @@ def common_problem_specs(
                     },
                 ]
             )
-
             min_delay = _delay_min(delay_config)
-            if min_delay <= MAX_OPTIONS_DELAY:
+            if include_options and min_delay <= MAX_OPTIONS_DELAY:
                 fixed_delay_config = {
                     "name": "uniform",
                     "args": {
@@ -481,7 +479,7 @@ def grid_experiments_specs(
                         }
                     ]
                 ],
-                "problem_specs": common_problem_specs()
+                "problem_specs": common_problem_specs(include_options=False)
                 + least_specs(
                     attempt_estimation_episodes=(10,),
                     use_next_state=False,
