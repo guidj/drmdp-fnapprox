@@ -1,7 +1,7 @@
 import itertools
 import json
 import math
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Sequence
 
 EPSILON = 0.1
 MAX_STEPS_PER_EPISODE_GEM = 10_000
@@ -26,6 +26,7 @@ DEFAULT_DELAY_CONFIGS = (
     {"name": "uniform", "args": {"min_delay": 6, "max_delay": 11}},
     {"name": "uniform", "args": {"min_delay": 8, "max_delay": 13}},
 )
+DEFAULT_DISCOUNT_FACTORS = (1.0, 0.99)
 
 
 def _delay_min(delay_config: Mapping[str, Any]) -> int:
@@ -40,7 +41,7 @@ def least_specs(
     attempt_estimation_episodes: Sequence[int],
     feats_specs: Sequence[Sequence[Mapping[str, Any]]],
     delay_configs: Sequence[Mapping[str, Any]] = DEFAULT_DELAY_CONFIGS,
-    discounts: Sequence[float] = (1.0, 0.99),
+    discounts: Sequence[float] = DEFAULT_DISCOUNT_FACTORS,
     use_next_state: bool = True,
     check_factors: bool = False,
     impute_value: float = DEFAULT_IMPUTE_VALUE,
@@ -85,7 +86,7 @@ def bayes_least_specs(
     init_attempt_estimation_episodes: Sequence[int],
     feats_specs: Sequence[Sequence[Mapping[str, Any]]],
     delay_configs: Sequence[Mapping[str, Any]] = DEFAULT_DELAY_CONFIGS,
-    discounts: Sequence[float] = (1.0, 0.99),
+    discounts: Sequence[float] = DEFAULT_DISCOUNT_FACTORS,
     impute_value: float = DEFAULT_IMPUTE_VALUE,
 ) -> Sequence[Mapping[str, Any]]:
     """
@@ -124,7 +125,7 @@ def bayes_least_specs(
 
 def common_problem_specs(
     delay_configs: Sequence[Dict[str, Any]] = DEFAULT_DELAY_CONFIGS,
-    discounts: Sequence[float] = (1.0, 0.99),
+    discounts: Sequence[float] = DEFAULT_DISCOUNT_FACTORS,
     impute_value: float = DEFAULT_IMPUTE_VALUE,
 ):
     """
@@ -517,24 +518,3 @@ def grid_experiments_specs(
             }
         )
     return tuple(specs)
-
-
-def uniform_delay_config(
-    min_delay: int,
-    max_delay: Optional[int] = None,
-    delay_range: Optional[int] = DEFAULT_UNIFORM_DELAY_RANGE,
-):
-    """
-    Uniform delay config: [min, max].
-    """
-    delay_lb = max(2, min_delay)
-    if max_delay is not None:
-        delay_ub = max_delay
-    elif delay_range is not None:
-        delay_ub = delay_lb + delay_range
-    else:
-        raise ValueError("Must provide either `max_delay` or `delay_range`")
-    return {
-        "name": "uniform",
-        "args": {"min_delay": delay_lb, "max_delay": delay_ub},
-    }
