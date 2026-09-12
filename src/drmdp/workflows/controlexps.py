@@ -3,6 +3,8 @@ import json
 import math
 from typing import Any, Dict, List, Mapping, Sequence
 
+from drmdp import mathutils
+
 EPSILON = 0.1
 MAX_STEPS_PER_EPISODE_GEM = 10_000
 LEARNING_RATE_SPEC = {
@@ -20,11 +22,20 @@ MINES_GW_GRID = [
 MAX_OPTIONS_DELAY = 4
 DEFAULT_UNIFORM_DELAY_RANGE = 5
 DEFAULT_IMPUTE_VALUE = 0
-DEFAULT_DELAY_CONFIGS = (
-    {"name": "uniform", "args": {"min_delay": 2, "max_delay": 7}},
-    {"name": "uniform", "args": {"min_delay": 8, "max_delay": 13}},
-)
 DEFAULT_DISCOUNT_FACTORS = (1.0, 0.99)
+
+
+def default_delay_config() -> List[Dict[str, Any]]:
+    delay_configs = []
+    for lam in (2, 5, 7):
+        lb, ub = mathutils.poisson_exact_confidence_interval(observed_value=lam)
+        delay_configs.append(
+            {
+                "name": "clipped-poisson",
+                "args": {"lam": lam, "min_delay": max(2, lb), "max_delay": ub},
+            },
+        )
+    return delay_configs
 
 
 def _delay_min(delay_config: Mapping[str, Any]) -> int:
@@ -38,7 +49,7 @@ def _delay_min(delay_config: Mapping[str, Any]) -> int:
 def least_specs(
     attempt_estimation_episodes: Sequence[int],
     feats_specs: Sequence[Sequence[Mapping[str, Any]]],
-    delay_configs: Sequence[Mapping[str, Any]] = DEFAULT_DELAY_CONFIGS,
+    delay_configs: Sequence[Mapping[str, Any]] = default_delay_config(),
     discounts: Sequence[float] = DEFAULT_DISCOUNT_FACTORS,
     use_next_state: bool = True,
     check_factors: bool = False,
@@ -83,7 +94,7 @@ def least_specs(
 def bayes_least_specs(
     init_attempt_estimation_episodes: Sequence[int],
     feats_specs: Sequence[Sequence[Mapping[str, Any]]],
-    delay_configs: Sequence[Mapping[str, Any]] = DEFAULT_DELAY_CONFIGS,
+    delay_configs: Sequence[Mapping[str, Any]] = default_delay_config(),
     discounts: Sequence[float] = DEFAULT_DISCOUNT_FACTORS,
     impute_value: float = DEFAULT_IMPUTE_VALUE,
 ) -> Sequence[Mapping[str, Any]]:
@@ -122,10 +133,10 @@ def bayes_least_specs(
 
 
 def common_problem_specs(
-    delay_configs: Sequence[Dict[str, Any]] = DEFAULT_DELAY_CONFIGS,
+    delay_configs: Sequence[Dict[str, Any]] = default_delay_config(),
     discounts: Sequence[float] = DEFAULT_DISCOUNT_FACTORS,
     impute_value: float = DEFAULT_IMPUTE_VALUE,
-    include_options: bool = True
+    include_options: bool = True,
 ):
     """
     Specs that apply to every env.
@@ -427,6 +438,124 @@ def electric_motor_experiment_specs() -> Sequence[Mapping[str, Any]]:
     return tuple(specs)
 
 
+def _grid_cliff_indices(grid: Sequence[str]) -> List[int]:
+    """
+    Returns flat indices (row * ncols + col) of cliff positions in a grid.
+    """
+    ncols = len(grid[0])
+    indices: List[int] = []
+    for row_idx, row in enumerate(grid):
+        for col_idx, cell in enumerate(row):
+            if cell == "x":
+                indices.append(row_idx * ncols + col_idx)
+    return indices
+
+
+def illustration_experiment_specs(
+    mc_tiling_dim: int = 4,
+    acrobot_tiling_dim: int = 3,
+    acrobot_hash_dim: int = 8192,
+    gw_tiling_dim: int = 5,
+) -> Sequence[Mapping[str, Any]]:
+    """
+    Illustration experiment specs for Mountain Car, Acrobot, and GridWorld.
+    """
+    continuous_est_feats: Sequence[Sequence[Mapping[str, Any]]] = [
+        [
+            {"name": "scale-observation-ft", "args": None},
+            {"name": "action-segment-observation-ft", "args": None},
+        ]
+    ]
+    gw_dead_ohe = _grid_cliff_indices(MINES_GW_GRID)
+    gw_est_feats: Sequence[Sequence[Mapping[str, Any]]] = [
+        [
+            {"name": "flat-grid-observation-action-ft", "args": {}},
+            {
+                "name": "drop-observation-dims-ft",
+                "args": {"axis_dims": {0: gw_dead_ohe}},
+            },
+        ]
+    ]
+
+    specs: List[Mapping[str, Any]] = [
+        {
+            "name": "MountainCar-v0",
+            "args": {"max_episode_steps": 2500},
+            "feats_specs": [
+                [
+                    {
+                        "name": "tile-observation-action-ft",
+                        "args": {"tiling_dim": mc_tiling_dim},
+                    }
+                ]
+            ],
+            "problem_specs": common_problem_specs(include_options=False)
+            + least_specs(
+                attempt_estimation_episodes=(10,),
+                feats_specs=continuous_est_feats,
+            )
+            + bayes_least_specs(
+                init_attempt_estimation_episodes=(10,),
+                feats_specs=continuous_est_feats,
+            ),
+            "epochs": 10,
+        },
+        {
+            "name": "Acrobot-v1",
+            "args": {"max_episode_steps": 500},
+            "feats_specs": [
+                [
+                    {
+                        "name": "tile-observation-action-ft",
+                        "args": {
+                            "tiling_dim": acrobot_tiling_dim,
+                            "hash_dim": acrobot_hash_dim,
+                        },
+                    }
+                ]
+            ],
+            "problem_specs": common_problem_specs(include_options=False)
+            + least_specs(
+                attempt_estimation_episodes=(10,),
+                feats_specs=continuous_est_feats,
+            )
+            + bayes_least_specs(
+                init_attempt_estimation_episodes=(10,),
+                feats_specs=continuous_est_feats,
+            ),
+            "epochs": 10,
+        },
+        {
+            "name": "GridWorld-MINES",
+            "args": {
+                "grid": MINES_GW_GRID,
+                "max_episode_steps": 200,
+            },
+            "feats_specs": [
+                [
+                    {
+                        "name": "tile-observation-action-ft",
+                        "args": {"tiling_dim": gw_tiling_dim},
+                    }
+                ]
+            ],
+            "problem_specs": common_problem_specs(include_options=False)
+            + least_specs(
+                attempt_estimation_episodes=(10,),
+                use_next_state=False,
+                check_factors=True,
+                feats_specs=gw_est_feats,
+            )
+            + bayes_least_specs(
+                init_attempt_estimation_episodes=(10,),
+                feats_specs=gw_est_feats,
+            ),
+            "epochs": 5,
+        },
+    ]
+    return tuple(specs)
+
+
 def load_solvable_grids(
     path: str,
     min_passes: int = 4,
@@ -437,12 +566,8 @@ def load_solvable_grids(
     """
     with open(path, "r") as readable:
         entries: List[Mapping[str, Any]] = json.load(readable)
-    passing_grids = [
-        entry
-        for entry in entries
-        if entry["passes"] >= min_passes and entry["size"][0] >= 20
-    ]
-    return passing_grids[:2]
+    passing_grids = [entry for entry in entries if entry["passes"] >= min_passes]
+    return passing_grids
 
 
 def grid_experiments_specs(

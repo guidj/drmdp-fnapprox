@@ -16,7 +16,8 @@ from drmdp.workflows import controlexps
 
 EM_PS = "electric-motor"
 GW_PS = "grid-world"
-PS_SET = [EM_PS, GW_PS]
+IL_PS = "illustration"
+PS_SET = [EM_PS, GW_PS, IL_PS]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -76,6 +77,8 @@ def create_tasks(
     elif problem_set == GW_PS:
         grid_specs = controlexps.load_solvable_grids(path=config_args["grids_file"])
         specs = controlexps.grid_experiments_specs(grid_specs=grid_specs)
+    elif problem_set == IL_PS:
+        specs = controlexps.illustration_experiment_specs()
 
     experiments = parse_experiments(specs=specs)
     experiment_instances = list(
