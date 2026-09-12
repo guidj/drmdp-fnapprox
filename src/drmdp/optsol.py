@@ -303,3 +303,10 @@ def matrix_factors_rank(matrix: np.ndarray) -> int:
     factors_sum = np.sum(matrix != 0, axis=0)
     factors_present: int = np.sum(factors_sum > 0).astype(np.int64).item()
     return factors_present
+
+
+def matrix_numerical_rank(matrix: np.ndarray) -> int:
+    """
+    SVD-based numerical rank of a matrix.
+    """
+    return int(np.linalg.matrix_rank(matrix))

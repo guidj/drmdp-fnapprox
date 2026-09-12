@@ -267,6 +267,138 @@ class TilesObsWrapper(gym.ObservationWrapper):
         return xs
 
 
+class PotentialShapingWrapper(gym.Wrapper):
+    """Potential-based reward shaping: r' = r + gamma * Phi(s') - Phi(s).
+
+    Preserves the optimal policy (Ng, Harada & Russell 1999).
+    Subclasses implement ``_potential(obs)`` for each environment.
+    """
+
+    def __init__(self, env: gym.Env, gamma: float = 1.0):
+        super().__init__(env)
+        self.gamma = gamma
+        self._prev_potential: float = 0.0
+
+    def _potential(self, obs: np.ndarray) -> float:
+        raise NotImplementedError
+
+    def reset(self, **kwargs):
+        obs, info = super().reset(**kwargs)
+        self._prev_potential = self._potential(obs)
+        return obs, info
+
+    def step(self, action):
+        obs, reward, term, trunc, info = super().step(action)
+        if not term:
+            potential = self._potential(obs)
+            shaping = self.gamma * potential - self._prev_potential
+            self._prev_potential = potential
+            reward = reward + shaping
+        return obs, reward, term, trunc, info
+
+
+class MountainCarHeightShaping(PotentialShapingWrapper):
+    """Phi(s) = sin(3 * position).
+
+    The MountainCar hill height function, producing rewards
+    proportional to altitude gain.  Reward range stays moderate
+    because sin is bounded to [-1, 1].
+    """
+
+    def _potential(self, obs: np.ndarray) -> float:
+        position = float(obs[0])
+        return float(np.sin(3.0 * position))
+
+
+class AcrobotTipHeightShaping(PotentialShapingWrapper):
+    """Phi(s) = -(cos(theta1) + cos(theta1 + theta2)).
+
+    Negative tip-height of the second link, so the agent is
+    rewarded for swinging the tip upward.  Bounded to [-2, 2].
+    """
+
+    def _potential(self, obs: np.ndarray) -> float:
+        cos_theta1 = float(obs[0])
+        sin_theta1 = float(obs[1])
+        cos_theta2 = float(obs[2])
+        sin_theta2 = float(obs[3])
+        cos_sum = cos_theta1 * cos_theta2 - sin_theta1 * sin_theta2
+        return float(-(cos_theta1 + cos_sum))
+
+
+class AdditiveShapingWrapper(gym.Wrapper):
+    """Additive reward bonus: r' = r + scale * bonus(obs).
+
+    Unlike PBRS, this changes the optimal policy but creates
+    substantial state-dependent reward variation for testing
+    reward estimation quality.
+
+    The bonus is NOT applied on terminal steps so that
+    terminal-state zero-reward semantics are preserved.
+    """
+
+    def __init__(self, env: gym.Env, scale: float = 1.0):
+        super().__init__(env)
+        self.scale = scale
+
+    def _bonus(self, obs: np.ndarray) -> float:
+        raise NotImplementedError
+
+    def step(self, action):
+        obs, reward, term, trunc, info = super().step(action)
+        if not term:
+            reward = reward + self.scale * self._bonus(obs)
+        return obs, reward, term, trunc, info
+
+
+class MountainCarHeightBonus(AdditiveShapingWrapper):
+    """bonus(s) = sin(3 * position), scaled by constructor arg.
+
+    Creates position-dependent rewards: the car is rewarded for
+    being high on the hill.  Bounded to [-scale, +scale].
+    """
+
+    def _bonus(self, obs: np.ndarray) -> float:
+        return float(np.sin(3.0 * float(obs[0])))
+
+
+class AcrobotTipHeightBonus(AdditiveShapingWrapper):
+    """bonus(s) = -(cos(θ1) + cos(θ1+θ2)), scaled by constructor arg.
+
+    Rewards the tip being high.  Bounded to [-2·scale, +2·scale].
+    """
+
+    def _bonus(self, obs: np.ndarray) -> float:
+        cos_theta1 = float(obs[0])
+        sin_theta1 = float(obs[1])
+        cos_theta2 = float(obs[2])
+        sin_theta2 = float(obs[3])
+        cos_sum = cos_theta1 * cos_theta2 - sin_theta1 * sin_theta2
+        return float(-(cos_theta1 + cos_sum))
+
+
+class ActionCostShapingWrapper(gym.Wrapper):
+    """Action-dependent reward bonus: different actions incur different costs.
+
+    Creates non-constant, action-dependent rewards that any
+    action-aware count-based encoding (tile coding, OHE) can
+    represent exactly.
+
+    The bonus is NOT applied on terminal steps so that
+    terminal-state zero-reward semantics are preserved.
+    """
+
+    def __init__(self, env: gym.Env, action_costs: Sequence[float]):
+        super().__init__(env)
+        self.action_costs = np.array(action_costs, dtype=np.float64)
+
+    def step(self, action):
+        obs, reward, term, trunc, info = super().step(action)
+        if not term:
+            reward = reward + self.action_costs[action]
+        return obs, reward, term, trunc, info
+
+
 def wrap(env: gym.Env, wrapper: Optional[str] = None, **kwargs):
     """
     Creates an environment observation wrappers.

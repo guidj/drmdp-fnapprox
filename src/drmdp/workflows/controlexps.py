@@ -3,7 +3,10 @@ import json
 import math
 from typing import Any, Dict, List, Mapping, Sequence
 
+import numpy as np
+
 from drmdp import mathutils
+from drmdp.envs import gridutils
 
 EPSILON = 0.1
 MAX_STEPS_PER_EPISODE_GEM = 10_000
@@ -438,17 +441,24 @@ def electric_motor_experiment_specs() -> Sequence[Mapping[str, Any]]:
     return tuple(specs)
 
 
-def _grid_cliff_indices(grid: Sequence[str]) -> List[int]:
+def _grid_dead_ohe_indices(grid: Sequence[str], nactions: int = 4) -> List[int]:
     """
-    Returns flat indices (row * ncols + col) of cliff positions in a grid.
+    Returns OHE indices of dead state-action columns.
+
+    Dead states are cliffs, terminal/goal cells, and cells
+    unreachable from the start.  Each dead state produces
+    ``nactions`` dead columns in the flat-grid-observation-action-ft
+    layout (``action * nstates + state_idx``).
     """
-    ncols = len(grid[0])
-    indices: List[int] = []
-    for row_idx, row in enumerate(grid):
-        for col_idx, cell in enumerate(row):
-            if cell == "x":
-                indices.append(row_idx * ncols + col_idx)
-    return indices
+    char_map = {
+        "o": gridutils.CELL_OPEN,
+        "s": gridutils.CELL_START,
+        "g": gridutils.CELL_GOAL,
+        "x": gridutils.CELL_CLIFF,
+    }
+    grid_arr = np.array([[char_map[ch] for ch in row] for row in grid], dtype=np.int8)
+    exits = list(zip(*np.where(grid_arr == gridutils.CELL_GOAL)))
+    return gridutils.grid_dead_ohe_indices(grid_arr, exits=exits, nactions=nactions)
 
 
 def illustration_experiment_specs(
@@ -459,14 +469,29 @@ def illustration_experiment_specs(
 ) -> Sequence[Mapping[str, Any]]:
     """
     Illustration experiment specs for Mountain Car, Acrobot, and GridWorld.
+
+    Reward shaping creates non-constant rewards so estimation
+    quality matters.  Control and estimation encodings are
+    independent — control uses the canonical tile coding,
+    estimation uses count-based encodings matched to the
+    reward function's structure.
     """
-    continuous_est_feats: Sequence[Sequence[Mapping[str, Any]]] = [
+    mc_est_feats: Sequence[Sequence[Mapping[str, Any]]] = [
+        [{"name": "tile-observation-action-ft", "args": {"tiling_dim": 3}}]
+    ]
+    acrobot_est_feats: Sequence[Sequence[Mapping[str, Any]]] = [
         [
-            {"name": "scale-observation-ft", "args": None},
-            {"name": "action-segment-observation-ft", "args": None},
+            {
+                "name": "drop-observation-dims-ft",
+                "args": {"axis_dims": {0: [1, 2, 3, 4, 5]}},
+            },
+            {
+                "name": "tile-observation-action-ft",
+                "args": {"tiling_dim": 1, "num_tilings": 1},
+            },
         ]
     ]
-    gw_dead_ohe = _grid_cliff_indices(MINES_GW_GRID)
+    gw_dead_ohe = _grid_dead_ohe_indices(MINES_GW_GRID)
     gw_est_feats: Sequence[Sequence[Mapping[str, Any]]] = [
         [
             {"name": "flat-grid-observation-action-ft", "args": {}},
@@ -480,7 +505,13 @@ def illustration_experiment_specs(
     specs: List[Mapping[str, Any]] = [
         {
             "name": "MountainCar-v0",
-            "args": {"max_episode_steps": 2500},
+            "args": {
+                "max_episode_steps": 2500,
+                "reward_shaping": {
+                    "name": "mountain-car-height",
+                    "args": {"scale": 1.0},
+                },
+            },
             "feats_specs": [
                 [
                     {
@@ -492,17 +523,24 @@ def illustration_experiment_specs(
             "problem_specs": common_problem_specs(include_options=False)
             + least_specs(
                 attempt_estimation_episodes=(10,),
-                feats_specs=continuous_est_feats,
+                check_factors=True,
+                feats_specs=mc_est_feats,
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
-                feats_specs=continuous_est_feats,
+                feats_specs=mc_est_feats,
             ),
             "epochs": 10,
         },
         {
             "name": "Acrobot-v1",
-            "args": {"max_episode_steps": 500},
+            "args": {
+                "max_episode_steps": 500,
+                "reward_shaping": {
+                    "name": "action-cost",
+                    "args": {"action_costs": [0.0, 0.5, 1.0]},
+                },
+            },
             "feats_specs": [
                 [
                     {
@@ -517,11 +555,12 @@ def illustration_experiment_specs(
             "problem_specs": common_problem_specs(include_options=False)
             + least_specs(
                 attempt_estimation_episodes=(10,),
-                feats_specs=continuous_est_feats,
+                check_factors=True,
+                feats_specs=acrobot_est_feats,
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
-                feats_specs=continuous_est_feats,
+                feats_specs=acrobot_est_feats,
             ),
             "epochs": 10,
         },

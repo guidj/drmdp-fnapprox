@@ -81,6 +81,61 @@ def test_proj_obs_to_rwest_vec_invalid_inputs():
         optsol.proj_obs_to_rwest_vec(buffer, sample_size=0)
 
 
+class TestMatrixFactorsRank:
+    def test_all_columns_nonzero(self):
+        matrix = np.array([[1, 2], [3, 4]])
+        assert optsol.matrix_factors_rank(matrix) == 2
+
+    def test_zero_column(self):
+        matrix = np.array([[1, 0], [3, 0]])
+        assert optsol.matrix_factors_rank(matrix) == 1
+
+    def test_sparse_with_all_columns_covered(self):
+        matrix = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+        assert optsol.matrix_factors_rank(matrix) == 3
+
+
+class TestMatrixNumericalRank:
+    def test_full_rank(self):
+        matrix = np.array([[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]])
+        assert optsol.matrix_numerical_rank(matrix) == 2
+
+    def test_rank_deficient_duplicate_rows(self):
+        matrix = np.array([[1.0, 2.0], [2.0, 4.0], [3.0, 6.0]])
+        assert optsol.matrix_numerical_rank(matrix) == 1
+
+    def test_rank_deficient_linearly_dependent_columns(self):
+        col_a = np.array([1.0, 2.0, 3.0, 4.0])
+        col_b = np.array([5.0, 6.0, 7.0, 8.0])
+        col_c = col_a + col_b
+        matrix = np.column_stack([col_a, col_b, col_c])
+        assert optsol.matrix_numerical_rank(matrix) == 2
+
+    def test_identity_full_rank(self):
+        matrix = np.eye(5)
+        assert optsol.matrix_numerical_rank(matrix) == 5
+
+    def test_sparse_tile_coding_full_rank(self):
+        rng = np.random.default_rng(42)
+        nrows, ncols = 200, 50
+        matrix = np.zeros((nrows, ncols))
+        for idx in range(nrows):
+            active = rng.choice(ncols, size=4, replace=False)
+            matrix[idx, active] = rng.uniform(0.5, 2.0, size=4)
+        assert optsol.matrix_numerical_rank(matrix) == ncols
+
+    def test_factors_rank_passes_but_numerical_rank_detects_deficiency(self):
+        matrix = np.array(
+            [
+                [1.0, 2.0, 3.0],
+                [2.0, 4.0, 6.0],
+                [1.0, 1.0, 2.0],
+            ]
+        )
+        assert optsol.matrix_factors_rank(matrix) == 3
+        assert optsol.matrix_numerical_rank(matrix) < 3
+
+
 def test_streaming_mean_estimator():
     xs = np.random.rand(100_000)
     estimator = optsol.StreamingMean()

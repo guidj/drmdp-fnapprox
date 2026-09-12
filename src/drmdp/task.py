@@ -10,6 +10,12 @@ import numpy as np
 from drmdp import algorithms, core, envs, logger, optsol, rewdelay, transform
 from drmdp.envs import wrappers
 
+REWARD_SHAPING_BUILDERS: Mapping[str, type] = {
+    "mountain-car-height": wrappers.MountainCarHeightBonus,
+    "acrobot-tip-height": wrappers.AcrobotTipHeightBonus,
+    "action-cost": wrappers.ActionCostShapingWrapper,
+}
+
 DELAYS: Sequence[type[rewdelay.RewardDelay]] = (
     rewdelay.FixedDelay,
     rewdelay.UniformDelay,
@@ -134,14 +140,21 @@ def create_env(name: str, args: Optional[Mapping[str, Any]]) -> core.ProxiedEnv:
     """
     Creates an env and a proxy.
     """
-    env = envs.make(
-        env_name=name,
-        **args if args else {},
-    )
-    proxy = envs.make(
-        env_name=name,
-        **args if args else {},
-    )
+    env_args = dict(args) if args else {}
+    shaping_config = env_args.pop("reward_shaping", None)
+
+    env = envs.make(env_name=name, **env_args)
+    proxy = envs.make(env_name=name, **env_args)
+
+    if shaping_config:
+        shaping_name = shaping_config["name"]
+        shaping_args = shaping_config.get("args", {}) or {}
+        if shaping_name not in REWARD_SHAPING_BUILDERS:
+            raise ValueError(f"Unknown reward shaping: {shaping_name}")
+        shaping_cls = REWARD_SHAPING_BUILDERS[shaping_name]
+        env = shaping_cls(env, **shaping_args)
+        proxy = shaping_cls(proxy, **shaping_args)
+
     return core.ProxiedEnv(env=env, proxy=proxy)
 
 
