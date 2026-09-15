@@ -136,6 +136,73 @@ class TestMatrixNumericalRank:
         assert optsol.matrix_numerical_rank(matrix) < 3
 
 
+class TestMultivariateNormal:
+    def test_least_squares_pseudo(self):
+        matrix = np.array([[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]])
+        rhs = np.array([1.0, 2.0, 3.0])
+        result = optsol.MultivariateNormal.least_squares(matrix, rhs, inverse="pseudo")
+        assert result is not None
+        np.testing.assert_allclose(result.mean, [1.0, 2.0], atol=1e-6)
+        assert result.cov.shape == (2, 2)
+
+    def test_least_squares_exact(self):
+        matrix = np.array([[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]])
+        rhs = np.array([1.0, 2.0, 3.0])
+        result = optsol.MultivariateNormal.least_squares(matrix, rhs, inverse="exact")
+        assert result is not None
+        np.testing.assert_allclose(result.mean, [1.0, 2.0], atol=1e-6)
+        assert result.cov.shape == (2, 2)
+
+    def test_least_squares_unknown_inverse_raises(self):
+        with pytest.raises(ValueError, match="Unknown inverse"):
+            optsol.MultivariateNormal.least_squares(
+                np.eye(2), np.array([1.0, 2.0]), inverse="bad"
+            )
+
+    def test_bayes_linear_regression(self):
+        matrix = np.array([[1.0, 0.0], [0.0, 1.0]])
+        rhs = np.array([3.0, 4.0])
+        prior = optsol.MultivariateNormal(
+            mean=np.array([0.0, 0.0]),
+            cov=np.eye(2) * 10.0,
+        )
+        result = optsol.MultivariateNormal.bayes_linear_regression(matrix, rhs, prior)
+        assert result is not None
+        assert result.mean.shape == (2,)
+        assert result.cov.shape == (2, 2)
+
+    def test_bayes_updates_toward_data(self):
+        matrix = np.eye(3) * 2.0
+        rhs = np.array([10.0, 20.0, 30.0])
+        prior = optsol.MultivariateNormal(
+            mean=np.zeros(3),
+            cov=np.eye(3),
+        )
+        result = optsol.MultivariateNormal.bayes_linear_regression(matrix, rhs, prior)
+        assert result is not None
+        for idx in range(3):
+            assert abs(result.mean[idx]) > abs(prior.mean[idx])
+
+
+class TestSolveConvexLeastSquares:
+    def test_unconstrained(self):
+        matrix = np.array([[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]])
+        rhs = np.array([1.0, 2.0, 3.0])
+        result = optsol.solve_convex_least_squares(
+            matrix, rhs, constraint_fn=lambda var: []
+        )
+        np.testing.assert_allclose(result, [1.0, 2.0], atol=1e-4)
+
+    def test_with_non_negative_constraint(self):
+        matrix = np.array([[1.0, 0.0], [0.0, 1.0]])
+        rhs = np.array([3.0, -1.0])
+        result = optsol.solve_convex_least_squares(
+            matrix, rhs, constraint_fn=lambda var: [var >= 0]
+        )
+        assert result[0] >= -1e-6
+        assert result[1] >= -1e-6
+
+
 def test_streaming_mean_estimator():
     xs = np.random.rand(100_000)
     estimator = optsol.StreamingMean()

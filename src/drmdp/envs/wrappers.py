@@ -252,10 +252,11 @@ class TilesObsWrapper(gym.ObservationWrapper):
         self.hash_dim = (
             hash_dim if hash_dim and self.tiles.max_size > hash_dim else None
         )
+        obs_dim = self.hash_dim or self.tiles.max_size
         self.observation_space = gym.spaces.Box(
             low=0,
             high=1,
-            shape=self.hash_dim or self.tiles.max_size,
+            shape=(obs_dim,),
             dtype=np.int64,
         )
 
