@@ -901,3 +901,53 @@ class TestBayesSegmentAccumulationAfterEstimation:
         # Step 1 of segment 1 — fresh accumulation
         wrapper.step(0)
         np.testing.assert_allclose(wrapper._segment_features, per_step)
+
+
+class TestBayesSampleWeights:
+    def _make_wrapper(self, term_steps, delay, sample_weights):
+        base = DummyEnv(term_steps=term_steps)
+        delayed = rewdelay.DelayedRewardWrapper(base, rewdelay.FixedDelay(delay=delay))
+        ft_op = DummyFTOp(base)
+        wrapper = rewdelay.BayesLeastLfaGenerativeRewardWrapper(
+            env=delayed,
+            ft_op=ft_op,
+            init_attempt_estimation_episode=1,
+            sample_weights=sample_weights,
+        )
+        return wrapper
+
+    def _force_estimate(self, wrapper):
+        mdim = wrapper.mdim
+        while wrapper.est_buffer.size() < mdim:
+            wrapper.reset()
+            done = False
+            while not done:
+                _, _, term, trunc, _ = wrapper.step(0)
+                done = term or trunc
+        wrapper.estimate_rewards()
+        assert wrapper._has_estimate()
+
+    def test_mean_mode_is_deterministic(self):
+        wrapper = self._make_wrapper(term_steps=8, delay=2, sample_weights=False)
+        self._force_estimate(wrapper)
+        feats = np.array([0.5, -0.5, 0.5, -0.5])
+        feats_with_est = wrapper._get_estimation_inputs(feats)
+        rewards = [wrapper._get_estimated_reward(feats_with_est) for _ in range(20)]
+        assert all(r == rewards[0] for r in rewards)
+
+    def test_sample_mode_is_stochastic(self):
+        wrapper = self._make_wrapper(term_steps=8, delay=2, sample_weights=True)
+        self._force_estimate(wrapper)
+        feats = np.array([0.5, -0.5, 0.5, -0.5])
+        feats_with_est = wrapper._get_estimation_inputs(feats)
+        rewards = [wrapper._get_estimated_reward(feats_with_est) for _ in range(50)]
+        assert not all(r == rewards[0] for r in rewards)
+
+    def test_estimator_info_includes_sample_weights(self):
+        wrapper = self._make_wrapper(term_steps=8, delay=2, sample_weights=True)
+        info = wrapper._get_estimator_info()
+        assert info["sample_weights"] is True
+
+        wrapper_off = self._make_wrapper(term_steps=8, delay=2, sample_weights=False)
+        info_off = wrapper_off._get_estimator_info()
+        assert info_off["sample_weights"] is False

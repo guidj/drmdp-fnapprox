@@ -16,6 +16,12 @@ REWARD_SHAPING_BUILDERS: Mapping[str, type] = {
     "action-cost": wrappers.ActionCostShapingWrapper,
 }
 
+REWARD_NOISE_BUILDERS: Mapping[str, type] = {
+    "gaussian-mountain-car": wrappers.MountainCarGaussianReward,
+    "gaussian-acrobot": wrappers.AcrobotGaussianReward,
+    "gaussian-gridworld": wrappers.GridWorldGaussianReward,
+}
+
 DELAYS: Sequence[type[rewdelay.RewardDelay]] = (
     rewdelay.FixedDelay,
     rewdelay.UniformDelay,
@@ -142,6 +148,7 @@ def create_env(name: str, args: Optional[Mapping[str, Any]]) -> core.ProxiedEnv:
     """
     env_args = dict(args) if args else {}
     shaping_config = env_args.pop("reward_shaping", None)
+    noise_config = env_args.pop("reward_noise", None)
 
     env = envs.make(env_name=name, **env_args)
     proxy = envs.make(env_name=name, **env_args)
@@ -154,6 +161,15 @@ def create_env(name: str, args: Optional[Mapping[str, Any]]) -> core.ProxiedEnv:
         shaping_cls = REWARD_SHAPING_BUILDERS[shaping_name]
         env = shaping_cls(env, **shaping_args)
         proxy = shaping_cls(proxy, **shaping_args)
+
+    if noise_config:
+        noise_name = noise_config["name"]
+        noise_args = noise_config.get("args", {}) or {}
+        if noise_name not in REWARD_NOISE_BUILDERS:
+            raise ValueError(f"Unknown reward noise: {noise_name}")
+        noise_cls = REWARD_NOISE_BUILDERS[noise_name]
+        env = noise_cls(env, **noise_args)
+        proxy = noise_cls(proxy, **noise_args)
 
     return core.ProxiedEnv(env=env, proxy=proxy)
 

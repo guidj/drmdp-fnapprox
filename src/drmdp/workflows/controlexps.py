@@ -595,6 +595,198 @@ def illustration_experiment_specs(
     return tuple(specs)
 
 
+def _bayes_least_specs_sample_weights(
+    init_attempt_estimation_episodes: Sequence[int],
+    feats_specs: Sequence[Sequence[Mapping[str, Any]]],
+    delay_configs: Sequence[Mapping[str, Any]] = default_delay_config(),
+    discounts: Sequence[float] = DEFAULT_DISCOUNT_FACTORS,
+    impute_value: float = DEFAULT_IMPUTE_VALUE,
+) -> Sequence[Mapping[str, Any]]:
+    """Bayesian specs with sample_weights=True for Gaussian reward experiments."""
+    specs = []
+    for (
+        delay_config,
+        gamma,
+        feats_spec,
+        init_attempt_estimation_episode,
+    ) in itertools.product(
+        delay_configs, discounts, feats_specs, init_attempt_estimation_episodes
+    ):
+        specs.append(
+            {
+                "policy_type": "markovian",
+                "reward_mapper": {
+                    "name": "bayes-least-lfa",
+                    "args": {
+                        "init_attempt_estimation_episode": init_attempt_estimation_episode,
+                        "feats_spec": feats_spec,
+                        "use_bias": False,
+                        "impute_value": impute_value,
+                        "estimation_buffer_mult": 25,
+                        "sample_weights": True,
+                    },
+                },
+                "delay_config": delay_config,
+                "epsilon": EPSILON,
+                "gamma": gamma,
+                "learning_rate_config": LEARNING_RATE_SPEC,
+            },
+        )
+    return tuple(specs)
+
+
+def gaussian_illustration_experiment_specs(
+    mc_tiling_dim: int = 4,
+    acrobot_tiling_dim: int = 3,
+    acrobot_hash_dim: int = 8192,
+    gw_tiling_dim: int = 5,
+    noise_scale: float = 1.0,
+) -> Sequence[Mapping[str, Any]]:
+    """Illustration specs with Gaussian reward noise.
+
+    Mirrors ``illustration_experiment_specs`` but adds state-dependent
+    Gaussian noise and uses ``sample_weights=True`` for BLADE-TD.
+    """
+    mc_est_feats: Sequence[Sequence[Mapping[str, Any]]] = [
+        [{"name": "tile-observation-action-ft", "args": {"tiling_dim": 3}}]
+    ]
+    acrobot_est_feats: Sequence[Sequence[Mapping[str, Any]]] = [
+        [
+            {
+                "name": "drop-observation-dims-ft",
+                "args": {"axis_dims": {0: [1, 2, 3, 4, 5]}},
+            },
+            {
+                "name": "tile-observation-action-ft",
+                "args": {"tiling_dim": 1, "num_tilings": 1},
+            },
+        ]
+    ]
+    gw_dead_ohe = _grid_dead_ohe_indices(MINES_GW_GRID)
+    gw_est_feats: Sequence[Sequence[Mapping[str, Any]]] = [
+        [
+            {"name": "flat-grid-observation-action-ft", "args": {}},
+            {
+                "name": "drop-observation-dims-ft",
+                "args": {"axis_dims": {0: gw_dead_ohe}},
+            },
+        ]
+    ]
+
+    gw_nrows = len(MINES_GW_GRID)
+    gw_ncols = len(MINES_GW_GRID[0])
+    gw_goal_row = gw_nrows - 1
+    gw_goal_col = gw_ncols - 1
+
+    specs: List[Mapping[str, Any]] = [
+        {
+            "name": "MountainCar-v0",
+            "args": {
+                "max_episode_steps": 2500,
+                "reward_shaping": {
+                    "name": "mountain-car-height",
+                    "args": {"scale": 1.0},
+                },
+                "reward_noise": {
+                    "name": "gaussian-mountain-car",
+                    "args": {"scale": noise_scale},
+                },
+            },
+            "feats_specs": [
+                [
+                    {
+                        "name": "tile-observation-action-ft",
+                        "args": {"tiling_dim": mc_tiling_dim},
+                    }
+                ]
+            ],
+            "problem_specs": common_problem_specs(include_options=False)
+            + least_specs(
+                attempt_estimation_episodes=(10,),
+                check_factors=True,
+                feats_specs=mc_est_feats,
+            )
+            + _bayes_least_specs_sample_weights(
+                init_attempt_estimation_episodes=(10,),
+                feats_specs=mc_est_feats,
+            ),
+            "epochs": 10,
+        },
+        {
+            "name": "Acrobot-v1",
+            "args": {
+                "max_episode_steps": 500,
+                "reward_shaping": {
+                    "name": "action-cost",
+                    "args": {"action_costs": [0.0, 0.5, 1.0]},
+                },
+                "reward_noise": {
+                    "name": "gaussian-acrobot",
+                    "args": {"scale": noise_scale},
+                },
+            },
+            "feats_specs": [
+                [
+                    {
+                        "name": "tile-observation-action-ft",
+                        "args": {
+                            "tiling_dim": acrobot_tiling_dim,
+                            "hash_dim": acrobot_hash_dim,
+                        },
+                    }
+                ]
+            ],
+            "problem_specs": common_problem_specs(include_options=False)
+            + least_specs(
+                attempt_estimation_episodes=(10,),
+                check_factors=True,
+                feats_specs=acrobot_est_feats,
+            )
+            + _bayes_least_specs_sample_weights(
+                init_attempt_estimation_episodes=(10,),
+                feats_specs=acrobot_est_feats,
+            ),
+            "epochs": 10,
+        },
+        {
+            "name": "GridWorld-MINES",
+            "args": {
+                "grid": MINES_GW_GRID,
+                "max_episode_steps": 200,
+                "reward_noise": {
+                    "name": "gaussian-gridworld",
+                    "args": {
+                        "goal_pos": [gw_goal_row, gw_goal_col],
+                        "max_dist": float(gw_nrows + gw_ncols - 2),
+                        "scale": noise_scale,
+                    },
+                },
+            },
+            "feats_specs": [
+                [
+                    {
+                        "name": "tile-observation-action-ft",
+                        "args": {"tiling_dim": gw_tiling_dim},
+                    }
+                ]
+            ],
+            "problem_specs": common_problem_specs(include_options=False)
+            + least_specs(
+                attempt_estimation_episodes=(10,),
+                use_next_state=False,
+                check_factors=True,
+                feats_specs=gw_est_feats,
+            )
+            + _bayes_least_specs_sample_weights(
+                init_attempt_estimation_episodes=(10,),
+                feats_specs=gw_est_feats,
+            ),
+            "epochs": 5,
+        },
+    ]
+    return tuple(specs)
+
+
 def load_solvable_grids(
     path: str,
     min_passes: int = 4,

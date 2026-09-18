@@ -952,6 +952,7 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         impute_value: float = 0.0,
         check_factors: bool = False,
         use_next_state: bool = False,
+        sample_weights: bool = False,
     ):
         super().__init__(
             env=env,
@@ -964,6 +965,7 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         self.mode = mode
         self.init_attempt_estimation_episode = init_attempt_estimation_episode
         self.check_factors = check_factors
+        self.sample_weights = sample_weights
         self.windowed_task_schedule = WindowedTaskSchedule(
             mode=mode, init_update_ep=init_attempt_estimation_episode
         )
@@ -997,7 +999,13 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         return True
 
     def _get_estimated_reward(self, feats: np.ndarray) -> float:
-        return np.dot(feats, self.mv_normal_rewards.mean)  # type: ignore
+        if self.sample_weights:
+            weights = self.rng.multivariate_normal(
+                self.mv_normal_rewards.mean,  # type: ignore[union-attr]
+                self.mv_normal_rewards.cov,  # type: ignore[union-attr]
+            )
+            return float(np.dot(feats, weights))
+        return float(np.dot(feats, self.mv_normal_rewards.mean))  # type: ignore[union-attr]
 
     def _should_attempt_estimation(self, term: bool, trunc: bool) -> bool:
         return (
@@ -1013,7 +1021,10 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         self.windowed_task_schedule.set_state(succ=success)
 
     def _get_estimator_info(self) -> Dict[str, Any]:
-        return {"posterior_updates": self.posterior_updates}
+        return {
+            "posterior_updates": self.posterior_updates,
+            "sample_weights": self.sample_weights,
+        }
 
     def estimate_rewards(self) -> bool:
         """

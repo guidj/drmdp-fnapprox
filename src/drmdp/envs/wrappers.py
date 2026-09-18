@@ -1,5 +1,5 @@
 import copy
-from typing import Any, Dict, Hashable, Optional, Sequence
+from typing import Any, Dict, Hashable, Optional, Sequence, Tuple
 
 import gymnasium as gym
 import numpy as np
@@ -398,6 +398,102 @@ class ActionCostShapingWrapper(gym.Wrapper):
         if not term:
             reward = reward + self.action_costs[action]
         return obs, reward, term, trunc, info
+
+
+class GaussianRewardNoiseWrapper(gym.Wrapper):
+    """Adds clipped Gaussian noise to rewards.
+
+    Noise is sampled from N(0, scale * _variance(obs, action)) and
+    clipped to the 95% energy interval [-clip_std * sigma, clip_std * sigma].
+    Subclasses implement ``_variance(obs, action)`` for state/action-dependent
+    noise magnitude.
+
+    Noise is NOT applied on terminal steps so that
+    terminal-state zero-reward semantics are preserved.
+    """
+
+    def __init__(
+        self,
+        env: gym.Env,
+        scale: float = 1.0,
+        clip_std: float = 1.96,
+        seed: Optional[int] = None,
+    ):
+        super().__init__(env)
+        self.scale = scale
+        self.clip_std = clip_std
+        self._rng = np.random.default_rng(seed)
+
+    def _variance(self, obs: np.ndarray, action: int) -> float:
+        raise NotImplementedError
+
+    def step(self, action):
+        obs, reward, term, trunc, info = super().step(action)
+        if not term:
+            variance = self._variance(obs, action)
+            sigma = np.sqrt(self.scale * variance)
+            noise = self._rng.normal(0.0, sigma)
+            bound = self.clip_std * sigma
+            noise = float(np.clip(noise, -bound, bound))
+            reward = reward + noise
+        return obs, reward, term, trunc, info
+
+
+class MountainCarGaussianReward(GaussianRewardNoiseWrapper):
+    """Variance depends on hill position: 0.5 + 0.5 * |sin(3*pos)|.
+
+    More noise near hill peaks, less in the valley.
+    """
+
+    def _variance(self, obs: np.ndarray, action: int) -> float:
+        del action
+        position = float(obs[0])
+        return float(0.5 + 0.5 * abs(np.sin(3.0 * position)))
+
+
+class AcrobotGaussianReward(GaussianRewardNoiseWrapper):
+    """Variance depends on tip height: 0.5 + 0.5 * |tip_height / 2|.
+
+    More noise when the second link is swung high.
+    """
+
+    def _variance(self, obs: np.ndarray, action: int) -> float:
+        del action
+        cos_theta1 = float(obs[0])
+        sin_theta1 = float(obs[1])
+        cos_theta2 = float(obs[2])
+        sin_theta2 = float(obs[3])
+        cos_sum = cos_theta1 * cos_theta2 - sin_theta1 * sin_theta2
+        tip_height = -(cos_theta1 + cos_sum)
+        return 0.5 + 0.5 * abs(tip_height / 2.0)
+
+
+class GridWorldGaussianReward(GaussianRewardNoiseWrapper):
+    """Variance depends on Manhattan distance from the goal.
+
+    More noise far from the goal, less near it.
+    ``goal_pos`` is the (row, col) of the goal cell.
+    ``max_dist`` is the normalizing constant (e.g. nrows + ncols - 2).
+    """
+
+    def __init__(
+        self,
+        env: gym.Env,
+        goal_pos: Tuple[int, int],
+        max_dist: float,
+        scale: float = 1.0,
+        clip_std: float = 1.96,
+        seed: Optional[int] = None,
+    ):
+        super().__init__(env, scale=scale, clip_std=clip_std, seed=seed)
+        self.goal_pos = np.array(goal_pos, dtype=np.float64)
+        self.max_dist = float(max_dist)
+
+    def _variance(self, obs: np.ndarray, action: int) -> float:
+        del action
+        dist = float(np.sum(np.abs(obs - self.goal_pos)))
+        normalized = dist / self.max_dist if self.max_dist > 0 else 0.0
+        return 0.5 + 0.5 * normalized
 
 
 def wrap(env: gym.Env, wrapper: Optional[str] = None, **kwargs):

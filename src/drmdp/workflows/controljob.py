@@ -17,7 +17,8 @@ from drmdp.workflows import controlexps
 EM_PS = "electric-motor"
 GW_PS = "grid-world"
 IL_PS = "illustration"
-PS_SET = [EM_PS, GW_PS, IL_PS]
+GIL_PS = "gaussian-illustration"
+PS_SET = [EM_PS, GW_PS, IL_PS, GIL_PS]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -79,6 +80,8 @@ def create_tasks(
         specs = controlexps.grid_experiments_specs(grid_specs=grid_specs)
     elif problem_set == IL_PS:
         specs = controlexps.illustration_experiment_specs()
+    elif problem_set == GIL_PS:
+        specs = controlexps.gaussian_illustration_experiment_specs()
 
     experiments = parse_experiments(specs=specs)
     experiment_instances = list(
