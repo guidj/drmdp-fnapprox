@@ -6,8 +6,8 @@ PARENT_DIR=$DIR/../..
 BASE=drmdp
 
 DATA_DIR=$1
-INPUT_DIR=$HOME/fs/$BASE/workflows/controljob/logs/${DATA_DIR}
-OUTPUT_DIR=$HOME/fs/$BASE/workflows/controljob/agg/${DATA_DIR}/`date +%s`
+INPUT_DIR=$HOME/fs/$BASE/control/fnapprox/logs/${DATA_DIR}
+OUTPUT_DIR=$HOME/fs/$BASE/control/fnapprox-agg/${DATA_DIR}/`date +%s`
 
 rm -rf ${OUTPUT_DIR}
 ray job submit \

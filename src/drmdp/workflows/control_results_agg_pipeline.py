@@ -19,7 +19,6 @@ import ray
 import ray.data
 import tensorflow as tf
 from ray.data import aggregate
-from ray.util import multiprocessing as ray_mp
 
 
 @dataclasses.dataclass(frozen=True)
@@ -129,10 +128,25 @@ def parse_experiment_metadata(paths: Sequence[str]) -> Mapping[str, Any]:
     """
     metadata_files = [os.path.join(path, "experiment-params.json") for path in paths]
     results = {}
-    with ray_mp.Pool(ray_address="auto") as pool:
-        for entry in pool.map(read_experiment_metadata, metadata_files):
-            path = parse_path_from_filename(entry["path"])
-            results[path] = entry
+    read_remote = ray.remote(parse_experiments_metadata_files)
+    refs = [read_remote.remote(seq) for seq in chunks(metadata_files, n=100)]
+    while True:
+        completed_refs, refs = ray.wait(refs)
+        for completed_ref in completed_refs:
+            entries = ray.get(completed_ref)
+            for entry in entries:
+                path = parse_path_from_filename(entry["path"])
+                results[path] = entry
+        if not refs:
+            break
+    return results
+
+
+def parse_experiments_metadata_files(paths: Sequence[str]):
+    results = []
+    for path in paths:
+        entry = read_experiment_metadata(path)
+        results.append(entry)
     return results
 
 
@@ -254,6 +268,12 @@ def calculate_metrics(ds: ray.data.Dataset) -> ray.data.Dataset:
         }
 
     return ds.map(apply)
+
+
+def chunks(seq: Sequence[Any], n):
+    """Yield successive n-sized chunks from seq."""
+    for i in range(0, len(seq), n):
+        yield seq[i : i + n]
 
 
 def parse_args() -> PipelineArgs:

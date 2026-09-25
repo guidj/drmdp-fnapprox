@@ -463,13 +463,23 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
         """Initialize segment features array."""
         raise NotImplementedError
 
-    @abc.abstractmethod
-    def _accumulate_step_features(self, latest_step_feats: transform.Example):
-        """Accumulate features for the current step."""
-        raise NotImplementedError
+    def _extract_step_features(
+        self, latest_step_feats: transform.Example
+    ) -> np.ndarray:
+        """Convert a step Example into a feature array.
 
-    def _get_estimation_features(self, feats: np.ndarray) -> np.ndarray:
-        """Get features for reward estimation, adding bias if needed."""
+        Called once per step; the result is fed to both
+        _accumulate_step_features (learning) and inference.
+        Override for non-vector observations (e.g. discrete index → one-hot).
+        """
+        return latest_step_feats.observation  # type: ignore
+
+    def _accumulate_step_features(self, step_features: np.ndarray):
+        """Add per-step features to the segment accumulator."""
+        self._segment_features += step_features
+
+    def _get_estimation_inputs(self, feats: np.ndarray) -> np.ndarray:
+        """Prepare features for reward prediction, adding bias if needed."""
         if self.use_bias:
             return np.concatenate([feats, np.array([1.0])])
         return feats
@@ -478,17 +488,6 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
     def _has_estimate(self) -> bool:
         """Check if reward estimate exists."""
         raise NotImplementedError
-
-    def _get_features_for_estimation(
-        self, latest_step_feats: transform.Example
-    ) -> np.ndarray:
-        """
-        Get features to use for reward estimation.
-        Default: use accumulated segment features.
-        Override to use latest step features instead (e.g., for Bayesian methods).
-        """
-        del latest_step_feats
-        return self._segment_features  # type: ignore
 
     def _should_buffer_when_estimated(self) -> bool:
         """
@@ -638,19 +637,20 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
         latest_step_feats = self.ft_op(transform.Example(self._latest_obs, action))
         next_obs, reward, term, trunc, info = super().step(action)
 
-        # Concatenate with next state features if enabled
         if self.use_next_state:
             next_state_feats = self.ft_op(transform.Example(next_obs, 0))
-            # Concatenate observations from both examples
             concatenated_obs = np.concatenate(
                 [latest_step_feats.observation, next_state_feats.observation]
             )
             latest_step_feats = dataclasses.replace(
                 latest_step_feats,
                 observation=concatenated_obs,
+                indices=None,
             )
 
-        self._accumulate_step_features(latest_step_feats)
+        step_features = self._extract_step_features(latest_step_feats)
+        if not self._has_estimate() or self._should_buffer_when_estimated():
+            self._accumulate_step_features(step_features)
 
         # Buffer segment data at segment end (for continual learning)
         if (
@@ -663,8 +663,7 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
 
         if self._has_estimate():
             # Use estimated reward
-            feats = self._get_features_for_estimation(latest_step_feats)
-            feats = self._get_estimation_features(feats)
+            feats = self._get_estimation_inputs(step_features)
             reward = self._get_estimated_reward(feats)
             est_state = OptState.SOLVED
         else:
@@ -770,9 +769,12 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
     def _initialize_segment_features(self):
         return np.zeros(shape=(self.mdim))
 
-    def _accumulate_step_features(self, latest_step_feats: transform.Example):
-        # Discretized: increment count at feature index
-        self._segment_features[latest_step_feats.observation] += 1  # type: ignore
+    def _extract_step_features(
+        self, latest_step_feats: transform.Example
+    ) -> np.ndarray:
+        ohe = np.zeros(self.ft_op_dim)
+        ohe[latest_step_feats.observation] = 1  # type: ignore
+        return ohe
 
     def _has_estimate(self) -> bool:
         return self.weights is not None
@@ -875,10 +877,6 @@ class LeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
     def _initialize_segment_features(self):
         return np.zeros(shape=(self.mdim))
 
-    def _accumulate_step_features(self, latest_step_feats: transform.Example):
-        # Additive: sum feature vectors
-        self._segment_features += latest_step_feats.observation
-
     def _has_estimate(self) -> bool:
         return self.weights is not None
 
@@ -953,6 +951,7 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         impute_value: float = 0.0,
         check_factors: bool = False,
         use_next_state: bool = False,
+        sample_weights: bool = False,
     ):
         super().__init__(
             env=env,
@@ -965,6 +964,7 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         self.mode = mode
         self.init_attempt_estimation_episode = init_attempt_estimation_episode
         self.check_factors = check_factors
+        self.sample_weights = sample_weights
         self.windowed_task_schedule = WindowedTaskSchedule(
             mode=mode, init_update_ep=init_attempt_estimation_episode
         )
@@ -990,25 +990,21 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
     def _initialize_segment_features(self):
         return np.zeros(shape=(self.mdim))
 
-    def _accumulate_step_features(self, latest_step_feats: transform.Example):
-        # Additive: sum feature vectors
-        self._segment_features += latest_step_feats.observation
-
     def _has_estimate(self) -> bool:
         return self.mv_normal_rewards is not None
-
-    def _get_features_for_estimation(
-        self, latest_step_feats: transform.Example
-    ) -> np.ndarray:
-        # Use latest step features, not accumulated
-        return latest_step_feats.observation  # type: ignore
 
     def _should_buffer_when_estimated(self) -> bool:
         # Continue buffering for continual learning
         return True
 
     def _get_estimated_reward(self, feats: np.ndarray) -> float:
-        return np.dot(feats, self.mv_normal_rewards.mean)  # type: ignore
+        if self.sample_weights:
+            weights = self.rng.multivariate_normal(
+                self.mv_normal_rewards.mean,  # type: ignore[union-attr]
+                self.mv_normal_rewards.cov,  # type: ignore[union-attr]
+            )
+            return float(np.dot(feats, weights))
+        return float(np.dot(feats, self.mv_normal_rewards.mean))  # type: ignore[union-attr]
 
     def _should_attempt_estimation(self, term: bool, trunc: bool) -> bool:
         return (
@@ -1024,7 +1020,10 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         self.windowed_task_schedule.set_state(succ=success)
 
     def _get_estimator_info(self) -> Dict[str, Any]:
-        return {"posterior_updates": self.posterior_updates}
+        return {
+            "posterior_updates": self.posterior_updates,
+            "sample_weights": self.sample_weights,
+        }
 
     def estimate_rewards(self) -> bool:
         """
@@ -1133,10 +1132,6 @@ class ConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
 
     def _initialize_segment_features(self):
         return np.zeros(shape=(self.mdim))
-
-    def _accumulate_step_features(self, latest_step_feats: transform.Example):
-        # Additive: sum feature vectors
-        self._segment_features += latest_step_feats.observation
 
     def _has_estimate(self) -> bool:
         return self.weights is not None
@@ -1278,18 +1273,8 @@ class RecurringConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
     def _initialize_segment_features(self):
         return np.zeros(shape=(self.mdim))
 
-    def _accumulate_step_features(self, latest_step_feats: transform.Example):
-        # Additive: sum feature vectors
-        self._segment_features += latest_step_feats.observation
-
     def _has_estimate(self) -> bool:
         return self.weights is not None
-
-    def _get_features_for_estimation(
-        self, latest_step_feats: transform.Example
-    ) -> np.ndarray:
-        # Use latest step features, not accumulated
-        return latest_step_feats.observation  # type: ignore
 
     def _should_buffer_when_estimated(self) -> bool:
         # Continue buffering for continual learning

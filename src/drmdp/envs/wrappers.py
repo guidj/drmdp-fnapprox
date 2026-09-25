@@ -1,5 +1,5 @@
 import copy
-from typing import Any, Dict, Hashable, Optional, Sequence
+from typing import Any, Dict, Hashable, Optional, Sequence, Tuple
 
 import gymnasium as gym
 import numpy as np
@@ -252,10 +252,11 @@ class TilesObsWrapper(gym.ObservationWrapper):
         self.hash_dim = (
             hash_dim if hash_dim and self.tiles.max_size > hash_dim else None
         )
+        obs_dim = self.hash_dim or self.tiles.max_size
         self.observation_space = gym.spaces.Box(
             low=0,
             high=1,
-            shape=self.hash_dim or self.tiles.max_size,
+            shape=(obs_dim,),
             dtype=np.int64,
         )
 
@@ -265,6 +266,234 @@ class TilesObsWrapper(gym.ObservationWrapper):
         if self.hash_dim:
             xs = mathutils.hashtrick(xs, dim=self.hash_dim)
         return xs
+
+
+class PotentialShapingWrapper(gym.Wrapper):
+    """Potential-based reward shaping: r' = r + gamma * Phi(s') - Phi(s).
+
+    Preserves the optimal policy (Ng, Harada & Russell 1999).
+    Subclasses implement ``_potential(obs)`` for each environment.
+    """
+
+    def __init__(self, env: gym.Env, gamma: float = 1.0):
+        super().__init__(env)
+        self.gamma = gamma
+        self._prev_potential: float = 0.0
+
+    def _potential(self, obs: np.ndarray) -> float:
+        raise NotImplementedError
+
+    def reset(self, **kwargs):
+        obs, info = super().reset(**kwargs)
+        self._prev_potential = self._potential(obs)
+        return obs, info
+
+    def step(self, action):
+        obs, reward, term, trunc, info = super().step(action)
+        if not term:
+            potential = self._potential(obs)
+            shaping = self.gamma * potential - self._prev_potential
+            self._prev_potential = potential
+            reward = reward + shaping
+        return obs, reward, term, trunc, info
+
+
+class MountainCarHeightShaping(PotentialShapingWrapper):
+    """Phi(s) = sin(3 * position).
+
+    The MountainCar hill height function, producing rewards
+    proportional to altitude gain.  Reward range stays moderate
+    because sin is bounded to [-1, 1].
+    """
+
+    def _potential(self, obs: np.ndarray) -> float:
+        position = float(obs[0])
+        return float(np.sin(3.0 * position))
+
+
+class AcrobotTipHeightShaping(PotentialShapingWrapper):
+    """Phi(s) = -(cos(theta1) + cos(theta1 + theta2)).
+
+    Negative tip-height of the second link, so the agent is
+    rewarded for swinging the tip upward.  Bounded to [-2, 2].
+    """
+
+    def _potential(self, obs: np.ndarray) -> float:
+        cos_theta1 = float(obs[0])
+        sin_theta1 = float(obs[1])
+        cos_theta2 = float(obs[2])
+        sin_theta2 = float(obs[3])
+        cos_sum = cos_theta1 * cos_theta2 - sin_theta1 * sin_theta2
+        return float(-(cos_theta1 + cos_sum))
+
+
+class AdditiveShapingWrapper(gym.Wrapper):
+    """Additive reward bonus: r' = r + scale * bonus(obs).
+
+    Unlike PBRS, this changes the optimal policy but creates
+    substantial state-dependent reward variation for testing
+    reward estimation quality.
+
+    The bonus is NOT applied on terminal steps so that
+    terminal-state zero-reward semantics are preserved.
+    """
+
+    def __init__(self, env: gym.Env, scale: float = 1.0):
+        super().__init__(env)
+        self.scale = scale
+
+    def _bonus(self, obs: np.ndarray) -> float:
+        raise NotImplementedError
+
+    def step(self, action):
+        obs, reward, term, trunc, info = super().step(action)
+        if not term:
+            reward = reward + self.scale * self._bonus(obs)
+        return obs, reward, term, trunc, info
+
+
+class MountainCarHeightBonus(AdditiveShapingWrapper):
+    """bonus(s) = sin(3 * position), scaled by constructor arg.
+
+    Creates position-dependent rewards: the car is rewarded for
+    being high on the hill.  Bounded to [-scale, +scale].
+    """
+
+    def _bonus(self, obs: np.ndarray) -> float:
+        return float(np.sin(3.0 * float(obs[0])))
+
+
+class AcrobotTipHeightBonus(AdditiveShapingWrapper):
+    """bonus(s) = -(cos(θ1) + cos(θ1+θ2)), scaled by constructor arg.
+
+    Rewards the tip being high.  Bounded to [-2·scale, +2·scale].
+    """
+
+    def _bonus(self, obs: np.ndarray) -> float:
+        cos_theta1 = float(obs[0])
+        sin_theta1 = float(obs[1])
+        cos_theta2 = float(obs[2])
+        sin_theta2 = float(obs[3])
+        cos_sum = cos_theta1 * cos_theta2 - sin_theta1 * sin_theta2
+        return float(-(cos_theta1 + cos_sum))
+
+
+class ActionCostShapingWrapper(gym.Wrapper):
+    """Action-dependent reward bonus: different actions incur different costs.
+
+    Creates non-constant, action-dependent rewards that any
+    action-aware count-based encoding (tile coding, OHE) can
+    represent exactly.
+
+    The bonus is NOT applied on terminal steps so that
+    terminal-state zero-reward semantics are preserved.
+    """
+
+    def __init__(self, env: gym.Env, action_costs: Sequence[float]):
+        super().__init__(env)
+        self.action_costs = np.array(action_costs, dtype=np.float64)
+
+    def step(self, action):
+        obs, reward, term, trunc, info = super().step(action)
+        if not term:
+            reward = reward + self.action_costs[action]
+        return obs, reward, term, trunc, info
+
+
+class GaussianRewardNoiseWrapper(gym.Wrapper):
+    """Adds clipped Gaussian noise to rewards.
+
+    Noise is sampled from N(0, scale * _variance(obs, action)) and
+    clipped to the 95% energy interval [-clip_std * sigma, clip_std * sigma].
+    Subclasses implement ``_variance(obs, action)`` for state/action-dependent
+    noise magnitude.
+
+    Noise is NOT applied on terminal steps so that
+    terminal-state zero-reward semantics are preserved.
+    """
+
+    def __init__(
+        self,
+        env: gym.Env,
+        scale: float = 1.0,
+        clip_std: float = 1.96,
+        seed: Optional[int] = None,
+    ):
+        super().__init__(env)
+        self.scale = scale
+        self.clip_std = clip_std
+        self._rng = np.random.default_rng(seed)
+
+    def _variance(self, obs: np.ndarray, action: int) -> float:
+        raise NotImplementedError
+
+    def step(self, action):
+        obs, reward, term, trunc, info = super().step(action)
+        if not term:
+            variance = self._variance(obs, action)
+            sigma = np.sqrt(self.scale * variance)
+            noise = self._rng.normal(0.0, sigma)
+            bound = self.clip_std * sigma
+            noise = float(np.clip(noise, -bound, bound))
+            reward = reward + noise
+        return obs, reward, term, trunc, info
+
+
+class MountainCarGaussianReward(GaussianRewardNoiseWrapper):
+    """Variance depends on hill position: 0.5 + 0.5 * |sin(3*pos)|.
+
+    More noise near hill peaks, less in the valley.
+    """
+
+    def _variance(self, obs: np.ndarray, action: int) -> float:
+        del action
+        position = float(obs[0])
+        return float(0.5 + 0.5 * abs(np.sin(3.0 * position)))
+
+
+class AcrobotGaussianReward(GaussianRewardNoiseWrapper):
+    """Variance depends on tip height: 0.5 + 0.5 * |tip_height / 2|.
+
+    More noise when the second link is swung high.
+    """
+
+    def _variance(self, obs: np.ndarray, action: int) -> float:
+        del action
+        cos_theta1 = float(obs[0])
+        sin_theta1 = float(obs[1])
+        cos_theta2 = float(obs[2])
+        sin_theta2 = float(obs[3])
+        cos_sum = cos_theta1 * cos_theta2 - sin_theta1 * sin_theta2
+        tip_height = -(cos_theta1 + cos_sum)
+        return 0.5 + 0.5 * abs(tip_height / 2.0)
+
+
+class GridWorldGaussianReward(GaussianRewardNoiseWrapper):
+    """Variance depends on Manhattan distance from the goal.
+
+    More noise far from the goal, less near it.
+    ``goal_pos`` is the (row, col) of the goal cell.
+    ``max_dist`` is the normalizing constant (e.g. nrows + ncols - 2).
+    """
+
+    def __init__(
+        self,
+        env: gym.Env,
+        goal_pos: Tuple[int, int],
+        max_dist: float,
+        scale: float = 1.0,
+        clip_std: float = 1.96,
+        seed: Optional[int] = None,
+    ):
+        super().__init__(env, scale=scale, clip_std=clip_std, seed=seed)
+        self.goal_pos = np.array(goal_pos, dtype=np.float64)
+        self.max_dist = float(max_dist)
+
+    def _variance(self, obs: np.ndarray, action: int) -> float:
+        del action
+        dist = float(np.sum(np.abs(obs - self.goal_pos)))
+        normalized = dist / self.max_dist if self.max_dist > 0 else 0.0
+        return 0.5 + 0.5 * normalized
 
 
 def wrap(env: gym.Env, wrapper: Optional[str] = None, **kwargs):

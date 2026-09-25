@@ -646,3 +646,308 @@ def test_data_buffer_max_capacity_max_size_bytes_with_latest_acc_mode():
     assert buffer.buffer == [1]
     assert buffer.size() == 1
     assert buffer.size_bytes() == 32
+
+
+class TestLeastLfaFeatureAccumulation:
+    """Tests segment feature accumulation (learning) and per-step
+    reward prediction (inference) in LeastLfaGenerativeRewardWrapper."""
+
+    def _make_wrapper(self, term_steps, delay):
+        env = DummyEnv(term_steps=term_steps)
+        ft_op = DummyFTOp(env)
+        delayed = rewdelay.DelayedRewardWrapper(env, rewdelay.FixedDelay(delay=delay))
+        wrapper = rewdelay.LeastLfaGenerativeRewardWrapper(
+            delayed,
+            ft_op=ft_op,
+            attempt_estimation_episode=1,
+            use_bias=False,
+            check_factors=False,
+        )
+        return wrapper
+
+    def _force_estimate(self, wrapper):
+        """Run enough episodes to buffer data, then force estimation."""
+        mdim = wrapper.mdim
+        while wrapper.est_buffer.size() < mdim:
+            wrapper.reset()
+            done = False
+            while not done:
+                _, _, term, trunc, _ = wrapper.step(0)
+                done = term or trunc
+        wrapper.estimate_rewards()
+        assert wrapper.weights is not None
+
+    def test_segment_features_reset_before_estimation(self):
+        """Before estimation, _segment_features resets at segment boundaries."""
+        wrapper = self._make_wrapper(term_steps=8, delay=2)
+        wrapper.reset()
+
+        # DummyFTOp returns [0.5, -0.5, 0.5, -0.5] for every step
+        per_step = np.array([0.5, -0.5, 0.5, -0.5])
+
+        # Step 1 of segment 0: accumulate
+        wrapper.step(0)
+        np.testing.assert_allclose(wrapper._segment_features, per_step)
+
+        # Step 2 of segment 0 (segment end): buffer and reset
+        wrapper.step(0)
+        np.testing.assert_allclose(wrapper._segment_features, np.zeros(4), atol=1e-10)
+
+        # Step 1 of segment 1: fresh accumulation
+        wrapper.step(0)
+        np.testing.assert_allclose(wrapper._segment_features, per_step)
+
+    def test_segment_features_stop_accumulating_after_estimation(self):
+        """For one-shot estimators, _segment_features stops accumulating
+        after estimation since the result is never buffered."""
+        wrapper = self._make_wrapper(term_steps=8, delay=2)
+        self._force_estimate(wrapper)
+
+        wrapper.reset()
+        for _ in range(8):
+            wrapper.step(0)
+            np.testing.assert_allclose(
+                wrapper._segment_features,
+                np.zeros(4),
+                atol=1e-10,
+            )
+
+    def test_predicted_reward_is_per_step_after_estimation(self):
+        """After estimation, each step returns the per-step reward
+        (not a cumulative sum)."""
+        wrapper = self._make_wrapper(term_steps=8, delay=2)
+        self._force_estimate(wrapper)
+        weights = wrapper.weights
+
+        per_step = np.array([0.5, -0.5, 0.5, -0.5])
+        per_step_reward = float(np.dot(per_step, weights))
+
+        wrapper.reset()
+        rewards = []
+        for _ in range(8):
+            _, reward, _, _, _ = wrapper.step(0)
+            rewards.append(reward)
+
+        for step_idx, reward in enumerate(rewards):
+            np.testing.assert_allclose(
+                reward,
+                per_step_reward,
+                atol=1e-6,
+                err_msg=f"step {step_idx}: reward should be per-step, not cumulative",
+            )
+
+    def test_predicted_reward_constant_across_segments(self):
+        """After estimation, reward is the same per-step value
+        across segment boundaries."""
+        wrapper = self._make_wrapper(term_steps=8, delay=2)
+        self._force_estimate(wrapper)
+        weights = wrapper.weights
+        per_step = np.array([0.5, -0.5, 0.5, -0.5])
+        per_step_reward = float(np.dot(per_step, weights))
+
+        wrapper.reset()
+        # Segment 0: steps 1-2
+        _, rew_seg0_step1, _, _, _ = wrapper.step(0)
+        _, rew_seg0_step2, _, _, _ = wrapper.step(0)
+        # Segment 1: steps 3-4
+        _, rew_seg1_step1, _, _, _ = wrapper.step(0)
+        _, rew_seg1_step2, _, _, _ = wrapper.step(0)
+
+        np.testing.assert_allclose(rew_seg0_step1, per_step_reward, atol=1e-6)
+        np.testing.assert_allclose(rew_seg0_step2, per_step_reward, atol=1e-6)
+        np.testing.assert_allclose(rew_seg1_step1, per_step_reward, atol=1e-6)
+        np.testing.assert_allclose(rew_seg1_step2, per_step_reward, atol=1e-6)
+
+
+class DiscreteDummyFTOp(transform.FTOp):
+    """Returns a discrete observation index (cycles through 0..n-1)."""
+
+    def __init__(self, env: gym.Env, num_features: int = 4):
+        super().__init__(
+            transform.ExampleSpace(
+                observation_space=env.observation_space, action_space=env.action_space
+            )
+        )
+        if not isinstance(env.action_space, gym.spaces.Discrete):
+            raise ValueError(f"Action space must be Discrete. Got {env.action_space}")
+        self.num_features = num_features
+        self._output_space = transform.ExampleSpace(
+            observation_space=spaces.Discrete(num_features),
+            action_space=env.action_space,
+        )
+        self._call_count = 0
+
+    def apply(self, example: transform.Example) -> transform.Example:
+        idx = self._call_count % self.num_features
+        self._call_count += 1
+        return transform.Example(observation=idx, action=example.action)
+
+    @property
+    def output_space(self):
+        return self._output_space
+
+    def reset_counter(self):
+        self._call_count = 0
+
+
+class TestDiscretisedLeastLfaInference:
+    """Tests per-step reward prediction in DiscretisedLeastLfaGenerativeRewardWrapper."""
+
+    def _make_wrapper(self, term_steps, delay, num_features=4):
+        env = DummyEnv(term_steps=term_steps)
+        ft_op = DiscreteDummyFTOp(env, num_features=num_features)
+        delayed = rewdelay.DelayedRewardWrapper(env, rewdelay.FixedDelay(delay=delay))
+        wrapper = rewdelay.DiscretisedLeastLfaGenerativeRewardWrapper(
+            delayed,
+            ft_op=ft_op,
+            attempt_estimation_episode=1,
+            use_bias=False,
+            check_factors=False,
+        )
+        return wrapper
+
+    def _force_estimate(self, wrapper):
+        mdim = wrapper.mdim
+        while wrapper.est_buffer.size() < mdim:
+            wrapper.reset()
+            done = False
+            while not done:
+                _, _, term, trunc, _ = wrapper.step(0)
+                done = term or trunc
+        wrapper.estimate_rewards()
+        assert wrapper.weights is not None
+
+    def test_predicted_reward_is_per_step_after_estimation(self):
+        """After estimation, each step returns a per-step reward (not cumulative)."""
+        wrapper = self._make_wrapper(term_steps=8, delay=2)
+        self._force_estimate(wrapper)
+        weights = wrapper.weights
+
+        wrapper.reset()
+        rewards = []
+        for _ in range(8):
+            _, reward, _, _, _ = wrapper.step(0)
+            rewards.append(reward)
+
+        for step_idx, reward in enumerate(rewards):
+            np.testing.assert_allclose(
+                reward,
+                weights[step_idx % len(weights)],
+                atol=1e-6,
+                err_msg=f"step {step_idx}: reward should be per-step",
+            )
+
+    def test_predicted_reward_constant_across_segments(self):
+        """Reward values do not grow across segment boundaries."""
+        wrapper = self._make_wrapper(term_steps=8, delay=2)
+        self._force_estimate(wrapper)
+
+        wrapper.reset()
+        rewards = []
+        for _ in range(8):
+            _, reward, _, _, _ = wrapper.step(0)
+            rewards.append(reward)
+
+        # Rewards should not grow — each should be a single weight value
+        for reward in rewards:
+            assert abs(reward) <= np.max(np.abs(wrapper.weights)) + 1e-6
+
+
+class TestBayesSegmentAccumulationAfterEstimation:
+    """Continual learners keep accumulating and resetting _segment_features
+    at segment boundaries after estimation (needed for posterior updates)."""
+
+    def _make_wrapper(self, term_steps, delay):
+        env = DummyEnv(term_steps=term_steps)
+        ft_op = DummyFTOp(env)
+        delayed = rewdelay.DelayedRewardWrapper(env, rewdelay.FixedDelay(delay=delay))
+        wrapper = rewdelay.BayesLeastLfaGenerativeRewardWrapper(
+            delayed,
+            ft_op=ft_op,
+            init_attempt_estimation_episode=1,
+            use_bias=False,
+            check_factors=False,
+        )
+        return wrapper
+
+    def _force_estimate(self, wrapper):
+        mdim = wrapper.mdim
+        while wrapper.est_buffer.size() < mdim:
+            wrapper.reset()
+            done = False
+            while not done:
+                _, _, term, trunc, _ = wrapper.step(0)
+                done = term or trunc
+        wrapper.estimate_rewards()
+        assert wrapper._has_estimate()
+
+    def test_segment_features_accumulate_and_reset_after_estimation(self):
+        """After estimation, _segment_features still accumulates within
+        segments and resets at segment boundaries for continual learning."""
+        wrapper = self._make_wrapper(term_steps=8, delay=2)
+        self._force_estimate(wrapper)
+
+        per_step = np.array([0.5, -0.5, 0.5, -0.5])
+
+        wrapper.reset()
+        # Step 1 of segment 0
+        wrapper.step(0)
+        np.testing.assert_allclose(wrapper._segment_features, per_step)
+
+        # Step 2 of segment 0 (segment end) — resets
+        wrapper.step(0)
+        np.testing.assert_allclose(wrapper._segment_features, np.zeros(4), atol=1e-10)
+
+        # Step 1 of segment 1 — fresh accumulation
+        wrapper.step(0)
+        np.testing.assert_allclose(wrapper._segment_features, per_step)
+
+
+class TestBayesSampleWeights:
+    def _make_wrapper(self, term_steps, delay, sample_weights):
+        base = DummyEnv(term_steps=term_steps)
+        delayed = rewdelay.DelayedRewardWrapper(base, rewdelay.FixedDelay(delay=delay))
+        ft_op = DummyFTOp(base)
+        wrapper = rewdelay.BayesLeastLfaGenerativeRewardWrapper(
+            env=delayed,
+            ft_op=ft_op,
+            init_attempt_estimation_episode=1,
+            sample_weights=sample_weights,
+        )
+        return wrapper
+
+    def _force_estimate(self, wrapper):
+        mdim = wrapper.mdim
+        while wrapper.est_buffer.size() < mdim:
+            wrapper.reset()
+            done = False
+            while not done:
+                _, _, term, trunc, _ = wrapper.step(0)
+                done = term or trunc
+        wrapper.estimate_rewards()
+        assert wrapper._has_estimate()
+
+    def test_mean_mode_is_deterministic(self):
+        wrapper = self._make_wrapper(term_steps=8, delay=2, sample_weights=False)
+        self._force_estimate(wrapper)
+        feats = np.array([0.5, -0.5, 0.5, -0.5])
+        feats_with_est = wrapper._get_estimation_inputs(feats)
+        rewards = [wrapper._get_estimated_reward(feats_with_est) for _ in range(20)]
+        assert all(r == rewards[0] for r in rewards)
+
+    def test_sample_mode_is_stochastic(self):
+        wrapper = self._make_wrapper(term_steps=8, delay=2, sample_weights=True)
+        self._force_estimate(wrapper)
+        feats = np.array([0.5, -0.5, 0.5, -0.5])
+        feats_with_est = wrapper._get_estimation_inputs(feats)
+        rewards = [wrapper._get_estimated_reward(feats_with_est) for _ in range(50)]
+        assert not all(r == rewards[0] for r in rewards)
+
+    def test_estimator_info_includes_sample_weights(self):
+        wrapper = self._make_wrapper(term_steps=8, delay=2, sample_weights=True)
+        info = wrapper._get_estimator_info()
+        assert info["sample_weights"] is True
+
+        wrapper_off = self._make_wrapper(term_steps=8, delay=2, sample_weights=False)
+        info_off = wrapper_off._get_estimator_info()
+        assert info_off["sample_weights"] is False

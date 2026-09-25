@@ -4,6 +4,9 @@ import numpy as np
 
 
 def rmse(v_pred: np.ndarray, v_true: np.ndarray, axis: int) -> float:
+    """Compute root mean squared error between `v_pred` and `v_true`,
+    averaging squared errors along `axis`.
+    """
     if np.shape(v_pred) != np.shape(v_true):
         raise ValueError(
             f"Tensors have different shapes: {np.shape(v_pred)} != {np.shape(v_true)}"

@@ -11,6 +11,7 @@ DEFAULT_GW_GRID = ["oooooooooooo", "oooooooooooo", "oooooooooooo", "sxxxxxxxxxxg
 DEFAULT_RG_CURE = ["red", "green", "red", "green", "wait", "green"]
 DEFAULT_ICE_MAP = "4x4"
 DEFAULT_MC_MAX_EPISODE_STEPS = 10_000
+DEFAULT_ACROBOT_MAX_EPISODE_STEPS = 500
 
 
 class GridWorldObsAsVectorWrapper(gym.ObservationWrapper):
@@ -78,7 +79,7 @@ class RedgreenObsAsVectorWrapper(gym.ObservationWrapper):
 
 
 def make(env_name: str, wrapper: Optional[str] = None, **kwargs) -> gym.Env:
-    if env_name == "GridWorld-v0":
+    if env_name.startswith("GridWorld-"):
         grid = kwargs.get("grid", DEFAULT_GW_GRID)
         size, cliffs, exits, start = gridworld.parse_grid_from_text(grid)
         env = GridWorldObsAsVectorWrapper(
@@ -102,6 +103,11 @@ def make(env_name: str, wrapper: Optional[str] = None, **kwargs) -> gym.Env:
             "max_episode_steps", DEFAULT_MC_MAX_EPISODE_STEPS
         )
         env = gym.make("MountainCar-v0", max_episode_steps=max_episode_steps)
+    elif env_name == "Acrobot-v1":
+        max_episode_steps = kwargs.get(
+            "max_episode_steps", DEFAULT_ACROBOT_MAX_EPISODE_STEPS
+        )
+        env = gym.make("Acrobot-v1", max_episode_steps=max_episode_steps)
     else:
         raise ValueError(f"Environment `{env_name}` unknown")
     return wrappers.wrap(env, wrapper=wrapper, **kwargs)

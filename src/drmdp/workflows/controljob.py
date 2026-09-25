@@ -14,6 +14,12 @@ import ray
 from drmdp import core, task
 from drmdp.workflows import controlexps
 
+EM_PS = "electric-motor"
+GW_PS = "grid-world"
+IL_PS = "illustration"
+GIL_PS = "gaussian-illustration"
+PS_SET = [EM_PS, GW_PS, IL_PS, GIL_PS]
+
 
 @dataclasses.dataclass(frozen=True)
 class ControlPipelineArgs:
@@ -22,6 +28,8 @@ class ControlPipelineArgs:
     """
 
     # problem args
+    problem_set: str
+    grids_file: Optional[str]
     num_runs: int
     num_episodes: int
     output_dir: str
@@ -52,6 +60,8 @@ def wait_till_completion(tasks_refs):
 
 
 def create_tasks(
+    problem_set: str,
+    config_args: Mapping[str, Any],
     num_runs: int,
     num_episodes: int,
     output_dir: str,
@@ -63,7 +73,17 @@ def create_tasks(
     """
     Runs numerical experiments on policy evaluation.
     """
-    experiments = parse_experiments(specs=controlexps.experiment_specs())
+    if problem_set == EM_PS:
+        specs = controlexps.electric_motor_experiment_specs()
+    elif problem_set == GW_PS:
+        grid_specs = controlexps.load_solvable_grids(path=config_args["grids_file"])
+        specs = controlexps.grid_experiments_specs(grid_specs=grid_specs)
+    elif problem_set == IL_PS:
+        specs = controlexps.illustration_experiment_specs()
+    elif problem_set == GIL_PS:
+        specs = controlexps.gaussian_illustration_experiment_specs()
+
+    experiments = parse_experiments(specs=specs)
     experiment_instances = list(
         task.generate_experiments_instances(
             experiments=experiments,
@@ -104,6 +124,7 @@ def parse_experiments(
                         name=spec["name"],
                         args=spec["args"],
                         feats_spec=feat_tfx_spec,
+                        metadata=spec.get("metadata"),
                     ),
                     problem_spec=core.ProblemSpec(**problem_spec),
                     epochs=spec["epochs"],
@@ -142,6 +163,8 @@ def main(args: ControlPipelineArgs):
     ray_env: Dict[str, Any] = {}
     logging.info("Ray environment: %s", ray_env)
     experiment_instances = create_tasks(
+        problem_set=args.problem_set,
+        config_args={"grids_file": args.grids_file},
         num_runs=args.num_runs,
         num_episodes=args.num_episodes,
         output_dir=args.output_dir,
@@ -169,6 +192,8 @@ def parse_args() -> ControlPipelineArgs:
     Parses program arguments.
     """
     arg_parser = argparse.ArgumentParser()
+    arg_parser.add_argument("--problem-set", type=str, required=True, choices=PS_SET)
+    arg_parser.add_argument("--grids-file", type=str, default=None)
     arg_parser.add_argument("--num-runs", type=int, required=True)
     arg_parser.add_argument("--num-episodes", type=int, required=True)
     arg_parser.add_argument("--output-dir", type=str, required=True)

@@ -1,9 +1,12 @@
 import gymnasium as gym
 import numpy as np
+import pytest
 from gymnasium import spaces
 from sklearn import cluster, mixture, model_selection
 
+from drmdp import constants, envs
 from drmdp.envs import wrappers
+from drmdp.workflows import controlexps
 
 
 class BoxEnv(gym.Env):
@@ -145,3 +148,316 @@ def test_flat_grid_coord_obs_wrapper():
     np.testing.assert_array_equal(wrapped_env.observation(np.array([1, 0, 1])), 5)
     np.testing.assert_array_equal(wrapped_env.observation(np.array([1, 1, 0])), 6)
     np.testing.assert_array_equal(wrapped_env.observation(np.array([1, 1, 1])), 7)
+
+
+class TestPotentialShapingWrapper:
+    def test_non_terminal_applies_shaping(self):
+        env = gym.make("MountainCar-v0", max_episode_steps=200)
+        shaped = wrappers.MountainCarHeightShaping(env, gamma=0.99)
+        obs, _ = shaped.reset(seed=0)
+        _, rew, _, _, _ = shaped.step(0)
+        assert rew != -1.0
+        shaped.close()
+
+    def test_shaping_value(self):
+        env = gym.make("MountainCar-v0", max_episode_steps=200)
+        shaped = wrappers.MountainCarHeightShaping(env, gamma=1.0)
+        obs, _ = shaped.reset(seed=0)
+        prev_pot = np.sin(3.0 * obs[0])
+        obs_next, rew, _, _, _ = shaped.step(0)
+        next_pot = np.sin(3.0 * obs_next[0])
+        expected = -1.0 + (next_pot - prev_pot)
+        assert rew == pytest.approx(expected, abs=1e-6)
+        shaped.close()
+
+
+class TestAcrobotTipHeightShaping:
+    def test_applies_shaping(self):
+        env = gym.make("Acrobot-v1", max_episode_steps=500)
+        shaped = wrappers.AcrobotTipHeightShaping(env, gamma=0.99)
+        shaped.reset(seed=0)
+        _, rew, _, _, _ = shaped.step(0)
+        assert rew != -1.0
+        shaped.close()
+
+
+class TestAdditiveShapingWrapper:
+    def test_mountain_car_height_bonus(self):
+        env = gym.make("MountainCar-v0", max_episode_steps=200)
+        shaped = wrappers.MountainCarHeightBonus(env, scale=2.0)
+        shaped.reset(seed=0)
+        obs_next, rew, _, _, _ = shaped.step(0)
+        expected = -1.0 + 2.0 * np.sin(3.0 * obs_next[0])
+        assert rew == pytest.approx(expected, abs=1e-6)
+        shaped.close()
+
+    def test_scale_zero_gives_original(self):
+        env = gym.make("MountainCar-v0", max_episode_steps=200)
+        shaped = wrappers.MountainCarHeightBonus(env, scale=0.0)
+        shaped.reset(seed=0)
+        _, rew, _, _, _ = shaped.step(0)
+        assert rew == pytest.approx(-1.0)
+        shaped.close()
+
+    def test_acrobot_tip_height_bonus(self):
+        env = gym.make("Acrobot-v1", max_episode_steps=500)
+        shaped = wrappers.AcrobotTipHeightBonus(env, scale=1.0)
+        shaped.reset(seed=0)
+        obs_next, rew, _, _, _ = shaped.step(0)
+        ct1, st1, ct2, st2 = obs_next[0], obs_next[1], obs_next[2], obs_next[3]
+        cos_sum = ct1 * ct2 - st1 * st2
+        expected = -1.0 + (-(ct1 + cos_sum))
+        assert rew == pytest.approx(expected, abs=1e-6)
+        shaped.close()
+
+
+class TestActionCostShapingWrapper:
+    def test_per_action_cost(self):
+        env = gym.make("Acrobot-v1", max_episode_steps=500)
+        shaped = wrappers.ActionCostShapingWrapper(env, action_costs=[0.0, 0.5, 1.0])
+        shaped.reset(seed=0)
+        _, r0, _, _, _ = shaped.step(0)
+        shaped.reset(seed=0)
+        _, r1, _, _, _ = shaped.step(1)
+        shaped.reset(seed=0)
+        _, r2, _, _, _ = shaped.step(2)
+        assert r0 == pytest.approx(-1.0)
+        assert r1 == pytest.approx(-0.5)
+        assert r2 == pytest.approx(0.0)
+        shaped.close()
+
+
+class TestWrapFunction:
+    def test_none_returns_env(self):
+        env = envs.make("MountainCar-v0", max_episode_steps=200)
+        assert wrappers.wrap(env, wrapper=None) is env
+        env.close()
+
+    def test_scale(self):
+        env = envs.make("MountainCar-v0", max_episode_steps=200)
+        wrapped = wrappers.wrap(env, wrapper=constants.SCALE)
+        assert isinstance(wrapped, wrappers.ScaleObsWrapper)
+        obs, _ = wrapped.reset(seed=0)
+        assert np.all(obs >= 0) and np.all(obs <= 1)
+        wrapped.close()
+
+    def test_tiles(self):
+        env = envs.make("MountainCar-v0", max_episode_steps=200)
+        wrapped = wrappers.wrap(env, wrapper=constants.TILES, tiling_dim=4)
+        obs, _ = wrapped.reset(seed=0)
+        assert np.all((obs == 0) | (obs == 1))
+        active_tiles = np.sum(obs)
+        assert active_tiles > 0
+        wrapped.close()
+
+    def test_unknown_raises(self):
+        env = envs.make("MountainCar-v0", max_episode_steps=200)
+        with pytest.raises(ValueError, match="unknown"):
+            wrappers.wrap(env, wrapper="nonexistent")
+        env.close()
+
+    def test_flat_grid_coord(self):
+        env = envs.make(
+            "GridWorld-MINES",
+            grid=controlexps.MINES_GW_GRID,
+            max_episode_steps=200,
+        )
+        wrapped = wrappers.wrap(env, wrapper=constants.FLAT_GRID_COORD, ohe=False)
+        obs, _ = wrapped.reset(seed=0)
+        assert isinstance(obs, (int, np.integer))
+        assert obs >= 0
+        wrapped.close()
+
+
+class TestTilesObsWrapper:
+    def test_output_is_binary(self):
+        env = envs.make("MountainCar-v0", max_episode_steps=200)
+        wrapped = wrappers.TilesObsWrapper(env, tiling_dim=4)
+        obs, _ = wrapped.reset(seed=0)
+        assert np.all((obs == 0) | (obs == 1))
+        wrapped.close()
+
+    def test_active_tile_count_equals_num_tilings(self):
+        env = envs.make("MountainCar-v0", max_episode_steps=200)
+        wrapped = wrappers.TilesObsWrapper(env, tiling_dim=4)
+        obs, _ = wrapped.reset(seed=0)
+        num_tilings = wrapped.tiles.num_tilings
+        assert np.sum(obs) == num_tilings
+        wrapped.close()
+
+    def test_different_states_produce_different_tiles(self):
+        env = envs.make("MountainCar-v0", max_episode_steps=200)
+        wrapped = wrappers.TilesObsWrapper(env, tiling_dim=4)
+        wrapped.reset(seed=0)
+        obs1, _, _, _, _ = wrapped.step(0)
+        for _ in range(20):
+            wrapped.step(2)
+        obs2, _, _, _, _ = wrapped.step(2)
+        assert not np.array_equal(obs1, obs2)
+        wrapped.close()
+
+    def test_observation_space_shape(self):
+        env = envs.make("MountainCar-v0", max_episode_steps=200)
+        wrapped = wrappers.TilesObsWrapper(env, tiling_dim=3)
+        obs, _ = wrapped.reset(seed=0)
+        assert obs.shape == wrapped.observation_space.shape
+        wrapped.close()
+
+    def test_step_returns_valid_obs(self):
+        env = envs.make("MountainCar-v0", max_episode_steps=200)
+        wrapped = wrappers.TilesObsWrapper(env, tiling_dim=4)
+        wrapped.reset(seed=0)
+        obs, rew, term, trunc, info = wrapped.step(0)
+        assert np.all((obs == 0) | (obs == 1))
+        assert isinstance(rew, float)
+        wrapped.close()
+
+
+class _ConstantVarianceWrapper(wrappers.GaussianRewardNoiseWrapper):
+    """Constant variance=1.0 for testing base class behaviour."""
+
+    def _variance(self, obs: np.ndarray, action: int) -> float:
+        return 1.0
+
+
+class TestGaussianRewardNoiseWrapper:
+    def test_noise_alters_reward(self):
+        env = BoxEnv(dim=1, term_steps=100)
+        noisy = _ConstantVarianceWrapper(env, scale=1.0, seed=42)
+        noisy.reset()
+        rewards = []
+        for _ in range(50):
+            _, rew, term, trunc, _ = noisy.step(0)
+            if term or trunc:
+                break
+            rewards.append(rew)
+        assert not all(r == rewards[0] for r in rewards)
+
+    def test_scale_zero_gives_original(self):
+        env = BoxEnv(dim=1, term_steps=100)
+        noisy = _ConstantVarianceWrapper(env, scale=0.0, seed=42)
+        noisy.reset()
+        _, rew, _, _, _ = noisy.step(0)
+        assert rew == pytest.approx(1.0)
+
+    def test_mean_noise_near_zero(self):
+        env = BoxEnv(dim=1, term_steps=600)
+        noisy = _ConstantVarianceWrapper(env, scale=1.0, seed=7)
+        noisy.reset()
+        noise_samples = []
+        for _ in range(500):
+            _, rew, term, trunc, _ = noisy.step(0)
+            if term or trunc:
+                break
+            noise_samples.append(rew - 1.0)
+        assert abs(np.mean(noise_samples)) < 0.3
+
+    def test_noise_is_clipped(self):
+        env = BoxEnv(dim=1, term_steps=600)
+        noisy = _ConstantVarianceWrapper(env, scale=1.0, clip_std=1.96, seed=0)
+        noisy.reset()
+        sigma = np.sqrt(1.0 * 1.0)
+        bound = 1.96 * sigma
+        for _ in range(500):
+            _, rew, term, trunc, _ = noisy.step(0)
+            if term or trunc:
+                break
+            noise = rew - 1.0
+            assert noise >= -bound - 1e-10
+            assert noise <= bound + 1e-10
+
+    def test_terminal_step_has_no_noise(self):
+        env = BoxEnv(dim=1, term_steps=1)
+        noisy = _ConstantVarianceWrapper(env, scale=5.0, seed=42)
+        noisy.reset()
+        _, rew, term, _, _ = noisy.step(0)
+        assert term is True
+        assert rew == pytest.approx(1.0)
+
+
+class TestMountainCarGaussianReward:
+    def test_variance_is_position_dependent(self):
+        wrapper = wrappers.MountainCarGaussianReward.__new__(
+            wrappers.MountainCarGaussianReward
+        )
+        obs_valley = np.array([-0.5, 0.0])
+        obs_peak = np.array([-np.pi / 6, 0.0])
+        var_valley = wrapper._variance(obs_valley, 0)
+        var_peak = wrapper._variance(obs_peak, 0)
+        assert var_valley >= 0.5
+        assert var_peak >= 0.5
+        assert var_valley != pytest.approx(var_peak)
+
+    def test_applies_noise(self):
+        env = gym.make("MountainCar-v0", max_episode_steps=200)
+        noisy = wrappers.MountainCarGaussianReward(env, scale=1.0, seed=42)
+        noisy.reset(seed=0)
+        rewards = []
+        for _ in range(50):
+            _, rew, _, _, _ = noisy.step(0)
+            rewards.append(rew)
+        assert not all(r == rewards[0] for r in rewards)
+        noisy.close()
+
+
+class TestAcrobotGaussianReward:
+    def test_variance_is_height_dependent(self):
+        wrapper = wrappers.AcrobotGaussianReward.__new__(wrappers.AcrobotGaussianReward)
+        # Both links hanging down: tip_height = -2, high abs value
+        obs_hanging = np.array([1.0, 0.0, 1.0, 0.0, 0.0, 0.0])
+        # Both links horizontal: tip_height ~ 0, low abs value
+        obs_horizontal = np.array([0.0, 1.0, 0.0, 1.0, 0.0, 0.0])
+        var_hanging = wrapper._variance(obs_hanging, 0)
+        var_horizontal = wrapper._variance(obs_horizontal, 0)
+        assert var_hanging > var_horizontal
+
+    def test_applies_noise(self):
+        env = gym.make("Acrobot-v1", max_episode_steps=500)
+        noisy = wrappers.AcrobotGaussianReward(env, scale=1.0, seed=42)
+        noisy.reset(seed=0)
+        rewards = []
+        for _ in range(50):
+            _, rew, term, trunc, _ = noisy.step(0)
+            if term or trunc:
+                break
+            rewards.append(rew)
+        assert not all(r == rewards[0] for r in rewards)
+        noisy.close()
+
+
+class TestGridWorldGaussianReward:
+    def test_variance_is_distance_dependent(self):
+        wrapper = wrappers.GridWorldGaussianReward.__new__(
+            wrappers.GridWorldGaussianReward
+        )
+        wrapper.goal_pos = np.array([5.0, 11.0])
+        wrapper.max_dist = 16.0
+        obs_near = np.array([5.0, 10.0])
+        obs_far = np.array([0.0, 0.0])
+        var_near = wrapper._variance(obs_near, 0)
+        var_far = wrapper._variance(obs_far, 0)
+        assert var_far > var_near
+
+    def test_applies_noise_in_grid_env(self):
+        env = envs.make(
+            "GridWorld-MINES",
+            grid=controlexps.MINES_GW_GRID,
+            max_episode_steps=200,
+        )
+        noisy = wrappers.GridWorldGaussianReward(
+            env,
+            goal_pos=(5, 11),
+            max_dist=16.0,
+            scale=1.0,
+            seed=42,
+        )
+        noisy.reset(seed=0)
+        rewards = []
+        for _ in range(20):
+            _, rew, term, trunc, _ = noisy.step(0)
+            if term or trunc:
+                break
+            rewards.append(rew)
+        assert len(rewards) > 0
+        assert not all(r == rewards[0] for r in rewards)
+        noisy.close()

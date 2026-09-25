@@ -10,6 +10,18 @@ import numpy as np
 from drmdp import algorithms, core, envs, logger, optsol, rewdelay, transform
 from drmdp.envs import wrappers
 
+REWARD_SHAPING_BUILDERS: Mapping[str, type] = {
+    "mountain-car-height": wrappers.MountainCarHeightBonus,
+    "acrobot-tip-height": wrappers.AcrobotTipHeightBonus,
+    "action-cost": wrappers.ActionCostShapingWrapper,
+}
+
+REWARD_NOISE_BUILDERS: Mapping[str, type] = {
+    "gaussian-mountain-car": wrappers.MountainCarGaussianReward,
+    "gaussian-acrobot": wrappers.AcrobotGaussianReward,
+    "gaussian-gridworld": wrappers.GridWorldGaussianReward,
+}
+
 DELAYS: Sequence[type[rewdelay.RewardDelay]] = (
     rewdelay.FixedDelay,
     rewdelay.UniformDelay,
@@ -63,15 +75,17 @@ def policy_control(exp_instance: core.ExperimentInstance):
     with logger.ExperimentLogger(
         log_dir=exp_instance.run_config.output_dir, experiment_instance=exp_instance
     ) as exp_logger:
-        returns = []
+        eval_returns: List[float] = []
         try:
             for episode, snapshot in enumerate(results):
-                returns.append(snapshot.returns)
                 if episode % exp_instance.run_config.log_episode_frequency == 0:
+                    eval_returns.append(
+                        evaluate_policy(proxied_env.proxy, algorithm.policy, rew_delay)
+                    )
                     exp_logger.log(
                         episode=episode,
                         steps=snapshot.steps,
-                        returns=np.mean(returns).item(),
+                        returns=np.mean(eval_returns).item(),
                         info={},
                     )
                     if exp_instance.export_model:
@@ -86,7 +100,7 @@ def policy_control(exp_instance: core.ExperimentInstance):
                 "\nReturns for run %d of %s:\n%s",
                 exp_instance.instance_id,
                 exp_instance.exp_id,
-                np.mean(returns),
+                np.mean(eval_returns),
             )
         except Exception as err:
             logging.error(
@@ -101,18 +115,62 @@ def policy_control(exp_instance: core.ExperimentInstance):
     env.close()
 
 
+def evaluate_policy(
+    env: gym.Env,
+    policy: core.PyPolicy,
+    rew_delay: Optional[rewdelay.RewardDelay],
+    num_episodes: int = 10,
+) -> float:
+    """Evaluate a policy greedily (epsilon=0) and return mean returns."""
+    returns = []
+    for idx in range(num_episodes):
+        obs, _ = env.reset(seed=idx)
+        episode_reward = 0.0
+        done = False
+        while not done:
+            delay = rew_delay.sample() if rew_delay else None
+            policy_step = policy.action(obs, epsilon=0.0, policy_state=(delay,))
+            actions = policy_step.info.get("actions", None) or (policy_step.action,)
+            for action in actions:
+                next_obs, reward, term, trunc, _ = env.step(action)
+                episode_reward += reward
+                obs = next_obs
+                if term or trunc:
+                    done = True
+                    break
+        returns.append(episode_reward)
+    return float(np.mean(returns))
+
+
 def create_env(name: str, args: Optional[Mapping[str, Any]]) -> core.ProxiedEnv:
     """
     Creates an env and a proxy.
     """
-    env = envs.make(
-        env_name=name,
-        **args if args else {},
-    )
-    proxy = envs.make(
-        env_name=name,
-        **args if args else {},
-    )
+    env_args = dict(args) if args else {}
+    shaping_config = env_args.pop("reward_shaping", None)
+    noise_config = env_args.pop("reward_noise", None)
+
+    env = envs.make(env_name=name, **env_args)
+    proxy = envs.make(env_name=name, **env_args)
+
+    if shaping_config:
+        shaping_name = shaping_config["name"]
+        shaping_args = shaping_config.get("args", {}) or {}
+        if shaping_name not in REWARD_SHAPING_BUILDERS:
+            raise ValueError(f"Unknown reward shaping: {shaping_name}")
+        shaping_cls = REWARD_SHAPING_BUILDERS[shaping_name]
+        env = shaping_cls(env, **shaping_args)
+        proxy = shaping_cls(proxy, **shaping_args)
+
+    if noise_config:
+        noise_name = noise_config["name"]
+        noise_args = noise_config.get("args", {}) or {}
+        if noise_name not in REWARD_NOISE_BUILDERS:
+            raise ValueError(f"Unknown reward noise: {noise_name}")
+        noise_cls = REWARD_NOISE_BUILDERS[noise_name]
+        env = noise_cls(env, **noise_args)
+        proxy = noise_cls(proxy, **noise_args)
+
     return core.ProxiedEnv(env=env, proxy=proxy)
 
 

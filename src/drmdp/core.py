@@ -102,7 +102,7 @@ class PyValueFnPolicy(PyPolicy):
         """
 
     @abc.abstractmethod
-    def step(self, action: ActType, scaled_gradients):
+    def step(self, action: ActType, gradients, scalar=None):
         """
         Updates the policy's value
         """
@@ -124,6 +124,7 @@ class EnvSpec:
     name: str
     args: Optional[Mapping[str, Any]]
     feats_spec: Sequence[Mapping[str, Any]]
+    metadata: Optional[Mapping[str, Any]] = None
 
 
 @dataclasses.dataclass(frozen=True)
