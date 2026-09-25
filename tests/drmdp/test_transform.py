@@ -3,7 +3,7 @@ from typing import Any, Optional, Sequence
 import numpy as np
 from gymnasium import spaces
 
-from drmdp import tiles, transform
+from drmdp import algorithms, tiles, transform
 
 
 def test_funcft():
@@ -550,6 +550,126 @@ def test_pipeline():
     assert_batch(output, expected)
 
 
+class TestTileIndices:
+    def test_tile_no_hash(self):
+        input_space = space(
+            obs_space=spaces.Box(arr([0, 0]), arr([1, 1])),
+            act_space=spaces.Discrete(2),
+        )
+        ftop = transform.TileObservationActionFT(input_space=input_space, tiling_dim=2)
+        result = ftop.apply(example(obs=arr([0.4, 0.2]), act=1))
+        assert result.indices is not None
+        np.testing.assert_array_equal(result.indices, np.nonzero(result.observation)[0])
+
+    def test_tile_with_hash(self):
+        input_space = space(
+            obs_space=spaces.Box(arr([0, 0, 0]), arr([1, 1, 1])),
+            act_space=spaces.Discrete(3),
+        )
+        ftop = transform.TileObservationActionFT(
+            input_space=input_space, tiling_dim=4, hash_dim=64
+        )
+        result = ftop.apply(example(obs=arr([0.4, 0.2, 0.8]), act=2))
+        assert result.indices is not None
+        reconstructed = np.bincount(result.indices, minlength=64).astype(
+            result.observation.dtype
+        )
+        np.testing.assert_array_equal(reconstructed, result.observation)
+
+    def test_splice_tile_no_hash(self):
+        input_space = space(
+            obs_space=spaces.Box(arr([0, 0]), arr([1, 1])),
+            act_space=spaces.Discrete(2),
+        )
+        ftop = transform.SpliceTileObservationActionFT(
+            input_space=input_space, tiling_dim=2
+        )
+        result = ftop.apply(example(obs=arr([0.3, 0.7]), act=0))
+        assert result.indices is not None
+        np.testing.assert_array_equal(result.indices, np.nonzero(result.observation)[0])
+
+    def test_splice_tile_with_hash(self):
+        input_space = space(
+            obs_space=spaces.Box(arr([0, 0, 0]), arr([1, 1, 1])),
+            act_space=spaces.Discrete(3),
+        )
+        ftop = transform.SpliceTileObservationActionFT(
+            input_space=input_space, tiling_dim=4, hash_dim=64
+        )
+        result = ftop.apply(example(obs=arr([0.4, 0.2, 0.8]), act=1))
+        assert result.indices is not None
+        reconstructed = np.bincount(result.indices, minlength=64).astype(
+            result.observation.dtype
+        )
+        np.testing.assert_array_equal(reconstructed, result.observation)
+
+    def test_non_tile_indices_is_none(self):
+        input_space = space(
+            obs_space=spaces.Box(arr([0, -10]), arr([10, 0])),
+            act_space=spaces.Discrete(2),
+        )
+        result = transform.ScaleObservationFT(input_space=input_space).apply(
+            example(obs=arr([4, -8]), act=1)
+        )
+        assert result.indices is None
+
+
+class TestSparseEquivalence:
+    def test_qvalue_matches_dense(self):
+        input_space = space(
+            obs_space=spaces.Box(arr([-1.2, -0.07]), arr([0.6, 0.07])),
+            act_space=spaces.Discrete(3),
+        )
+        ft_op = transform.transform_pipeline(
+            env=_make_box_env(input_space),
+            specs=[{"name": "tile-observation-action-ft", "args": {"tiling_dim": 4}}],
+        )
+        policy = algorithms.LinearFnApproxPolicy(
+            ft_op=ft_op, action_space=input_space.action_space
+        )
+        rng = np.random.default_rng(42)
+        policy.weights = rng.standard_normal(policy.weights.shape)
+
+        obs = arr([0.1, 0.03])
+        actions = policy.actions
+
+        sparse_qvalues, _ = policy.action_values_gradients(obs, actions)
+
+        policy._use_sparse = False
+        dense_qvalues, _ = policy.action_values_gradients(obs, actions)
+        policy._use_sparse = True
+
+        np.testing.assert_allclose(sparse_qvalues, dense_qvalues, atol=1e-12)
+
+    def test_weight_update_matches_dense(self):
+        input_space = space(
+            obs_space=spaces.Box(arr([-1.2, -0.07]), arr([0.6, 0.07])),
+            act_space=spaces.Discrete(3),
+        )
+        ft_op = transform.transform_pipeline(
+            env=_make_box_env(input_space),
+            specs=[{"name": "tile-observation-action-ft", "args": {"tiling_dim": 4}}],
+        )
+        obs = arr([0.1, 0.03])
+        scalar = 0.01 * 0.5
+
+        sparse_policy = algorithms.LinearFnApproxPolicy(
+            ft_op=ft_op, action_space=input_space.action_space
+        )
+        result = ft_op.apply(transform.Example(obs, 1))
+        sparse_policy.step(1, result.indices, scalar=scalar)
+
+        dense_policy = algorithms.LinearFnApproxPolicy(
+            ft_op=ft_op, action_space=input_space.action_space
+        )
+        dense_policy._use_sparse = False
+        dense_policy.step(1, result.observation, scalar=scalar)
+
+        np.testing.assert_allclose(
+            sparse_policy.weights, dense_policy.weights, atol=1e-12
+        )
+
+
 def example(obs, act) -> transform.Example:
     """
     Creates an example.
@@ -590,3 +710,17 @@ def assert_batch(
     assert len(actuals) == len(outputs)
     for actual, output in zip(actuals, outputs):
         assert_equal(actual=actual, expected=output)
+
+
+class _MinimalEnv:
+    """Minimal env-like object for transform_pipeline."""
+
+    def __init__(self, example_space: transform.ExampleSpace):
+        self.observation_space = example_space.observation_space
+        self.action_space = example_space.action_space
+
+
+def _make_box_env(
+    example_space: transform.ExampleSpace,
+) -> _MinimalEnv:
+    return _MinimalEnv(example_space)

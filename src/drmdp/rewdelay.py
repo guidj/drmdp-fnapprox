@@ -637,16 +637,15 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
         latest_step_feats = self.ft_op(transform.Example(self._latest_obs, action))
         next_obs, reward, term, trunc, info = super().step(action)
 
-        # Concatenate with next state features if enabled
         if self.use_next_state:
             next_state_feats = self.ft_op(transform.Example(next_obs, 0))
-            # Concatenate observations from both examples
             concatenated_obs = np.concatenate(
                 [latest_step_feats.observation, next_state_feats.observation]
             )
             latest_step_feats = dataclasses.replace(
                 latest_step_feats,
                 observation=concatenated_obs,
+                indices=None,
             )
 
         step_features = self._extract_step_features(latest_step_feats)
