@@ -83,6 +83,23 @@ warn_unused_configs = true
 plugins = [ "numpy.typing.mypy_plugin",]
 ignore_missing_imports = true
 
+[tool.coverage.run]
+omit = [
+    "src/drmdp/envs/gem.py",
+    "src/drmdp/workflows/gem_control_opt.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "if __name__",
+    "def main\\(",
+    "def parse_args\\(",
+    "@ray\\.remote",
+    "ray\\.init",
+    "ray\\.wait",
+    "ray\\.data",
+]
+
 [tool.uv.sources]
 rlplg = { git = "https://github.com/guidj/rlplg" }
 
