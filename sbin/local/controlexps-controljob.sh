@@ -17,6 +17,6 @@ ray job submit \
         --output-dir=$HOME/fs/$BASE/control/fnapprox/logs/$TIMESTAMP \
         --task-prefix $TIMESTAMP \
         --log-episode-frequency=5 \
-        --problem-set grid-world \
+        --problem-set illustration \
         --grids-file $PARENT_DIR/assets/grids.json \
         --use-seed
