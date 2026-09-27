@@ -1,19 +1,16 @@
 import abc
 import dataclasses
 import functools
+from collections.abc import Callable, Mapping, Sequence
 from typing import (
     Any,
-    Callable,
-    Mapping,
-    Optional,
-    Sequence,
 )
 
 import gymnasium as gym
 import numpy as np
 from gymnasium.core import ActType, ObsType
 
-from drmdp import mathutils, tiles
+from drmdp import tiles
 
 
 @dataclasses.dataclass(frozen=True)
@@ -24,6 +21,7 @@ class Example:
 
     observation: ObsType
     action: ActType
+    indices: np.ndarray | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -43,7 +41,6 @@ class FTOp(abc.ABC):
 
     def __init__(self, input_space: ExampleSpace):
         self.input_space = input_space
-        self.vapply = np.vectorize(self.apply)
 
     @abc.abstractmethod
     def apply(self, example: Example) -> Example:
@@ -59,8 +56,7 @@ class FTOp(abc.ABC):
         """
         Calls `apply` for each example in the batch
         """
-        outputs: Sequence[Example] = self.vapply(examples)
-        return outputs
+        return [self.apply(ex) for ex in examples]
 
     @property
     @abc.abstractmethod
@@ -118,7 +114,7 @@ class ScaleObservationFT(FTOp):
     def __init__(self, input_space: ExampleSpace):
         super().__init__(input_space=input_space)
         if not isinstance(input_space.observation_space, gym.spaces.Box):
-            raise ValueError(f"Expected Box observation_space. Got: {input_space}")
+            raise TypeError(f"Expected Box observation_space. Got: {input_space}")
 
         self.input_space = input_space
         self._output_space = dataclasses.replace(
@@ -152,16 +148,16 @@ class TileObservationActionFT(FTOp):
         self,
         input_space: ExampleSpace,
         tiling_dim: int,
-        num_tilings: Optional[int] = None,
-        hash_dim: Optional[int] = None,
+        num_tilings: int | None = None,
+        hash_dim: int | None = None,
     ):
         super().__init__(input_space=input_space)
         if not isinstance(input_space.observation_space, gym.spaces.Box):
-            raise ValueError(
+            raise TypeError(
                 f"Expected Box observation_space. Got: {input_space.observation_space}"
             )
         if not isinstance(input_space.action_space, gym.spaces.Discrete):
-            raise ValueError(
+            raise TypeError(
                 f"Expected Discrete action_space. Got: {input_space.action_space}"
             )
         self.input_space = input_space
@@ -205,16 +201,21 @@ class TileObservationActionFT(FTOp):
         )
 
     def apply(self, example: Example) -> Example:
+        obs_scaled_01 = (example.observation - self._obs_low) / self._obs_range
+        raw_indices = np.asarray(
+            self._tiles(obs_scaled_01, example.action), dtype=np.intp
+        )
+        if self.hash_dim:
+            hashed = raw_indices % self.hash_dim
+            output = np.bincount(hashed, minlength=self.hash_dim).astype(
+                self.output_space.observation_space.dtype
+            )
+            return dataclasses.replace(example, observation=output, indices=hashed)
         output = np.zeros(
             shape=self.max_size, dtype=self.output_space.observation_space.dtype
         )
-        # Scale observation to [0, 1] before tiling
-        obs_scaled_01 = (example.observation - self._obs_low) / self._obs_range
-        indices = self._tiles(obs_scaled_01, example.action)
-        output[indices] = 1
-        if self.hash_dim:
-            output = mathutils.hashtrick(output, self.hash_dim)
-        return dataclasses.replace(example, observation=output)
+        output[raw_indices] = 1
+        return dataclasses.replace(example, observation=output, indices=raw_indices)
 
     @property
     def output_space(self):
@@ -243,16 +244,16 @@ class SpliceTileObservationActionFT(FTOp):
         self,
         input_space: ExampleSpace,
         tiling_dim: int,
-        num_tilings: Optional[int] = None,
-        hash_dim: Optional[int] = None,
+        num_tilings: int | None = None,
+        hash_dim: int | None = None,
     ):
         super().__init__(input_space=input_space)
         if not isinstance(input_space.observation_space, gym.spaces.Box):
-            raise ValueError(
+            raise TypeError(
                 f"Expected Box observation_space. Got: {input_space.observation_space}"
             )
         if not isinstance(input_space.action_space, gym.spaces.Discrete):
-            raise ValueError(
+            raise TypeError(
                 f"Expected Discrete action_space. Got: {input_space.action_space}"
             )
         self.input_space = input_space
@@ -297,14 +298,19 @@ class SpliceTileObservationActionFT(FTOp):
         )
 
     def apply(self, example: Example) -> Example:
-        output = np.zeros(shape=self.max_size)
-        # Scale observation to [0, 1] before tiling
         obs_scaled_01 = (example.observation - self._obs_low) / self._obs_range
-        indices = self._tiles(obs_scaled_01, example.action)
-        output[indices] = 1
+        raw_indices = np.asarray(
+            self._tiles(obs_scaled_01, example.action), dtype=np.intp
+        )
         if self.hash_dim:
-            output = mathutils.hashtrick(output, self.hash_dim)
-        return dataclasses.replace(example, observation=output)
+            hashed = raw_indices % self.hash_dim
+            output = np.bincount(hashed, minlength=self.hash_dim).astype(
+                self.output_space.observation_space.dtype
+            )
+            return dataclasses.replace(example, observation=output, indices=hashed)
+        output = np.zeros(shape=self.max_size)
+        output[raw_indices] = 1
+        return dataclasses.replace(example, observation=output, indices=raw_indices)
 
     @property
     def output_space(self):
@@ -343,12 +349,12 @@ class FlatGridObservationActionFT(FTOp):  # pylint: disable=too-many-instance-at
         if not isinstance(
             input_space.observation_space, (gym.spaces.Box, gym.spaces.Discrete)
         ):
-            raise ValueError(
+            raise TypeError(
                 f"Expected Box or Discrete observation_space. "
                 f"Got: {input_space.observation_space}"
             )
         if not isinstance(input_space.action_space, gym.spaces.Discrete):
-            raise ValueError(
+            raise TypeError(
                 f"Expected Discrete action_space. Got: {input_space.action_space}"
             )
 
@@ -448,11 +454,11 @@ class OHEDiscreteObservationActionFT(FTOp):
     ):
         super().__init__(input_space=input_space)
         if not isinstance(input_space.observation_space, gym.spaces.Discrete):
-            raise ValueError(
+            raise TypeError(
                 f"Expected Discrete observation_space. Got: {input_space.observation_space}"
             )
         if not isinstance(input_space.action_space, gym.spaces.Discrete):
-            raise ValueError(
+            raise TypeError(
                 f"Expected Discrete action_space. Got: {input_space.action_space}"
             )
 
@@ -491,9 +497,9 @@ class ActionSegmentObservationFT(FTOp):
     def __init__(self, input_space: ExampleSpace, flat: bool = True):
         super().__init__(input_space=input_space)
         if not isinstance(input_space.observation_space, gym.spaces.Box):
-            raise ValueError(f"Expected Box observation_space. Got: {input_space}")
+            raise TypeError(f"Expected Box observation_space. Got: {input_space}")
         if not isinstance(input_space.action_space, gym.spaces.Discrete):
-            raise ValueError(
+            raise TypeError(
                 f"Expected Discrete action_space. Got: {input_space.action_space}"
             )
 
@@ -540,7 +546,7 @@ class DropObservationDimsFT(FTOp):
     ):
         super().__init__(input_space=input_space)
         if not isinstance(input_space.observation_space, gym.spaces.Box):
-            raise ValueError(f"Expected Box observation_space. Got: {input_space}")
+            raise TypeError(f"Expected Box observation_space. Got: {input_space}")
 
         self.input_space = input_space
         self.axis_dims = axis_dims
@@ -578,7 +584,7 @@ class OHEActionFT(FTOp):
     def __init__(self, input_space: ExampleSpace):
         super().__init__(input_space=input_space)
         if not isinstance(input_space.action_space, gym.spaces.Discrete):
-            raise ValueError(
+            raise TypeError(
                 f"Expected Discrete action_space. Got: {input_space.action_space}"
             )
 
@@ -612,9 +618,9 @@ class ConcatObservationActionFT(FTOp):
     def __init__(self, input_space: ExampleSpace):
         super().__init__(input_space=input_space)
         if not isinstance(input_space.observation_space, gym.spaces.Box):
-            raise ValueError(f"Expected Box observation_space. Got: {input_space}")
+            raise TypeError(f"Expected Box observation_space. Got: {input_space}")
         if not isinstance(input_space.action_space, gym.spaces.Box):
-            raise ValueError(
+            raise TypeError(
                 f"Expected Box action_space. Got: {input_space.action_space}"
             )
 
@@ -673,7 +679,6 @@ class Pipeline(FTOp):
         )
         pipeline = Pipeline(input_space=self.input_space)
         pipeline.ft_op = chained_ftops
-        pipeline.vapply = np.vectorize(chained_ftops.apply)
         return pipeline
 
     def apply(self, example: Example) -> Example:

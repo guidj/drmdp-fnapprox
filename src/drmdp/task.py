@@ -2,13 +2,28 @@ import logging
 import os
 import os.path
 import uuid
-from typing import Any, Iterator, List, Mapping, Optional, Sequence, Tuple
+from collections.abc import Iterator, Mapping, Sequence
+from typing import Any
 
 import gymnasium as gym
 import numpy as np
 
 from drmdp import algorithms, core, envs, logger, optsol, rewdelay, transform
 from drmdp.envs import wrappers
+
+_logger = logging.getLogger(__name__)
+
+REWARD_SHAPING_BUILDERS: Mapping[str, type] = {
+    "mountain-car-height": wrappers.MountainCarHeightBonus,
+    "acrobot-tip-height": wrappers.AcrobotTipHeightBonus,
+    "action-cost": wrappers.ActionCostShapingWrapper,
+}
+
+REWARD_NOISE_BUILDERS: Mapping[str, type] = {
+    "gaussian-mountain-car": wrappers.MountainCarGaussianReward,
+    "gaussian-acrobot": wrappers.AcrobotGaussianReward,
+    "gaussian-gridworld": wrappers.GridWorldGaussianReward,
+}
 
 DELAYS: Sequence[type[rewdelay.RewardDelay]] = (
     rewdelay.FixedDelay,
@@ -54,7 +69,7 @@ def policy_control(exp_instance: core.ExperimentInstance):
         base_seed=exp_instance.instance_id,
     )
 
-    logging.debug("Starting DRMDP Control Experiments: %s", exp_instance)
+    _logger.debug("Starting DRMDP Control Experiments: %s", exp_instance)
 
     results = algorithm.train(
         env=env, num_episodes=exp_instance.run_config.episodes_per_run, monitor=monitor
@@ -63,15 +78,17 @@ def policy_control(exp_instance: core.ExperimentInstance):
     with logger.ExperimentLogger(
         log_dir=exp_instance.run_config.output_dir, experiment_instance=exp_instance
     ) as exp_logger:
-        returns = []
+        eval_returns: list[float] = []
         try:
             for episode, snapshot in enumerate(results):
-                returns.append(snapshot.returns)
                 if episode % exp_instance.run_config.log_episode_frequency == 0:
+                    eval_returns.append(
+                        evaluate_policy(proxied_env.proxy, algorithm.policy, rew_delay)
+                    )
                     exp_logger.log(
                         episode=episode,
                         steps=snapshot.steps,
-                        returns=np.mean(returns).item(),
+                        returns=np.mean(eval_returns).item(),
                         info={},
                     )
                     if exp_instance.export_model:
@@ -82,14 +99,14 @@ def policy_control(exp_instance: core.ExperimentInstance):
                             model_dir=exp_instance.run_config.output_dir,
                         )
 
-            logging.debug(
+            _logger.debug(
                 "\nReturns for run %d of %s:\n%s",
                 exp_instance.instance_id,
                 exp_instance.exp_id,
-                np.mean(returns),
+                np.mean(eval_returns),
             )
         except Exception as err:
-            logging.error(
+            _logger.error(
                 "Task %s, run %s failed: %s",
                 exp_instance.exp_id,
                 exp_instance.instance_id,
@@ -101,18 +118,62 @@ def policy_control(exp_instance: core.ExperimentInstance):
     env.close()
 
 
-def create_env(name: str, args: Optional[Mapping[str, Any]]) -> core.ProxiedEnv:
+def evaluate_policy(
+    env: gym.Env,
+    policy: core.PyPolicy,
+    rew_delay: rewdelay.RewardDelay | None,
+    num_episodes: int = 10,
+) -> float:
+    """Evaluate a policy greedily (epsilon=0) and return mean returns."""
+    returns = []
+    for idx in range(num_episodes):
+        obs, _ = env.reset(seed=idx)
+        episode_reward = 0.0
+        done = False
+        while not done:
+            delay = rew_delay.sample() if rew_delay else None
+            policy_step = policy.action(obs, epsilon=0.0, policy_state=(delay,))
+            actions = policy_step.info.get("actions", None) or (policy_step.action,)
+            for action in actions:
+                next_obs, reward, term, trunc, _ = env.step(action)
+                episode_reward += reward
+                obs = next_obs
+                if term or trunc:
+                    done = True
+                    break
+        returns.append(episode_reward)
+    return float(np.mean(returns))
+
+
+def create_env(name: str, args: Mapping[str, Any] | None) -> core.ProxiedEnv:
     """
     Creates an env and a proxy.
     """
-    env = envs.make(
-        env_name=name,
-        **args if args else {},
-    )
-    proxy = envs.make(
-        env_name=name,
-        **args if args else {},
-    )
+    env_args = dict(args) if args else {}
+    shaping_config = env_args.pop("reward_shaping", None)
+    noise_config = env_args.pop("reward_noise", None)
+
+    env = envs.make(env_name=name, **env_args)
+    proxy = envs.make(env_name=name, **env_args)
+
+    if shaping_config:
+        shaping_name = shaping_config["name"]
+        shaping_args = shaping_config.get("args", {}) or {}
+        if shaping_name not in REWARD_SHAPING_BUILDERS:
+            raise ValueError(f"Unknown reward shaping: {shaping_name}")
+        shaping_cls = REWARD_SHAPING_BUILDERS[shaping_name]
+        env = shaping_cls(env, **shaping_args)
+        proxy = shaping_cls(proxy, **shaping_args)
+
+    if noise_config:
+        noise_name = noise_config["name"]
+        noise_args = noise_config.get("args", {}) or {}
+        if noise_name not in REWARD_NOISE_BUILDERS:
+            raise ValueError(f"Unknown reward noise: {noise_name}")
+        noise_cls = REWARD_NOISE_BUILDERS[noise_name]
+        env = noise_cls(env, **noise_args)
+        proxy = noise_cls(proxy, **noise_args)
+
     return core.ProxiedEnv(env=env, proxy=proxy)
 
 
@@ -179,8 +240,8 @@ def bundle(items: Sequence[Any], bundle_size: int) -> Sequence[Sequence[Any]]:
     if bundle_size < 1:
         raise ValueError("`bundle_size` must be positive.")
 
-    bundles: List[List[Any]] = []
-    bundle_: List[Any] = []
+    bundles: list[list[Any]] = []
+    bundle_: list[Any] = []
     for idx, item in enumerate(items):
         if idx > 0 and (idx % bundle_size) == 0:
             if bundle_:
@@ -205,8 +266,8 @@ def learning_rate(name: str, args: Mapping[str, Any]) -> optsol.LearningRateSche
 
 
 def reward_delay_distribution(
-    delay_config: Optional[Mapping[str, Any]],
-) -> Optional[rewdelay.RewardDelay]:
+    delay_config: Mapping[str, Any] | None,
+) -> rewdelay.RewardDelay | None:
     """
     Returns an instance of a delayed
     reward distribution that can be used
@@ -221,7 +282,7 @@ def reward_delay_distribution(
     return None
 
 
-def monitor_wrapper(env: gym.Env) -> Tuple[gym.Env, core.EnvMonitor]:
+def monitor_wrapper(env: gym.Env) -> tuple[gym.Env, core.EnvMonitor]:
     """
     Wraps the environment in monitor that tracks returns
     based on the underlying rewards.
@@ -230,9 +291,7 @@ def monitor_wrapper(env: gym.Env) -> Tuple[gym.Env, core.EnvMonitor]:
     return mon_env, mon_env.mon
 
 
-def delay_wrapper(
-    env: gym.Env, reward_delay: Optional[rewdelay.RewardDelay]
-) -> gym.Env:
+def delay_wrapper(env: gym.Env, reward_delay: rewdelay.RewardDelay | None) -> gym.Env:
     """
     If a delayed reward config is given, wraps
     `env` with the specified mapper.
@@ -290,8 +349,8 @@ def reward_mapper(env: gym.Env, proxy_env: gym.Env, mapping_spec: Mapping[str, A
 
 
 def observation_encoder(
-    env: gym.Env, feats_spec: Optional[Mapping[str, Any]]
-) -> Optional[gym.ObservationWrapper]:
+    env: gym.Env, feats_spec: Mapping[str, Any] | None
+) -> gym.ObservationWrapper | None:
     """
     Creates an observation wrapper given a spec.
     """
@@ -313,12 +372,12 @@ def create_algorithm(
     env: gym.Env,
     ft_op: transform.FTOp,
     policy_type: str,
-    delay_reward: Optional[rewdelay.RewardDelay],
+    delay_reward: rewdelay.RewardDelay | None,
     lr: optsol.LearningRateSchedule,
     gamma: float,
     epsilon: float,
-    algo_config: Optional[Mapping[str, Any]] = None,
-    base_seed: Optional[int] = None,
+    algo_config: Mapping[str, Any] | None = None,
+    base_seed: int | None = None,
 ):
     """
     Creates an algorithm instance based on the provided

@@ -1,6 +1,6 @@
 import itertools
 import math
-from typing import Optional, Sequence, Union
+from collections.abc import Sequence
 
 import numpy as np
 
@@ -13,7 +13,7 @@ class Tiles:
         dims_min: np.ndarray,
         dims_max: np.ndarray,
         tiling_dim: int,
-        num_tilings: Optional[int] = None,
+        num_tilings: int | None = None,
     ):
         assert isinstance(dims_min, np.ndarray)
         assert isinstance(dims_max, np.ndarray)
@@ -98,7 +98,7 @@ def hashcoords(coordinates, m, readonly=False):
 
 
 def tiles(
-    ihtORsize: Union[IHT, int, None],
+    ihtORsize: IHT | int | None,
     numtilings: int,
     floats: Sequence[float],
     ints: Sequence[int] = (),
@@ -120,7 +120,7 @@ def tiles(
 
 
 def tileswrap(
-    ihtORsize: Union[IHT, int, None],
+    ihtORsize: IHT | int | None,
     numtilings: int,
     floats: Sequence[float],
     wrapwidths: Sequence[int],

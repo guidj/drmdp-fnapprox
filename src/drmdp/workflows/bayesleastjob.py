@@ -2,11 +2,14 @@ import argparse
 import dataclasses
 import logging
 import random
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 import ray
 
 from drmdp import constants, core, task
+
+logger = logging.getLogger(__name__)
 
 MAX_STEPS = 200
 
@@ -320,7 +323,7 @@ class ControlPipelineArgs:
     bundle_size: int
     use_seed: bool
     # ray args
-    cluster_uri: Optional[str]
+    cluster_uri: str | None
 
 
 def main(args: ControlPipelineArgs):
@@ -328,11 +331,11 @@ def main(args: ControlPipelineArgs):
     Program entry point.
     """
 
-    ray_env: Dict[str, Any] = {}
-    logging.info("Ray environment: %s", ray_env)
+    ray_env: dict[str, Any] = {}
+    logger.info("Ray environment: %s", ray_env)
     with ray.init(args.cluster_uri, runtime_env=ray_env) as context:
-        logging.info("Ray Context: %s", context)
-        logging.info("Ray Nodes: %s", ray.nodes())
+        logger.info("Ray Context: %s", context)
+        logger.info("Ray Nodes: %s", ray.nodes())
 
         tasks_results_refs = create_tasks(
             num_runs=args.num_runs,
@@ -351,7 +354,7 @@ def main(args: ControlPipelineArgs):
         while True:
             finished_tasks, unfinished_tasks = ray.wait(unfinished_tasks)
             for finished_task in finished_tasks:
-                logging.info(
+                logger.info(
                     "Completed task %s, %d left out of %d.",
                     ray.get(finished_task),
                     len(unfinished_tasks),
@@ -370,7 +373,7 @@ def create_tasks(
     bundle_size: int,
     log_episode_frequency: int,
     use_seed: bool,
-) -> Sequence[Tuple[ray.ObjectRef, core.ExperimentInstance]]:
+) -> Sequence[tuple[ray.ObjectRef, core.ExperimentInstance]]:
     """
     Runs numerical experiments on policy evaluation.
     """
@@ -393,7 +396,7 @@ def create_tasks(
         len(experiment_instances),  # type: ignore
     )
     experiment_batches = task.bundle(experiment_instances, bundle_size=bundle_size)
-    logging.info(
+    logger.info(
         "Parsed %d experiments into %d instances and %d ray tasks",
         len(experiments),
         len(experiment_instances),
@@ -412,7 +415,7 @@ def parse_experiments(
     """
     Convert experiments from Dict into typed datastructures.
     """
-    experiment_specs: List[core.Experiment] = []
+    experiment_specs: list[core.Experiment] = []
     for spec in specs:
         for feat_tfx_spec in spec["feats_specs"]:
             for problem_spec in spec["problem_specs"]:
@@ -422,6 +425,7 @@ def parse_experiments(
                             name=spec["name"],
                             args=spec["args"],
                             feats_spec=feat_tfx_spec,
+                            metadata=spec.get("metadata"),
                         ),
                         problem_spec=core.ProblemSpec(**problem_spec),
                         epochs=spec["epochs"],
@@ -437,21 +441,21 @@ def run_experiments(
     """
     Run experiments.
     """
-    ids: List[str] = []
+    ids: list[str] = []
     for experiment_task in experiments_batch:
         task_id = f"{experiment_task.exp_id}/{experiment_task.instance_id}"
-        logging.info(
+        logger.info(
             "Experiment %s starting: %s",
             task_id,
             experiment_task,
         )
         try:
             task.policy_control(experiment_task)
-        except Exception as err:
-            logging.error("Experiment %s failed", experiment_task)
-            raise err
+        except Exception:
+            logger.error("Experiment %s failed", experiment_task)
+            raise
         ids.append(task_id)
-        logging.info("Experiment %s finished", task_id)
+        logger.info("Experiment %s finished", task_id)
     return ids
 
 
@@ -471,7 +475,7 @@ def parse_args() -> ControlPipelineArgs:
     arg_parser.add_argument("--use-seed", action="store_true")
     arg_parser.add_argument("--cluster-uri", type=str, default=None)
     known_args, unknown_args = arg_parser.parse_known_args()
-    logging.info("Unknown args: %s", unknown_args)
+    logger.info("Unknown args: %s", unknown_args)
     return ControlPipelineArgs(**vars(known_args))
 
 

@@ -11,7 +11,8 @@ import json
 import logging
 import os.path
 import re
-from typing import Any, Mapping, Sequence, Tuple
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -19,7 +20,8 @@ import ray
 import ray.data
 import tensorflow as tf
 from ray.data import aggregate
-from ray.util import multiprocessing as ray_mp
+
+logger = logging.getLogger(__name__)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -37,7 +39,7 @@ class StepSnapshotAggretator(aggregate.AggregateFn):
     Aggregates returns.
     """
 
-    AggType = Mapping[Tuple[str, int], Any]
+    AggType = Mapping[tuple[str, int], Any]
     Row = Mapping[str, Any]
 
     def __init__(self, name: str = "StepSnapshotAggretator()"):
@@ -98,19 +100,19 @@ def main():
     paths = tf.io.gfile.glob(os.path.join(args.input_dir, "**/**/**/**/"))
     ray_env = {}
 
-    logging.info("Running with args: %s", vars(args))
-    logging.info("Found a total of %d paths", len(paths))
-    logging.info("Ray environment: %s", ray_env)
+    logger.info("Running with args: %s", vars(args))
+    logger.info("Found a total of %d paths", len(paths))
+    logger.info("Ray environment: %s", ray_env)
 
     with ray.init(runtime_env=ray_env) as context:
-        logging.info("Ray Context: %s", context)
-        logging.info("Ray Nodes: %s", ray.nodes())
+        logger.info("Ray Context: %s", context)
+        logger.info("Ray Nodes: %s", ray.nodes())
 
         metadata = parse_experiment_metadata(paths)
         ds_logs = parse_experiment_logs(paths)
 
-        logging.info("Metadata # keys: %d", len(metadata))
-        logging.info("Datalogs size: %fMB", ds_logs.size_bytes() / 1024 / 1024)
+        logger.info("Metadata # keys: %d", len(metadata))
+        logger.info("Datalogs size: %fMB", ds_logs.size_bytes() / 1024 / 1024)
         ds_logs_and_metadata = join_logs_and_metadata(ds_logs, metadata)
 
         results_ref = pipeline.remote(ds_logs_and_metadata)
@@ -129,10 +131,25 @@ def parse_experiment_metadata(paths: Sequence[str]) -> Mapping[str, Any]:
     """
     metadata_files = [os.path.join(path, "experiment-params.json") for path in paths]
     results = {}
-    with ray_mp.Pool(ray_address="auto") as pool:
-        for entry in pool.map(read_experiment_metadata, metadata_files):
-            path = parse_path_from_filename(entry["path"])
-            results[path] = entry
+    read_remote = ray.remote(parse_experiments_metadata_files)
+    refs = [read_remote.remote(seq) for seq in chunks(metadata_files, n=100)]
+    while True:
+        completed_refs, refs = ray.wait(refs)
+        for completed_ref in completed_refs:
+            entries = ray.get(completed_ref)
+            for entry in entries:
+                path = parse_path_from_filename(entry["path"])
+                results[path] = entry
+        if not refs:
+            break
+    return results
+
+
+def parse_experiments_metadata_files(paths: Sequence[str]):
+    results = []
+    for path in paths:
+        entry = read_experiment_metadata(path)
+        results.append(entry)
     return results
 
 
@@ -231,7 +248,7 @@ def write_results(results_datasets: Mapping[str, ray.data.Dataset], output_dir: 
     """
     for key, ds in results_datasets.items():
         output_path = os.path.join(output_dir, key)
-        logging.info("Writing %s to %s", key, output_path)
+        logger.info("Writing %s to %s", key, output_path)
         ds.write_parquet(output_path)
 
 
@@ -256,6 +273,12 @@ def calculate_metrics(ds: ray.data.Dataset) -> ray.data.Dataset:
     return ds.map(apply)
 
 
+def chunks(seq: Sequence[Any], n):
+    """Yield successive n-sized chunks from seq."""
+    for i in range(0, len(seq), n):
+        yield seq[i : i + n]
+
+
 def parse_args() -> PipelineArgs:
     """
     Parses program arguments.
@@ -264,7 +287,7 @@ def parse_args() -> PipelineArgs:
     arg_parser.add_argument("--input-dir", type=str)
     arg_parser.add_argument("--output-dir", type=str)
     known_args, unknown_args = arg_parser.parse_known_args()
-    logging.info("Unknown args: %s", unknown_args)
+    logger.info("Unknown args: %s", unknown_args)
     return PipelineArgs(**vars(known_args))
 
 

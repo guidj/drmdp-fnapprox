@@ -2,12 +2,15 @@ import abc
 import copy
 import dataclasses
 import logging
-from typing import Any, Iterator, Optional, Tuple
+from collections.abc import Iterator
+from typing import Any
 
 import gymnasium as gym
 import numpy as np
 
 from drmdp import core, mathutils, optsol, transform
+
+logger = logging.getLogger(__name__)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -18,7 +21,7 @@ class PolicyControlSnapshot:
 
 
 class FnApproxAlgorithm(abc.ABC):
-    def __init__(self, base_seed: Optional[int] = None):
+    def __init__(self, base_seed: int | None = None):
         super().__init__()
         self.seeder = core.Seeder(base_seed)
 
@@ -38,7 +41,7 @@ class SemigradientSARSAFnApprox(FnApproxAlgorithm):
         gamma: float,
         epsilon: float,
         policy: core.PyValueFnPolicy,
-        base_seed: Optional[int] = None,
+        base_seed: int | None = None,
         verbose: bool = True,
     ):
         super().__init__(base_seed)
@@ -72,12 +75,12 @@ class SemigradientSARSAFnApprox(FnApproxAlgorithm):
                 ) = env.step(policy_step.action)
 
                 if term or trunc:
-                    scaled_gradients = (
-                        self.lr(episode, monitor.step)
-                        * (reward - state_qvalues[policy_step.action])
-                        * gradients[policy_step.action]
+                    td_error = reward - state_qvalues[policy_step.action]
+                    self.policy.step(
+                        policy_step.action,
+                        gradients[policy_step.action],
+                        scalar=self.lr(episode, monitor.step) * td_error,
                     )
-                    self.policy.step(policy_step.action, scaled_gradients)
                     break
 
                 next_policy_step = self.policy.action(next_obs, epsilon=self.epsilon)
@@ -85,22 +88,22 @@ class SemigradientSARSAFnApprox(FnApproxAlgorithm):
                     next_policy_step.info["values"],
                     next_policy_step.info["gradients"],
                 )
-                scaled_gradients = (
-                    self.lr(episode, monitor.step)
-                    * (
-                        reward
-                        + self.gamma * next_state_qvalues[next_policy_step.action]
-                        - state_qvalues[policy_step.action]
-                    )
-                    * gradients[policy_step.action]
+                td_error = (
+                    reward
+                    + self.gamma * next_state_qvalues[next_policy_step.action]
+                    - state_qvalues[policy_step.action]
                 )
-                self.policy.step(policy_step.action, scaled_gradients)
+                self.policy.step(
+                    policy_step.action,
+                    gradients[policy_step.action],
+                    scalar=self.lr(episode, monitor.step) * td_error,
+                )
                 obs = next_obs
                 policy_step = next_policy_step
                 state_qvalues = next_state_qvalues
                 gradients = next_gradients
             if self.verbose and (episode + 1) % max((num_episodes // 5), 1) == 0:
-                logging.info(
+                logger.info(
                     "Episode %d mean returns: %f",
                     episode + 1,
                     np.mean(monitor.returns + [monitor.rewards]),
@@ -119,10 +122,10 @@ class LinearFnApproxPolicy(core.PyValueFnPolicy):
         ft_op: transform.FTOp,
         action_space: gym.Space,
         emit_log_probability: bool = False,
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ):
         if not isinstance(ft_op.output_space.action_space, gym.spaces.Discrete):
-            raise ValueError(
+            raise TypeError(
                 f"This policy only supports discrete action spaces. Got {type(ft_op.output_space.action_space)}"
             )
         super().__init__(action_space, emit_log_probability, seed)
@@ -133,6 +136,10 @@ class LinearFnApproxPolicy(core.PyValueFnPolicy):
             + ft_op.output_space.observation_space.shape,
             dtype=np.float64,
         )
+        probe = ft_op.apply(
+            transform.Example(np.zeros_like(ft_op.input_space.observation_space.low), 0)
+        )
+        self._use_sparse = probe.indices is not None
 
     def get_initial_state(self, batch_size=None):
         del batch_size
@@ -148,8 +155,6 @@ class LinearFnApproxPolicy(core.PyValueFnPolicy):
         if epsilon and self.rng.random() < epsilon:
             action = self.rng.choice(self.actions)
         else:
-            # Choose highest value action
-            # breaking ties are random
             action = self.rng.choice(
                 np.flatnonzero(state_qvalues == state_qvalues.max())
             )
@@ -160,12 +165,27 @@ class LinearFnApproxPolicy(core.PyValueFnPolicy):
         )
 
     def action_values_gradients(self, observation, actions):
-        examples = [transform.Example(observation, action) for action in actions]
-        state_action_m = [ex.observation for ex in self.ft_op.batch(examples)]
+        if self._use_sparse:
+            qvalues = np.empty(len(actions))
+            gradients = []
+            for idx, action in enumerate(actions):
+                result = self.ft_op.apply(transform.Example(observation, action))
+                qvalues[idx] = self.weights[action][result.indices].sum()
+                gradients.append(result.indices)
+            return qvalues, gradients
+        state_action_m = [
+            self.ft_op.apply(transform.Example(observation, action)).observation
+            for action in actions
+        ]
         return np.sum(self.weights * state_action_m, axis=1), state_action_m
 
-    def step(self, action, scaled_gradients):
-        self.weights[action] += scaled_gradients
+    def step(self, action, gradients, scalar=None):
+        if self._use_sparse:
+            np.add.at(self.weights[action], gradients, scalar)
+        elif scalar is not None:
+            self.weights[action] += scalar * gradients
+        else:
+            self.weights[action] += gradients
 
     @property
     def model(self):
@@ -178,10 +198,10 @@ class RandomFnApproxPolicy(core.PyValueFnPolicy):
         ft_op: transform.FTOp,
         action_space: gym.Space,
         emit_log_probability: bool = False,
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ):
         if not isinstance(action_space, gym.spaces.Discrete):
-            raise ValueError(
+            raise TypeError(
                 f"This policy only supports discrete action spaces. Got {type(action_space)}"
             )
         super().__init__(action_space, emit_log_probability, seed)
@@ -191,6 +211,10 @@ class RandomFnApproxPolicy(core.PyValueFnPolicy):
             (action_space.n,) + ft_op.output_space.observation_space.shape,
             dtype=np.float64,
         )
+        probe = ft_op.apply(
+            transform.Example(np.zeros_like(ft_op.input_space.observation_space.low), 0)
+        )
+        self._use_sparse = probe.indices is not None
 
     def get_initial_state(self, batch_size=None):
         del batch_size
@@ -212,12 +236,27 @@ class RandomFnApproxPolicy(core.PyValueFnPolicy):
         )
 
     def action_values_gradients(self, observation, actions):
-        examples = [transform.Example(observation, action) for action in actions]
-        state_action_m = [ex.observation for ex in self.ft_op.batch(examples)]
+        if self._use_sparse:
+            qvalues = np.empty(len(actions))
+            gradients = []
+            for idx, action in enumerate(actions):
+                result = self.ft_op.apply(transform.Example(observation, action))
+                qvalues[idx] = self.weights[action][result.indices].sum()
+                gradients.append(result.indices)
+            return qvalues, gradients
+        state_action_m = [
+            self.ft_op.apply(transform.Example(observation, action)).observation
+            for action in actions
+        ]
         return np.sum(self.weights * state_action_m, axis=1), state_action_m
 
-    def step(self, action, scaled_gradients):
-        self.weights[action] += scaled_gradients
+    def step(self, action, gradients, scalar=None):
+        if self._use_sparse:
+            np.add.at(self.weights[action], gradients, scalar)
+        elif scalar is not None:
+            self.weights[action] += scalar * gradients
+        else:
+            self.weights[action] += gradients
 
     @property
     def model(self):
@@ -231,7 +270,7 @@ class OptionsSemigradientSARSAFnApprox(FnApproxAlgorithm):
         gamma: float,
         epsilon: float,
         policy: core.PyValueFnPolicy,
-        base_seed: Optional[int] = None,
+        base_seed: int | None = None,
         verbose: bool = True,
     ):
         super().__init__(base_seed)
@@ -308,7 +347,7 @@ class OptionsSemigradientSARSAFnApprox(FnApproxAlgorithm):
                 gradients = next_gradients
                 actions = next_actions
             if self.verbose and (episode + 1) % max(num_episodes // 5, 1) == 0:
-                logging.info(
+                logger.info(
                     "Episode %d mean returns: %f",
                     episode + 1,
                     np.mean(monitor.returns + [monitor.rewards]),
@@ -357,16 +396,16 @@ class OptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
         self,
         ft_op: transform.FTOp,
         action_space: gym.Space,
-        options_length_range: Tuple[int, int],
+        options_length_range: tuple[int, int],
         emit_log_probability: bool = False,
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ):
         if len(ft_op.output_space.observation_space.shape) != 1:
             raise ValueError(
                 f"Observation output space must be a vector. Got {type(ft_op.output_space.observation_space.shape)}"
             )
         if not isinstance(action_space, gym.spaces.Discrete):
-            raise ValueError(
+            raise TypeError(
                 f"This policy only supports discrete action spaces. Got {type(action_space)}"
             )
         super().__init__(action_space, emit_log_probability, seed)
@@ -459,9 +498,10 @@ class OptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
         features_m = np.concatenate([state_m, options_matrix], axis=1)
         return np.dot(features_m, self.weights), features_m
 
-    def step(self, action, scaled_gradients):
+    def step(self, action, gradients, scalar=None):
         del action
-        self.weights += scaled_gradients
+        del scalar
+        self.weights += gradients
 
     @property
     def model(self):
@@ -473,16 +513,16 @@ class SingleActionOptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
         self,
         ft_op: transform.FTOp,
         action_space: gym.Space,
-        options_length_range: Tuple[int, int],
+        options_length_range: tuple[int, int],
         emit_log_probability: bool = False,
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ):
         if len(ft_op.output_space.observation_space.shape) != 1:
             raise ValueError(
                 f"Observation output space must be a vector. Got {type(ft_op.output_space.observation_space.shape)}"
             )
         if not isinstance(action_space, gym.spaces.Discrete):
-            raise ValueError(
+            raise TypeError(
                 f"This policy only supports discrete action spaces. Got {type(action_space)}"
             )
         super().__init__(action_space, emit_log_probability, seed)
@@ -572,9 +612,10 @@ class SingleActionOptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
         features_m = np.concatenate([state_m, options_m], axis=1)
         return np.dot(features_m, self.weights), features_m
 
-    def step(self, action, scaled_gradients):
+    def step(self, action, gradients, scalar=None):
         del action
-        self.weights += scaled_gradients
+        del scalar
+        self.weights += gradients
 
     @property
     def model(self):
@@ -588,7 +629,7 @@ class DropMissingSemigradientSARSAFnApprox(FnApproxAlgorithm):
         gamma: float,
         epsilon: float,
         policy: core.PyValueFnPolicy,
-        base_seed: Optional[int] = None,
+        base_seed: int | None = None,
         verbose: bool = True,
     ):
         super().__init__(base_seed)
@@ -623,12 +664,12 @@ class DropMissingSemigradientSARSAFnApprox(FnApproxAlgorithm):
 
                 if term or trunc:
                     if reward is not None:
-                        scaled_gradients = (
-                            self.lr(episode, monitor.step)
-                            * (reward - state_qvalues[policy_step.action])
-                            * gradients[policy_step.action]
+                        td_error = reward - state_qvalues[policy_step.action]
+                        self.policy.step(
+                            policy_step.action,
+                            gradients[policy_step.action],
+                            scalar=self.lr(episode, monitor.step) * td_error,
                         )
-                        self.policy.step(policy_step.action, scaled_gradients)
                     break
 
                 next_policy_step = self.policy.action(next_obs, epsilon=self.epsilon)
@@ -637,22 +678,22 @@ class DropMissingSemigradientSARSAFnApprox(FnApproxAlgorithm):
                     next_policy_step.info["gradients"],
                 )
                 if reward is not None:
-                    scaled_gradients = (
-                        self.lr(episode, monitor.step)
-                        * (
-                            reward
-                            + self.gamma * next_state_qvalues[next_policy_step.action]
-                            - state_qvalues[policy_step.action]
-                        )
-                        * gradients[policy_step.action]
+                    td_error = (
+                        reward
+                        + self.gamma * next_state_qvalues[next_policy_step.action]
+                        - state_qvalues[policy_step.action]
                     )
-                    self.policy.step(policy_step.action, scaled_gradients)
+                    self.policy.step(
+                        policy_step.action,
+                        gradients[policy_step.action],
+                        scalar=self.lr(episode, monitor.step) * td_error,
+                    )
                 obs = next_obs
                 policy_step = next_policy_step
                 state_qvalues = next_state_qvalues
                 gradients = next_gradients
             if self.verbose and (episode + 1) % max((num_episodes // 5), 1) == 0:
-                logging.info(
+                logger.info(
                     "Episode %d mean returns: %f",
                     episode + 1,
                     np.mean(monitor.returns + [monitor.rewards]),

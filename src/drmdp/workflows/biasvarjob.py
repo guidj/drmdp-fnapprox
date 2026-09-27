@@ -29,7 +29,8 @@ import logging
 import os
 import tempfile
 import uuid
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 import gymnasium as gym
 import numpy as np
@@ -39,6 +40,8 @@ import ray.data
 from ray.data import aggregate
 
 from drmdp import core, dataproc, envs, ioutils, metrics, rewdelay, task, transform
+
+logger = logging.getLogger(__name__)
 
 MAX_STEPS_PER_EPISODE_GEM = 10_000
 SAMPLES_PER_ENV = 100_000
@@ -59,7 +62,7 @@ class BiasVarianceAggregator(aggregate.AggregateFn):
             name=name,
         )
 
-    def _init(self, key: Any) -> Dict[str, Any]:
+    def _init(self, key: Any) -> dict[str, Any]:
         """Initialize empty accumulator."""
         del key
         return {
@@ -71,8 +74,8 @@ class BiasVarianceAggregator(aggregate.AggregateFn):
         }
 
     def _accumulate_row(
-        self, acc: Dict[str, Any], row: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, acc: dict[str, Any], row: dict[str, Any]
+    ) -> dict[str, Any]:
         """Accumulate a single row."""
         new_acc = copy.deepcopy(acc)
 
@@ -100,8 +103,8 @@ class BiasVarianceAggregator(aggregate.AggregateFn):
         return new_acc
 
     def _merge(
-        self, acc_left: Dict[str, Any], acc_right: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, acc_left: dict[str, Any], acc_right: dict[str, Any]
+    ) -> dict[str, Any]:
         """Merge two accumulators."""
         acc = copy.deepcopy(acc_left)
 
@@ -111,9 +114,10 @@ class BiasVarianceAggregator(aggregate.AggregateFn):
         # Verify true_reward consistency
         if acc["true_reward"] is None:
             acc["true_reward"] = acc_right["true_reward"]
-        elif acc_right["true_reward"] is not None:
-            if not np.isclose(acc["true_reward"], acc_right["true_reward"]):
-                acc["true_reward_mismatch"] = True
+        elif acc_right["true_reward"] is not None and not np.isclose(
+            acc["true_reward"], acc_right["true_reward"]
+        ):
+            acc["true_reward_mismatch"] = True
 
         # Merge metadata (prefer non-empty)
         if not acc["metadata"] and acc_right["metadata"]:
@@ -127,7 +131,7 @@ class BiasVarianceAggregator(aggregate.AggregateFn):
 
         return acc
 
-    def _finalize(self, acc: Dict[str, Any]) -> Dict[str, Any]:
+    def _finalize(self, acc: dict[str, Any]) -> dict[str, Any]:
         """Compute bias-variance statistics and return flat dict."""
         # Validate
         if acc["count"] == 0:
@@ -135,7 +139,7 @@ class BiasVarianceAggregator(aggregate.AggregateFn):
 
         # Log warning for true_reward mismatch
         if acc["true_reward_mismatch"]:
-            logging.warning(
+            logger.warning(
                 "True reward mismatch detected for sample %s",
                 acc["metadata"].get("sample_id", "unknown"),
             )
@@ -196,19 +200,19 @@ class RewardModelArtifact:
     gamma: float
     weights: np.ndarray
     use_bias: bool
-    ft_op_spec: List[Mapping[str, Any]]
+    ft_op_spec: list[Mapping[str, Any]]
     # Bayesian-specific fields
-    mv_normal_mean: Optional[np.ndarray] = None
-    mv_normal_cov: Optional[np.ndarray] = None
-    estimation_meta: Optional[Dict[str, Any]] = None
+    mv_normal_mean: np.ndarray | None = None
+    mv_normal_cov: np.ndarray | None = None
+    estimation_meta: dict[str, Any] | None = None
 
 
 def least_lfa_specs(
     attempt_estimation_episodes: Sequence[int],
     feat_specs: Sequence[Sequence[Mapping[str, Any]]],
-) -> List[Mapping[str, Any]]:
+) -> list[Mapping[str, Any]]:
     """Generate specs for least-lfa estimator."""
-    specs: List[Mapping[str, Any]] = []
+    specs: list[Mapping[str, Any]] = []
     for aee, feat_spec in itertools.product(attempt_estimation_episodes, feat_specs):
         specs.append(
             {
@@ -226,9 +230,9 @@ def least_lfa_specs(
 def bayes_least_lfa_specs(
     init_attempt_estimation_episodes: Sequence[int],
     feat_specs: Sequence[Sequence[Mapping[str, Any]]],
-) -> List[Mapping[str, Any]]:
+) -> list[Mapping[str, Any]]:
     """Generate specs for bayes-least-lfa estimator."""
-    specs: List[Mapping[str, Any]] = []
+    specs: list[Mapping[str, Any]] = []
     for iaee, feat_spec in itertools.product(
         init_attempt_estimation_episodes, feat_specs
     ):
@@ -514,7 +518,7 @@ def create_all_job_specs(
     return jobs
 
 
-def fixed_delay_config(delay: int) -> Dict[str, Any]:
+def fixed_delay_config(delay: int) -> dict[str, Any]:
     """Create a fixed delay configuration."""
     return {"name": "fixed", "args": {"delay": delay}}
 
@@ -561,7 +565,7 @@ def create_exp_instance(job_spec: JobSpec) -> core.ExperimentInstance:
 
 def extract_reward_model_from_wrapper(
     wrapper: gym.Wrapper, job_spec: JobSpec
-) -> Optional[RewardModelArtifact]:
+) -> RewardModelArtifact | None:
     """
     Extract reward model components from trained wrapper.
 
@@ -579,7 +583,7 @@ def extract_reward_model_from_wrapper(
 
     if isinstance(wrapper, rewdelay.LeastLfaGenerativeRewardWrapper):
         if wrapper.weights is None:
-            logging.warning("Model %s has no weights - estimation failed", model_id)
+            logger.warning("Model %s has no weights - estimation failed", model_id)
             return None
 
         return RewardModelArtifact(
@@ -602,7 +606,7 @@ def extract_reward_model_from_wrapper(
 
     elif isinstance(wrapper, rewdelay.BayesLeastLfaGenerativeRewardWrapper):
         if wrapper.mv_normal_rewards is None:
-            logging.warning("Model %s has no posterior - estimation failed", model_id)
+            logger.warning("Model %s has no posterior - estimation failed", model_id)
             return None
 
         return RewardModelArtifact(
@@ -624,11 +628,11 @@ def extract_reward_model_from_wrapper(
         )
 
     else:
-        raise ValueError(f"Unknown wrapper type: {type(wrapper)}")
+        raise TypeError(f"Unknown wrapper type: {type(wrapper)}")
 
 
 @ray.remote
-def train_reward_model_run(job_spec: JobSpec) -> Optional[RewardModelArtifact]:
+def train_reward_model_run(job_spec: JobSpec) -> RewardModelArtifact | None:
     """
     Phase 1: Train single reward estimator and extract model components.
 
@@ -636,7 +640,7 @@ def train_reward_model_run(job_spec: JobSpec) -> Optional[RewardModelArtifact]:
         RewardModelArtifact if training succeeded, None otherwise
     """
     task_id = str(uuid.uuid4())
-    logging.info(
+    logger.info(
         "Training model for task %s: %s",
         task_id,
         job_spec.model_id if hasattr(job_spec, "model_id") else job_spec.run_id,
@@ -709,28 +713,28 @@ def train_reward_model_run(job_spec: JobSpec) -> Optional[RewardModelArtifact]:
         proxy_env.close()
 
         if model_artifact is not None:
-            logging.info("Extracted model %s", model_artifact.model_id)
+            logger.info("Extracted model %s", model_artifact.model_id)
         else:
-            logging.warning("Failed to extract model for task %s", task_id)
+            logger.warning("Failed to extract model for task %s", task_id)
 
         return model_artifact
 
-    except Exception as err:
-        logging.error("Error training model for task %s: %s", task_id, err)
+    except (ValueError, RuntimeError) as err:
+        logger.error("Error training model for task %s: %s", task_id, err)
         return None
 
 
 @ray.remote
 def collect_sample_dataset(
     env_name: str, env_args: Mapping[str, Any], num_samples: int, seed: int
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Phase 2: Collect fixed dataset using random exploration.
 
     Returns:
         Dictionary with observations, actions, rewards, sample_ids
     """
-    logging.info("Collecting %d samples for %s", num_samples, env_name)
+    logger.info("Collecting %d samples for %s", num_samples, env_name)
 
     env = envs.make(env_name, **env_args)
     buffer = dataproc.collection_traj_data(env, steps=num_samples, seed=seed)
@@ -751,7 +755,7 @@ def collect_sample_dataset(
         "env_name": env_name,
     }
 
-    logging.info("Collected %d samples for %s", len(sample_ids), env_name)
+    logger.info("Collected %d samples for %s", len(sample_ids), env_name)
     return dataset
 
 
@@ -785,7 +789,7 @@ def create_predict_fn(artifact: RewardModelArtifact, env: gym.Env):
 @ray.remote
 def predict_on_dataset(
     model_artifact: RewardModelArtifact,
-    dataset: Dict[str, Any],
+    dataset: dict[str, Any],
     env_args: Mapping[str, Any],
     output_path: str,
 ) -> str:
@@ -800,7 +804,7 @@ def predict_on_dataset(
     Returns:
         Path of predictions.
     """
-    logging.info(
+    logger.info(
         "Predicting with model %s on %d samples",
         model_artifact.model_id,
         len(dataset["sample_ids"]),
@@ -836,7 +840,7 @@ def predict_on_dataset(
 
     env.close()
     ioutils.write_records_json(output_path, predictions, gzip_compression=False)
-    logging.info(
+    logger.info(
         "Generated %d predictions for model %s. Exported to: %s",
         len(predictions),
         model_artifact.model_id,
@@ -847,7 +851,7 @@ def predict_on_dataset(
 
 def compute_bias_variance_from_predictions(
     ds_predictions: ray.data.Dataset,
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Phase 4: Compute bias-variance statistics from predictions.
 
@@ -861,10 +865,10 @@ def compute_bias_variance_from_predictions(
     def extract_field(key: str, rs: Mapping[str, Any]):
         return rs[key]
 
-    logging.info("Computing bias-variance from predictions")
+    logger.info("Computing bias-variance from predictions")
 
     # Read all predictions
-    logging.info("Loaded predictions dataset")
+    logger.info("Loaded predictions dataset")
 
     # Group by sample_id and configuration
     group_cols = [
@@ -877,8 +881,8 @@ def compute_bias_variance_from_predictions(
     ]
 
     # Apply groupby and compute stats
-    logging.info("Columns: %s", ds_predictions.columns())
-    logging.info("Grouping by %s and computing bias-variance...", group_cols)
+    logger.info("Columns: %s", ds_predictions.columns())
+    logger.info("Grouping by %s and computing bias-variance...", group_cols)
     ds_result = ds_predictions.groupby(group_cols).aggregate(
         BiasVarianceAggregator(name="bias_variance_agg")
     )
@@ -891,15 +895,15 @@ def compute_bias_variance_from_predictions(
             functools.partial(extract_field, key)
         )
     del df_sample["bias_variance_agg"]
-    logging.info(
+    logger.info(
         "Computed bias-variance for %d samples. Columns: %s",
         len(df_sample),
         df_sample.columns,
     )
-    logging.info("Example: %s", df_sample.iloc[0])
+    logger.info("Example: %s", df_sample.iloc[0])
 
     # Aggregate summary statistics
-    logging.info("Computing summary statistics...")
+    logger.info("Computing summary statistics...")
     summary_group_cols = [
         "env_name",
         "rewest_method",
@@ -928,7 +932,7 @@ def compute_bias_variance_from_predictions(
         )
 
     df_summary = pd.DataFrame(summary_stats)
-    logging.info("Computed summary for %d configurations", len(df_summary))
+    logger.info("Computed summary for %d configurations", len(df_summary))
 
     return df_sample, df_summary
 
@@ -938,12 +942,12 @@ def export_results(df_sample: pd.DataFrame, df_summary: pd.DataFrame, output_dir
     # Export sample-level results
     sample_parquet_path = os.path.join(output_dir, "bias_var_sample.parquet")
     df_sample.to_parquet(sample_parquet_path, index=False)
-    logging.info("Exported sample results to %s", sample_parquet_path)
+    logger.info("Exported sample results to %s", sample_parquet_path)
 
     # Export summary results
     summary_parquet_path = os.path.join(output_dir, "bias_var_summary.parquet")
     df_summary.to_parquet(summary_parquet_path, index=False)
-    logging.info("Exported summary results to %s", summary_parquet_path)
+    logger.info("Exported summary results to %s", summary_parquet_path)
 
 
 def main():
@@ -965,18 +969,18 @@ def main():
         num_runs=args.num_runs,
         num_episodes=args.num_episodes,
     )
-    logging.info("Created %d job specifications", len(job_specs))
+    logger.info("Created %d job specifications", len(job_specs))
 
     # Shuffle jobs to balance workload
     np.random.shuffle(job_specs)  # type: ignore
 
     # Initialize Ray
     with ray.init():
-        logging.info("Ray initialized")
+        logger.info("Ray initialized")
         # PHASE 1: Train models and extract artifacts (in-memory)
-        logging.info("PHASE 1: Training %d reward models...", len(job_specs))
+        logger.info("PHASE 1: Training %d reward models...", len(job_specs))
         model_refs = [train_reward_model_run.remote(spec) for spec in job_specs]
-        model_artifacts: Sequence[Optional[RewardModelArtifact]] = wait_till_completion(
+        model_artifacts: Sequence[RewardModelArtifact | None] = wait_till_completion(
             model_refs, fetch=True
         )
         model_artifacts: Sequence[RewardModelArtifact] = [
@@ -984,17 +988,17 @@ def main():
             for model_artifact in model_artifacts
             if model_artifact is not None
         ]
-        logging.info(
+        logger.info(
             "Phase 1 complete: %d/%d models trained successfully",
             len(model_artifacts),
             len(job_specs),
         )
 
         # Envs with omodels
-        envs_with_model = set([artifact.env_name for artifact in model_artifacts])
+        envs_with_model = {artifact.env_name for artifact in model_artifacts}
 
         # PHASE 2: Collect fixed sample datasets
-        logging.info("PHASE 2: Collecting sample datasets...")
+        logger.info("PHASE 2: Collecting sample datasets...")
         env_configs = {spec["name"]: spec["args"] for spec in specs}
         dataset_refs = {
             env_name: collect_sample_dataset.remote(
@@ -1002,13 +1006,13 @@ def main():
             )
             for env_name in sorted(envs_with_model)
         }
-        logging.info(
+        logger.info(
             "Phase 2 complete: Collected datasets for %d environments",
             len(dataset_refs),
         )
 
         # PHASE 3: Generate predictions
-        logging.info(
+        logger.info(
             "PHASE 3: Generating predictions for %d models...", len(model_artifacts)
         )
         pred_refs = []
@@ -1028,15 +1032,15 @@ def main():
         ds_predictions = ray.data.read_json(prediction_file_paths, lines=True)
 
         # # PHASE 4: Compute bias-variance
-        logging.info("PHASE 4: Computing bias-variance statistics...")
+        logger.info("PHASE 4: Computing bias-variance statistics...")
         df_sample, df_summary = compute_bias_variance_from_predictions(ds_predictions)
 
         # Export final results
         export_results(df_sample, df_summary, args.output_path)
 
-        logging.info("Bias-variance analysis complete!")
-        logging.info("Results: %s", args.output_path)
-        logging.info(
+        logger.info("Bias-variance analysis complete!")
+        logger.info("Results: %s", args.output_path)
+        logger.info(
             "Summary: %d samples, %d configurations", len(df_sample), len(df_summary)
         )
 
@@ -1055,7 +1059,7 @@ def wait_till_completion(
             results.extend(
                 [ray.get(task) if fetch else task for task in finished_tasks]
             )
-        logging.info(
+        logger.info(
             "Completed %d task(s). %d left out of %d.",
             len(finished_tasks),
             len(unfinished_tasks),

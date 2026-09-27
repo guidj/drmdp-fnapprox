@@ -1,6 +1,6 @@
 import copy
 import functools
-from typing import Any, Optional
+from typing import Any
 
 import gym_electric_motor
 import gymnasium as gym
@@ -19,10 +19,10 @@ class StrictWeightedSumOfErrors(reward_functions.WeightedSumOfErrors):
 
     def __init__(
         self,
-        penalty_gamma: Optional[float] = None,
-        reward_weights: Optional[Any] = None,
+        penalty_gamma: float | None = None,
+        reward_weights: Any | None = None,
         normed_reward_weights: bool = False,
-        violation_reward: Optional[float] = None,
+        violation_reward: float | None = None,
     ):
         super().__init__(
             reward_weights,
@@ -53,7 +53,7 @@ class EarlyStopPenaltyWeightedSumOfErrors(reward_functions.WeightedSumOfErrors):
     """
 
     def __init__(
-        self, reward_weights: Optional[Any] = None, normed_reward_weights: bool = False
+        self, reward_weights: Any | None = None, normed_reward_weights: bool = False
     ):
         super().__init__(
             reward_weights,
@@ -83,10 +83,10 @@ class PositiveEnforcementWeightedSumOfErrors(reward_functions.WeightedSumOfError
 
     def __init__(
         self,
-        penalty_gamma: Optional[float] = None,
-        reward_weights: Optional[Any] = None,
-        normed_reward_weights: Optional[bool] = False,
-        violation_reward: Optional[float] = None,
+        penalty_gamma: float | None = None,
+        reward_weights: Any | None = None,
+        normed_reward_weights: bool | None = False,
+        violation_reward: float | None = None,
     ):
         super().__init__(
             reward_weights,
@@ -129,16 +129,12 @@ class GemObsAsVectorWrapper(gym.ObservationWrapper):
     def __init__(self, env: gym.Env, emit_state: bool = False):
         super().__init__(env)
         self.emit_state = emit_state
-        self._reference_state_mask = getattr(
-            env.reference_generator, "referenced_states"
-        )
+        self._reference_state_mask = env.reference_generator.referenced_states
         state_obs_space, ref_state_obs_space = env.observation_space
 
-        self._weights = getattr(env.reward_function, "_reward_weights")[
-            self._reference_state_mask
-        ]
-        self._expo = getattr(env.reward_function, "_n")[self._reference_state_mask]
-        self._bias = getattr(env.reward_function, "_bias")
+        self._weights = env.reward_function._reward_weights[self._reference_state_mask]
+        self._expo = env.reward_function._n[self._reference_state_mask]
+        self._bias = env.reward_function._bias
         self._denom = (state_obs_space.high - state_obs_space.low)[
             self._reference_state_mask
         ]
@@ -191,7 +187,7 @@ class GemObsAsVectorWrapper(gym.ObservationWrapper):
         self.observation_space = gym.spaces.Box(
             low=obs_space_low, high=obs_space_high, dtype=state_obs_space.dtype
         )
-        self._cvfn = getattr(self.env.constraint_monitor, "check_constraints")
+        self._cvfn = self.env.constraint_monitor.check_constraints
 
     def observation(self, observation):
         prev_ref_state = copy.copy(self._prev_ref_state)
@@ -237,7 +233,7 @@ class DiscretiseActionWrapper(gym.ActionWrapper):
                 )
             self.action_space = gym.spaces.Discrete(np.prod(env.action_space.nvec))
         else:
-            raise ValueError(
+            raise TypeError(
                 f"Action space must be Discrete or MultiDiscrete. Got: {env.action_space}"
             )
 
@@ -251,16 +247,16 @@ class DiscretiseActionWrapper(gym.ActionWrapper):
             c0 = (action - c1) // nvec[1]
             return [c0, c1]
         else:
-            raise ValueError(f"Unsupported action {action}")
+            raise TypeError(f"Unsupported action {action}")
 
 
 def make(
     env_name: str,
     reward_fn: str,
-    constraint_violation_reward: Optional[float] = 0.0,
-    penalty_gamma: Optional[float] = 1.0,
+    constraint_violation_reward: float | None = 0.0,
+    penalty_gamma: float | None = 1.0,
     emit_state: bool = False,
-    wrapper: Optional[str] = None,
+    wrapper: str | None = None,
     **kwargs,
 ) -> gym.Env:
     """
