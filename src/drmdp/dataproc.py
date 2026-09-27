@@ -1,6 +1,7 @@
 import copy
 import uuid
-from typing import Any, Mapping, Optional, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 import gymnasium as gym
 import pandas as pd
@@ -53,7 +54,7 @@ FEAT_PROCS = {
 }
 
 
-def collection_traj_data(env: gym.Env, steps: int, seed: Optional[int] = None):
+def collection_traj_data(env: gym.Env, steps: int, seed: int | None = None):
     """
     Collects sample trajectory data.
     """

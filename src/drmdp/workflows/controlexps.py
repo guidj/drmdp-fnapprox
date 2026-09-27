@@ -1,7 +1,8 @@
 import itertools
 import json
 import math
-from typing import Any, Dict, List, Mapping, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 import numpy as np
 
@@ -28,7 +29,7 @@ DEFAULT_IMPUTE_VALUE = 0
 DEFAULT_DISCOUNT_FACTORS = (1.0, 0.99)
 
 
-def default_delay_config() -> List[Dict[str, Any]]:
+def default_delay_config() -> list[dict[str, Any]]:
     delay_configs = []
     for lam in (2, 5, 7):
         lb, ub = mathutils.poisson_exact_confidence_interval(observed_value=lam)
@@ -136,7 +137,7 @@ def bayes_least_specs(
 
 
 def common_problem_specs(
-    delay_configs: Sequence[Dict[str, Any]] = default_delay_config(),
+    delay_configs: Sequence[dict[str, Any]] = default_delay_config(),
     discounts: Sequence[float] = DEFAULT_DISCOUNT_FACTORS,
     impute_value: float = DEFAULT_IMPUTE_VALUE,
     include_options: bool = True,
@@ -441,7 +442,7 @@ def electric_motor_experiment_specs() -> Sequence[Mapping[str, Any]]:
     return tuple(specs)
 
 
-def _grid_dead_ohe_indices(grid: Sequence[str], nactions: int = 4) -> List[int]:
+def _grid_dead_ohe_indices(grid: Sequence[str], nactions: int = 4) -> list[int]:
     """
     Returns OHE indices of dead state-action columns.
 
@@ -502,7 +503,7 @@ def illustration_experiment_specs(
         ]
     ]
 
-    specs: List[Mapping[str, Any]] = [
+    specs: list[Mapping[str, Any]] = [
         {
             "name": "MountainCar-v0",
             "args": {
@@ -678,7 +679,7 @@ def gaussian_illustration_experiment_specs(
     gw_goal_row = gw_nrows - 1
     gw_goal_col = gw_ncols - 1
 
-    specs: List[Mapping[str, Any]] = [
+    specs: list[Mapping[str, Any]] = [
         {
             "name": "MountainCar-v0",
             "args": {
@@ -796,7 +797,7 @@ def load_solvable_grids(
     minimum number of passed solvability trials.
     """
     with open(path, "r") as readable:
-        entries: List[Mapping[str, Any]] = json.load(readable)
+        entries: list[Mapping[str, Any]] = json.load(readable)
     passing_grids = [entry for entry in entries if entry["passes"] >= min_passes]
     return passing_grids
 
@@ -808,7 +809,7 @@ def grid_experiments_specs(
     """
     Control experiment specs from pre-validated grid environments.
     """
-    specs: List[Mapping[str, Any]] = []
+    specs: list[Mapping[str, Any]] = []
     for entry in grid_specs:
         nrows, ncols = entry["size"]
         dead_ohe_indices = entry["dead_ohe"]

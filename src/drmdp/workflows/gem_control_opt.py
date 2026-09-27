@@ -5,7 +5,8 @@ import json
 import logging
 import os.path
 import uuid
-from typing import Any, Mapping, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 import numpy as np
 import ray
@@ -13,6 +14,8 @@ import tensorflow as tf
 
 from drmdp import task, transform
 from drmdp.envs import gem
+
+logger = logging.getLogger(__name__)
 
 MAX_STEPS = 2500
 
@@ -56,7 +59,7 @@ def run_feats_spec_control_study(
     np.random.shuffle(jobs)  # type: ignore
 
     with ray.init() as context:
-        logging.info("Starting ray task: %s", context)
+        logger.info("Starting ray task: %s", context)
         results_refs = [run_fn.remote(args) for args in jobs]
         wait_till_completion(results_refs)
 
@@ -69,7 +72,7 @@ def wait_till_completion(tasks_refs):
     while True:
         finished_tasks, unfinished_tasks = ray.wait(unfinished_tasks)
         for finished_task in finished_tasks:
-            logging.info(
+            logger.info(
                 "Completed task %s, %d left out of %d.",
                 ray.get(finished_task),
                 len(unfinished_tasks),
@@ -83,13 +86,13 @@ def wait_till_completion(tasks_refs):
 @ray.remote
 def run_fn(job_spec: JobSpec):
     task_id = str(uuid.uuid4())
-    logging.info("Starting task %s: %s", task_id, job_spec)
+    logger.info("Starting task %s: %s", task_id, job_spec)
     try:
         feats_spec_control(job_spec, task_id)
     except Exception as err:
-        logging.error("Task %s `%s` failed: %s", task_id, job_spec, err)
+        logger.error("Task %s `%s` failed: %s", task_id, job_spec, err)
         raise RuntimeError(f"Task {task_id} `{job_spec}` failed") from err
-    logging.info("Completed task %s: %s", task_id, job_spec)
+    logger.info("Completed task %s: %s", task_id, job_spec)
     return task_id
 
 
@@ -107,7 +110,7 @@ def feats_spec_control(job_spec: JobSpec, task_id: str):
         mapping_spec={"name": "identity", "args": None},
     )
     ft_op = transform.transform_pipeline(env=env, specs=job_spec.feats_spec)
-    lr = task.learning_rate(**{"name": "constant", "args": {"initial_lr": 0.01}})  # type: ignore
+    lr = task.learning_rate(name="constant", args={"initial_lr": 0.01})  # type: ignore
     # Create spec using provided name and args for feature spec
     algorithm = task.create_algorithm(
         env=env,
@@ -126,7 +129,7 @@ def feats_spec_control(job_spec: JobSpec, task_id: str):
     records = []
     for episode, snapshot in enumerate(results):
         if episode % max((job_spec.num_episodes // 3), 1) == 0:
-            logging.info(
+            logger.info(
                 "Episode: %d; Steps: %d, Mean returns: %f; Task: %s",
                 episode,
                 snapshot.steps,
@@ -196,8 +199,8 @@ def main():
         num_episodes=args.num_episodes,
         output_path=args.output_path,
     )
-    logging.info("Output dir: %s", args.output_path)
-    logging.info("Done")
+    logger.info("Output dir: %s", args.output_path)
+    logger.info("Done")
 
 
 def parse_args() -> Args:

@@ -1,6 +1,7 @@
 import math
 import os
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 import gymnasium as gym
 import joblib
@@ -20,19 +21,19 @@ class RewardStoreWrapper(gym.Wrapper):
     def __init__(self, env: gym.Env, buffer_size: int):
         super().__init__(env)
         self.buffer_size = buffer_size
-        self.buffer: List[float] = []
-        self.obs_buffer: List[np.ndarray] = []
-        self.action_buffer: List[int] = []
-        self.solver_state: Dict[str, Any] = {"solution_found_step": None}
+        self.buffer: list[float] = []
+        self.obs_buffer: list[np.ndarray] = []
+        self.action_buffer: list[int] = []
+        self.solver_state: dict[str, Any] = {"solution_found_step": None}
         self.steps_counter = 0
-        self._prev_obs: Optional[np.ndarray] = None
+        self._prev_obs: np.ndarray | None = None
 
-    def reset(self, **kwargs: Any) -> Tuple[np.ndarray, Dict[str, Any]]:
+    def reset(self, **kwargs: Any) -> tuple[np.ndarray, dict[str, Any]]:
         obs, info = super().reset(**kwargs)
         self._prev_obs = obs
         return obs, info
 
-    def step(self, action: int) -> Tuple[Any, float, bool, bool, Dict[str, Any]]:
+    def step(self, action: int) -> tuple[Any, float, bool, bool, dict[str, Any]]:
         obs, reward, term, trunc, info = super().step(action)
         if len(self.buffer) < self.buffer_size:
             assert self._prev_obs is not None
@@ -59,7 +60,7 @@ def run_reward_estimation(
     num_episodes: int,
     seed: int,
     epsilon: float = controlexps.EPSILON,
-    mean_return_window: Optional[int] = None,
+    mean_return_window: int | None = None,
 ) -> Mapping[str, Any]:
     """
     Run a single reward estimation experiment.
@@ -82,7 +83,7 @@ def run_reward_estimation(
         {"name": "tile-observation-action-ft", "args": {"tiling_dim": tiling_dim}}
     ]
 
-    mapping_spec: Dict[str, Any]
+    mapping_spec: dict[str, Any]
     if method == "identity":
         mapping_spec = {"name": method, "args": None}
     elif method == "impute-missing":
@@ -204,8 +205,8 @@ def run_reward_estimation(
 
 def run_parallel(
     run_configs: Sequence[Mapping[str, Any]],
-    num_workers: Optional[int] = None,
-) -> List[Mapping[str, Any]]:
+    num_workers: int | None = None,
+) -> list[Mapping[str, Any]]:
     """Run experiments in parallel using joblib."""
     if num_workers is None:
         num_workers = max(1, (os.cpu_count() or 2) - 1)
@@ -220,9 +221,9 @@ def run_parallel(
 def run_sequential(
     run_configs: Sequence[Mapping[str, Any]],
     verbose: bool = True,
-) -> List[Mapping[str, Any]]:
+) -> list[Mapping[str, Any]]:
     """Run experiments sequentially (for debugging)."""
-    results: List[Mapping[str, Any]] = []
+    results: list[Mapping[str, Any]] = []
     iterator = (
         tqdm.auto.tqdm(run_configs, desc="Experiments") if verbose else run_configs
     )
@@ -236,8 +237,8 @@ _run_reward_estimation_remote = ray.remote(run_reward_estimation)
 
 def run_ray(
     run_configs: Sequence[Mapping[str, Any]],
-    cluster_uri: Optional[str] = None,
-) -> List[Mapping[str, Any]]:
+    cluster_uri: str | None = None,
+) -> list[Mapping[str, Any]]:
     """Run experiments as Ray tasks, optionally against a remote cluster."""
     shuffled_configs = list(run_configs)
     np.random.shuffle(shuffled_configs)  # type: ignore
@@ -256,7 +257,7 @@ def run_ray(
             for config in shuffled_configs
         ]
         unfinished = refs
-        results: List[Mapping[str, Any]] = []
+        results: list[Mapping[str, Any]] = []
         with tqdm.auto.tqdm(total=len(refs), desc="Experiments") as progress:
             while unfinished:
                 finished, unfinished = ray.wait(unfinished)

@@ -272,26 +272,26 @@ class TestCreateGridByBlocking:
         assert end == 99
 
     def test_deterministic(self):
-        kwargs = dict(
-            size=(10, 10),
-            num_cliffs=20,
-            seed=42,
-            strategy="path-blocking",
-            min_distance=0,
-            max_distance=200,
-        )
-        g1, s1, e1 = gridutils.create_grid(**kwargs)
-        g2, s2, e2 = gridutils.create_grid(**kwargs)
+        kwargs = {
+            "size": (10, 10),
+            "num_cliffs": 20,
+            "seed": 42,
+            "strategy": "path-blocking",
+            "min_distance": 0,
+            "max_distance": 200,
+        }
+        g1, _s1, _e1 = gridutils.create_grid(**kwargs)
+        g2, _s2, _e2 = gridutils.create_grid(**kwargs)
         np.testing.assert_array_equal(g1, g2)
 
     def test_different_seeds(self):
-        common = dict(
-            size=(10, 10),
-            num_cliffs=20,
-            strategy="path-blocking",
-            min_distance=0,
-            max_distance=200,
-        )
+        common = {
+            "size": (10, 10),
+            "num_cliffs": 20,
+            "strategy": "path-blocking",
+            "min_distance": 0,
+            "max_distance": 200,
+        }
         g1, _, _ = gridutils.create_grid(seed=0, **common)
         g2, _, _ = gridutils.create_grid(seed=99, **common)
         assert not np.array_equal(g1, g2)
@@ -355,7 +355,7 @@ class TestCreateGridWithBarriers:
         assert 15 <= dist < 50
 
     def test_start_and_end_at_corners(self):
-        grid, start, end = gridutils.create_grid(
+        _grid, start, end = gridutils.create_grid(
             size=(10, 10),
             num_cliffs=20,
             seed=0,
@@ -367,14 +367,14 @@ class TestCreateGridWithBarriers:
         assert end == 99
 
     def test_deterministic(self):
-        kwargs = dict(
-            size=(10, 10),
-            num_cliffs=20,
-            seed=42,
-            strategy="barriers",
-            min_distance=15,
-            max_distance=50,
-        )
+        kwargs = {
+            "size": (10, 10),
+            "num_cliffs": 20,
+            "seed": 42,
+            "strategy": "barriers",
+            "min_distance": 15,
+            "max_distance": 50,
+        }
         g1, _, _ = gridutils.create_grid(**kwargs)
         g2, _, _ = gridutils.create_grid(**kwargs)
         np.testing.assert_array_equal(g1, g2)

@@ -1,4 +1,5 @@
-from typing import Any, Optional, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 import numpy as np
 from gymnasium import spaces
@@ -164,8 +165,8 @@ def test_actionsegmentobservationft():
     ftop = transform.ActionSegmentObservationFT(input_space=input_space, flat=False)
     assert ftop.output_space == space(
         obs_space=spaces.Box(
-            np.stack([getattr(input_space.observation_space, "low")] * 2),
-            np.stack([getattr(input_space.observation_space, "high")] * 2),
+            np.stack([input_space.observation_space.low] * 2),
+            np.stack([input_space.observation_space.high] * 2),
         ),
         act_space=spaces.Discrete(2),
     )
@@ -194,8 +195,8 @@ def test_actionsegmentedobservationft_with_flat():
     ftop = transform.ActionSegmentObservationFT(input_space=input_space)
     assert ftop.output_space == space(
         obs_space=spaces.Box(
-            np.stack([getattr(input_space.observation_space, "low")] * 2).flatten(),
-            np.stack([getattr(input_space.observation_space, "high")] * 2).flatten(),
+            np.stack([input_space.observation_space.low] * 2).flatten(),
+            np.stack([input_space.observation_space.high] * 2).flatten(),
         ),
         act_space=spaces.Discrete(2),
     )
@@ -684,7 +685,7 @@ def space(obs_space, act_space) -> transform.ExampleSpace:
     return transform.ExampleSpace(observation_space=obs_space, action_space=act_space)
 
 
-def arr(xs: Sequence[Any], dtype: Optional[np.dtype] = None) -> np.ndarray:
+def arr(xs: Sequence[Any], dtype: np.dtype | None = None) -> np.ndarray:
     """
     Wraps sequence into an array.
     """

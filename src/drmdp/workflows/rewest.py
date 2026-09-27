@@ -7,7 +7,8 @@ import math
 import os.path
 import tempfile
 import uuid
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 import gymnasium as gym
 import numpy as np
@@ -24,6 +25,8 @@ from drmdp import (
     task,
     transform,
 )
+
+_logger = logging.getLogger(__name__)
 
 MAX_STEPS = 10_000
 REWARD_DELAYS = (2, 4, 6)
@@ -78,7 +81,7 @@ class ResultWriter:
         self.prefix = prefix
         self.output_path = output_path
         self.partition_size = partition_size
-        self.results: List[Any] = []
+        self.results: list[Any] = []
         self.partition = 0
 
     def write(self, result):
@@ -115,7 +118,7 @@ class RewardStoreWrapper(gym.Wrapper):
     def __init__(self, env, buffer_size: int):
         super().__init__(env)
         self.buffer_size = buffer_size
-        self.buffer: List[float] = []
+        self.buffer: list[float] = []
         self.solver_state = {"solution_found_step": None}
         self.steps_counter = 0
 
@@ -139,7 +142,7 @@ class RewardStoreWrapper(gym.Wrapper):
 def discrete_least_specs(
     attempt_estimation_episodes: Sequence[int],
     feat_specs: Sequence[Sequence[Mapping[str, Any]]],
-    estimation_buffer_multiples: Sequence[Optional[int]] = (25,),
+    estimation_buffer_multiples: Sequence[int | None] = (25,),
 ):
     """
     Discretised Least Squares specs.
@@ -164,7 +167,7 @@ def discrete_least_specs(
 def least_specs(
     attempt_estimation_episodes: Sequence[int],
     feat_specs: Sequence[Sequence[Mapping[str, Any]]],
-    estimation_buffer_multiples: Sequence[Optional[int]] = (25,),
+    estimation_buffer_multiples: Sequence[int | None] = (25,),
 ):
     """
     Least Squares specs.
@@ -189,7 +192,7 @@ def least_specs(
 def bayes_least_specs(
     init_attempt_estimation_episodes: Sequence[int],
     feat_specs: Sequence[Sequence[Mapping[str, Any]]],
-    estimation_buffer_multiples: Sequence[Optional[int]] = (25,),
+    estimation_buffer_multiples: Sequence[int | None] = (25,),
 ):
     """
     Bayesian linear regression specs.
@@ -215,8 +218,8 @@ def bayes_least_specs(
 def cvlps_specs(
     attempt_estimation_episodes: Sequence[int],
     feat_specs: Sequence[Sequence[Mapping[str, Any]]],
-    estimation_buffer_multiples: Sequence[Optional[int]] = (25,),
-    constraints_buffer_limit: Optional[int] = 100,
+    estimation_buffer_multiples: Sequence[int | None] = (25,),
+    constraints_buffer_limit: int | None = 100,
 ):
     """
     Constrained optimisation specs.
@@ -242,8 +245,8 @@ def cvlps_specs(
 def recurring_cvlps(
     init_attempt_estimation_episodes: Sequence[int],
     feat_specs: Sequence[Sequence[Mapping[str, Any]]],
-    estimation_buffer_multiples: Sequence[Optional[int]] = (25,),
-    constraints_buffer_limit: Optional[int] = 100,
+    estimation_buffer_multiples: Sequence[int | None] = (25,),
+    constraints_buffer_limit: int | None = 100,
 ):
     """
     Recurring convex linear estimation specs.
@@ -507,8 +510,8 @@ def run_reward_estimation_study(specs, turns: int, num_episodes: int, output_pat
             jobs.append(job_spec)
     np.random.shuffle(jobs)  # type: ignore
     with ray.init() as context:
-        logging.info("Starting ray task: %s", context)
-        logging.info("Parsed %d jobs in total", len(jobs))
+        _logger.info("Starting ray task: %s", context)
+        _logger.info("Parsed %d jobs in total", len(jobs))
         num_writers = max(math.floor(len(jobs) / NUM_TASKS_PER_WRITER), 1)
         result_writers = [
             ResultWriter.remote(prefix=idx, output_path=output_path)  # type: ignore
@@ -538,14 +541,14 @@ def run_fn(job_spec: JobSpec, result_writer: ResultWriter):
     experiment.
     """
     task_id = str(uuid.uuid4())
-    logging.info("Starting task %s, %s", task_id, job_spec)
+    _logger.info("Starting task %s, %s", task_id, job_spec)
     try:
         output = reward_estimation(job_spec)
         result = {"task_id": task_id, **dataclasses.asdict(job_spec), "meta": output}
     except Exception as err:
-        logging.error("Error in experiment %s: %s", task_id, err)
+        _logger.error("Error in experiment %s: %s", task_id, err)
         raise RuntimeError(f"Task {task_id} `{job_spec}` failed") from err
-    logging.info("Completed task %s: %s", task_id, job_spec)
+    _logger.info("Completed task %s: %s", task_id, job_spec)
     return result_writer.write.remote(proc_result(result))  # type: ignore
 
 
@@ -565,7 +568,7 @@ def proc_result(result: Mapping[str, Any]) -> Mapping[str, Any]:
     all_steps_error = metrics.rmse(v_true=r_true, v_pred=r_pred, axis=0)
 
     # post estimation error
-    solution_step: Optional[int] = meta["solver_state"]["solution_found_step"]
+    solution_step: int | None = meta["solver_state"]["solution_found_step"]
     post_est_error = (
         metrics.rmse(
             v_true=r_true[solution_step:], v_pred=r_pred[solution_step:], axis=0
@@ -581,14 +584,14 @@ def proc_result(result: Mapping[str, Any]) -> Mapping[str, Any]:
     return output
 
 
-def wait_till_completion(tasks_refs, name: Optional[str] = None):
+def wait_till_completion(tasks_refs, name: str | None = None):
     """
     Waits for every ray task to complete.
     """
     unfinished_tasks = tasks_refs
     while True:
         finished_tasks, unfinished_tasks = ray.wait(unfinished_tasks)
-        logging.info(
+        _logger.info(
             "Completed %d %s task(s). %d left out of %d.",
             len(finished_tasks),
             name,
@@ -600,7 +603,7 @@ def wait_till_completion(tasks_refs, name: Optional[str] = None):
             break
 
 
-def yield_as_completed(tasks_refs, name: Optional[str] = None):
+def yield_as_completed(tasks_refs, name: str | None = None):
     """
     Waits for every ray task to complete.
     """
@@ -608,15 +611,14 @@ def yield_as_completed(tasks_refs, name: Optional[str] = None):
     finished_tasks = []
     while True:
         finished_tasks, unfinished_tasks = ray.wait(unfinished_tasks)
-        logging.info(
+        _logger.info(
             "Yielding %d %s task(s). %d left out of %d.",
             len(finished_tasks),
             name,
             len(unfinished_tasks),
             len(tasks_refs),
         )
-        for finished_task in finished_tasks:
-            yield finished_task
+        yield from finished_tasks
 
         if len(unfinished_tasks) == 0:
             break
@@ -628,7 +630,7 @@ def reward_estimation(job_spec: JobSpec):
     """
     exp_instance = create_exp_instance(job_spec)
     env, algorithm, monitor, opt_logs = setup_experiment(exp_instance)
-    logging.debug("Starting DRMDP Control Experiments: %s", exp_instance)
+    _logger.debug("Starting DRMDP Control Experiments: %s", exp_instance)
 
     results = algorithm.train(
         env=env, num_episodes=exp_instance.run_config.episodes_per_run, monitor=monitor
@@ -649,14 +651,14 @@ def reward_estimation(job_spec: JobSpec):
                         info={},
                     )
 
-            logging.debug(
+            _logger.debug(
                 "\nReturns for run %d of %s:\n%s",
                 exp_instance.instance_id,
                 exp_instance.exp_id,
                 np.mean(returns),
             )
         except Exception as err:
-            logging.error(
+            _logger.error(
                 "Task %s, run %s failed: %s",
                 exp_instance.exp_id,
                 exp_instance.instance_id,
@@ -738,7 +740,7 @@ def setup_experiment(exp_instance: core.ExperimentInstance):
     """
     Sets up an experiment run given an instance.
     """
-    opt_logs: Dict[str, Any] = {}
+    opt_logs: dict[str, Any] = {}
     env_spec = exp_instance.experiment.env_spec
     problem_spec = exp_instance.experiment.problem_spec
     env = envs.make(
@@ -798,8 +800,8 @@ def main():
         num_episodes=args.num_episodes,
         output_path=args.output_path,
     )
-    logging.info("Output dir: %s", args.output_path)
-    logging.info("Done")
+    _logger.info("Output dir: %s", args.output_path)
+    _logger.info("Done")
 
 
 def parse_args() -> Args:

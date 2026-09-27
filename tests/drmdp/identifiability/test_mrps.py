@@ -12,7 +12,7 @@ def _assert_valid_stochastic_matrix(transition):
 
 
 def _hamming_distance(a, b):
-    return bin(a ^ b).count("1")
+    return (a ^ b).bit_count()
 
 
 class TestSolveMrp:
@@ -90,7 +90,7 @@ class TestMrpGenerators:
         _assert_valid_stochastic_matrix(transition)
 
     def test_dumbbell_rewards_in_clique_a(self):
-        transition, rewards = mrps.get_dumbbell_mrp(clique_size=3)
+        _transition, rewards = mrps.get_dumbbell_mrp(clique_size=3)
         np.testing.assert_array_equal(rewards[:3], 10.0)
         np.testing.assert_array_equal(rewards[3:], 0.0)
 

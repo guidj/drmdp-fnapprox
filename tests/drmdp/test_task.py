@@ -1,6 +1,6 @@
 """Tests for task.py — env creation, reward mapping, experiment generation."""
 
-from typing import Sequence
+from collections.abc import Sequence
 
 import numpy as np
 import pytest
@@ -52,7 +52,7 @@ class TestCreateEnv:
                 },
             },
         )
-        obs, _ = result.env.reset(seed=0)
+        _obs, _ = result.env.reset(seed=0)
         _, rew, _, _, _ = result.env.step(0)
         assert rew != -1.0
         result.env.close()
@@ -69,7 +69,7 @@ class TestCreateEnv:
                 },
             },
         )
-        obs, _ = result.env.reset(seed=0)
+        _obs, _ = result.env.reset(seed=0)
         _, rew1, _, _, _ = result.env.step(1)
         assert rew1 == pytest.approx(-0.5)
         result.env.close()

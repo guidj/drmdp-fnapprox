@@ -11,7 +11,8 @@ import itertools
 import json
 import os
 import time
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 import numpy as np
 import tensorflow as tf
@@ -30,7 +31,7 @@ EPSILON_SWEEP_VALUES = (0.1, 0.2, 0.4)
 EPSILON_SWEEP_DELAY_LAM = 5
 EPSILON_SWEEP_NUM_EPISODES = 500
 
-METHOD_CONFIGS: Dict[str, Dict[str, Any]] = {
+METHOD_CONFIGS: dict[str, dict[str, Any]] = {
     "identity": {},
     "least-lfa": {
         "attempt_estimation_episode": 10,
@@ -52,7 +53,7 @@ METHOD_CONFIGS: Dict[str, Dict[str, Any]] = {
     },
 }
 
-METHOD_DISPLAY_NAMES: Dict[str, str] = {
+METHOD_DISPLAY_NAMES: dict[str, str] = {
     "identity": "FR",
     "least-lfa": "LEAST",
     "bayes-least-lfa": "BLADE-TD",
@@ -60,7 +61,7 @@ METHOD_DISPLAY_NAMES: Dict[str, str] = {
 }
 
 
-def build_delay_configs() -> List[Dict[str, Any]]:
+def build_delay_configs() -> list[dict[str, Any]]:
     delay_configs = []
     for lam in DELAY_LAMBDAS:
         lower, upper = mathutils.poisson_exact_confidence_interval(observed_value=lam)
@@ -77,18 +78,18 @@ def load_grids(
     grid_files: Sequence[str],
     min_passes: int = 4,
     grids_per_size: int = GRIDS_PER_SIZE,
-) -> List[Mapping[str, Any]]:
-    all_grids: List[Mapping[str, Any]] = []
+) -> list[Mapping[str, Any]]:
+    all_grids: list[Mapping[str, Any]] = []
     for path in grid_files:
         grids = controlexps.load_solvable_grids(path=path, min_passes=min_passes)
         all_grids.extend(grids)
 
-    specs_by_size: Dict[str, List[Mapping[str, Any]]] = collections.defaultdict(list)
+    specs_by_size: dict[str, list[Mapping[str, Any]]] = collections.defaultdict(list)
     for grid in all_grids:
         size_key = f"{grid['size'][0]}x{grid['size'][1]}"
         specs_by_size[size_key].append(grid)
 
-    selected: List[Mapping[str, Any]] = []
+    selected: list[Mapping[str, Any]] = []
     for size_key in sorted(specs_by_size.keys()):
         grids_for_size = specs_by_size[size_key][:grids_per_size]
         selected.extend(grids_for_size)
@@ -99,9 +100,9 @@ def build_run_configs(
     grids: Sequence[Mapping[str, Any]],
     max_steps_values: Sequence[int],
     num_episodes_values: Sequence[int],
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     delay_configs = build_delay_configs()
-    run_configs: List[Dict[str, Any]] = []
+    run_configs: list[dict[str, Any]] = []
 
     delayed_methods = [name for name in METHOD_CONFIGS if name != "identity"]
     for (
@@ -164,7 +165,7 @@ def build_epsilon_sweep_configs(
     grids: Sequence[Mapping[str, Any]],
     max_steps_values: Sequence[int] = (200, 500),
     epsilon_values: Sequence[float] = EPSILON_SWEEP_VALUES,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """LEAST-only sweep isolating exploration rate from step-count/episode-count.
 
     One grid per size, a single delay level (median lambda), fixed
@@ -185,7 +186,7 @@ def build_epsilon_sweep_configs(
         },
     }
 
-    one_grid_per_size: List[Mapping[str, Any]] = []
+    one_grid_per_size: list[Mapping[str, Any]] = []
     seen_sizes = set()
     for grid_spec in grids:
         size_key = f"{grid_spec['size'][0]}x{grid_spec['size'][1]}"
@@ -193,7 +194,7 @@ def build_epsilon_sweep_configs(
             seen_sizes.add(size_key)
             one_grid_per_size.append(grid_spec)
 
-    run_configs: List[Dict[str, Any]] = []
+    run_configs: list[dict[str, Any]] = []
     for grid_spec, max_steps, epsilon, seed in itertools.product(
         one_grid_per_size, max_steps_values, epsilon_values, SEEDS
     ):
@@ -217,8 +218,8 @@ def build_epsilon_sweep_configs(
 
 def summarize_results(
     results: Sequence[Mapping[str, Any]],
-) -> List[Dict[str, Any]]:
-    summaries: List[Dict[str, Any]] = []
+) -> list[dict[str, Any]]:
+    summaries: list[dict[str, Any]] = []
     for result in results:
         delay_config = result["delay_config"]
         summaries.append(
@@ -247,10 +248,10 @@ def summarize_results(
 
 
 def generate_report(
-    summaries: Sequence[Dict[str, Any]],
-    epsilon_sweep_summaries: Optional[Sequence[Dict[str, Any]]] = None,
+    summaries: Sequence[dict[str, Any]],
+    epsilon_sweep_summaries: Sequence[dict[str, Any]] | None = None,
 ) -> str:
-    lines: List[str] = []
+    lines: list[str] = []
     lines.append("# LEAST vs BLADE-TD vs IMR Validation Report\n")
     lines.append(f"Generated: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
     lines.append(f"Total runs: {len(summaries)}\n")
@@ -431,8 +432,8 @@ def generate_report(
 def run_configs_with_executor(
     run_configs: Sequence[Mapping[str, Any]],
     executor: str,
-    cluster_uri: Optional[str],
-) -> List[Mapping[str, Any]]:
+    cluster_uri: str | None,
+) -> list[Mapping[str, Any]]:
     if executor == "sequential":
         return rewest_runner.run_sequential(run_configs)
     if executor == "joblib":
@@ -496,7 +497,7 @@ def main() -> None:
 
     grids = load_grids(args.grid_files)
     size_labels = sorted(
-        set("{}x{}".format(grid["size"][0], grid["size"][1]) for grid in grids)
+        {"{}x{}".format(grid["size"][0], grid["size"][1]) for grid in grids}
     )
     print(f"Loaded {len(grids)} grids across sizes: {size_labels}")
 
@@ -516,7 +517,7 @@ def main() -> None:
 
     summaries = summarize_results(results)
 
-    epsilon_sweep_summaries: Optional[List[Dict[str, Any]]] = None
+    epsilon_sweep_summaries: list[dict[str, Any]] | None = None
     if not args.skip_epsilon_sweep:
         epsilon_configs = build_epsilon_sweep_configs(
             grids=grids, max_steps_values=args.max_steps

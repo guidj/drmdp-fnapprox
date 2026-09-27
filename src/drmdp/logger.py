@@ -8,12 +8,10 @@ import dataclasses
 import json
 import os.path
 import types
+from collections.abc import Callable, Mapping
 from typing import (
     Any,
-    Callable,
-    Mapping,
-    Optional,
-    Type,
+    Self,
 )
 
 import numpy as np
@@ -43,7 +41,7 @@ class ExperimentLogger(contextlib.AbstractContextManager):
         with tf.io.gfile.GFile(self.param_file, "w") as writer:
             writer.write(json.dumps(dataclasses.asdict(experiment_instance)))
 
-        self._writer: Optional[tf.io.gfile.GFile] = None
+        self._writer: tf.io.gfile.GFile | None = None
 
     def open(self) -> None:
         """
@@ -59,15 +57,15 @@ class ExperimentLogger(contextlib.AbstractContextManager):
             raise RuntimeError("File is not opened")
         self._writer.close()
 
-    def __enter__(self) -> "ExperimentLogger":
+    def __enter__(self) -> Self:
         self.open()
         return self
 
     def __exit__(
         self,
-        exc_type: Optional[Type[BaseException]],
-        exc_value: Optional[BaseException],
-        traceback: Optional[types.TracebackType],
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: types.TracebackType | None,
     ) -> None:
         self.close()
         super().__exit__(exc_type, exc_value, traceback)
@@ -77,7 +75,7 @@ class ExperimentLogger(contextlib.AbstractContextManager):
         episode: int,
         steps: int,
         returns: float,
-        info: Optional[Mapping[str, Any]] = None,
+        info: Mapping[str, Any] | None = None,
     ):
         """
         Logs an experiment entry for an episode.
@@ -105,7 +103,7 @@ def dataclass_from_dict(clazz: Callable, data: Mapping[str, Any]):  # type: igno
 
 
 def json_from_dict(
-    obj: Mapping[str, Any], dict_encode_level: Optional[int] = None
+    obj: Mapping[str, Any], dict_encode_level: int | None = None
 ) -> Mapping[str, Any]:
     """
     Converts a dict into a json object.

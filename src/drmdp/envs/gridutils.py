@@ -1,7 +1,7 @@
 import collections
 import hashlib
 import math
-from typing import List, Sequence, Tuple
+from collections.abc import Sequence
 
 import numpy as np
 
@@ -13,7 +13,7 @@ CELL_CLIFF = 3
 GRID_CHAR = {CELL_OPEN: "o", CELL_START: "s", CELL_GOAL: "g", CELL_CLIFF: "x"}
 
 
-def max_achievable_distance(size: Tuple[int, int], num_cliffs: int) -> int:
+def max_achievable_distance(size: tuple[int, int], num_cliffs: int) -> int:
     """Upper bound on BFS distance achievable with barrier-based construction."""
     nrows, ncols = size
     manhattan = (nrows - 1) + (ncols - 1)
@@ -25,14 +25,14 @@ def max_achievable_distance(size: Tuple[int, int], num_cliffs: int) -> int:
 
 
 def create_grid(
-    size: Tuple[int, int],
+    size: tuple[int, int],
     num_cliffs: int,
     seed: int = 0,
     *,
     strategy: str = "random",
     min_distance: int = 0,
     max_distance: int = 0,
-) -> Tuple[np.ndarray, int, int]:
+) -> tuple[np.ndarray, int, int]:
     if strategy == "random":
         return _create_grid_random(size, num_cliffs, seed)
     elif strategy == "path-blocking":
@@ -47,8 +47,8 @@ def create_grid(
 
 
 def _create_grid_random(
-    size: Tuple[int, int], num_cliffs: int, seed: int
-) -> Tuple[np.ndarray, int, int]:
+    size: tuple[int, int], num_cliffs: int, seed: int
+) -> tuple[np.ndarray, int, int]:
     rng = np.random.default_rng(seed)
     nrows, ncols = size
     npos = nrows * ncols
@@ -80,12 +80,12 @@ def _create_grid_random(
 
 
 def _create_grid_by_blocking(
-    size: Tuple[int, int],
+    size: tuple[int, int],
     num_cliffs: int,
     min_distance: int,
     max_distance: int,
     seed: int,
-) -> Tuple[np.ndarray, int, int]:
+) -> tuple[np.ndarray, int, int]:
     """Bridge-and-scatter: short cliff segments plus random individual cliffs."""
     rng = np.random.default_rng(seed)
     nrows, ncols = size
@@ -153,12 +153,12 @@ def _create_grid_by_blocking(
 
 
 def _create_grid_with_barriers(
-    size: Tuple[int, int],
+    size: tuple[int, int],
     num_cliffs: int,
     min_distance: int,
     max_distance: int,
     seed: int,
-) -> Tuple[np.ndarray, int, int]:
+) -> tuple[np.ndarray, int, int]:
     """Evenly-spaced vertical barriers with alternating gaps."""
     rng = np.random.default_rng(seed)
     nrows, ncols = size
@@ -275,7 +275,7 @@ def grid_bfs(grid: np.ndarray, source: int, target: int) -> int:
 
 def grid_bfs_path(
     grid: np.ndarray, source: int, target: int
-) -> Tuple[int, Tuple[int, ...]]:
+) -> tuple[int, tuple[int, ...]]:
     """BFS shortest path returning both distance and the cell sequence.
 
     Returns ``(distance, path)`` where *path* is a tuple of flat indices
@@ -322,7 +322,7 @@ def grid_bfs_path(
     if not found:
         return -1, ()
 
-    path: List[int] = []
+    path: list[int] = []
     current = target
     while current != source:
         path.append(current)
@@ -332,7 +332,7 @@ def grid_bfs_path(
     return len(path) - 1, tuple(path)
 
 
-def grid_reachable_cells(grid: np.ndarray, start: int) -> frozenset[Tuple[int, int]]:
+def grid_reachable_cells(grid: np.ndarray, start: int) -> frozenset[tuple[int, int]]:
     """All (row, col) positions reachable from *start* via 4-directional moves.
 
     Cliffs are impassable; every other cell type is traversable.
@@ -342,7 +342,7 @@ def grid_reachable_cells(grid: np.ndarray, start: int) -> frozenset[Tuple[int, i
     if grid[start_row, start_col] == CELL_CLIFF:
         return frozenset()
 
-    visited: set[Tuple[int, int]] = {(start_row, start_col)}
+    visited: set[tuple[int, int]] = {(start_row, start_col)}
     queue = collections.deque([(start_row, start_col)])
 
     while queue:
@@ -360,20 +360,20 @@ def grid_reachable_cells(grid: np.ndarray, start: int) -> frozenset[Tuple[int, i
     return frozenset(visited)
 
 
-def grid_to_strings(grid: np.ndarray) -> List[str]:
+def grid_to_strings(grid: np.ndarray) -> list[str]:
     return ["".join(GRID_CHAR[int(cell)] for cell in row) for row in grid]
 
 
-def grid_max_episode_steps(size: Tuple[int, int]) -> int:
+def grid_max_episode_steps(size: tuple[int, int]) -> int:
     nrows, ncols = size
     return nrows * ncols
 
 
 def grid_dead_ohe_indices(
     grid: np.ndarray,
-    exits: Sequence[Tuple[int, int]],
+    exits: Sequence[tuple[int, int]],
     nactions: int,
-) -> List[int]:
+) -> list[int]:
     """Indices of OHE columns for unobservable states.
 
     A state is unobservable (permanently zero in the estimation matrix)
@@ -392,22 +392,23 @@ def grid_dead_ohe_indices(
         reachable = None
 
     exit_set = set(exits)
-    dead_states: List[int] = []
+    dead_states: list[int] = []
     for row in range(nrows):
         for col in range(ncols):
-            if grid[row, col] == CELL_CLIFF:
+            if (
+                grid[row, col] == CELL_CLIFF
+                or (row, col) in exit_set
+                or reachable is not None
+                and (row, col) not in reachable
+            ):
                 dead_states.append(row * ncols + col)
-            elif (row, col) in exit_set:
-                dead_states.append(row * ncols + col)
-            elif reachable is not None and (row, col) not in reachable:
-                dead_states.append(row * ncols + col)
-    indices: List[int] = []
+    indices: list[int] = []
     for state_idx in dead_states:
         for action in range(nactions):
             indices.append(action * nstates + state_idx)
     return sorted(indices)
 
 
-def grid_id(size: Tuple[int, int], seed: int) -> str:
+def grid_id(size: tuple[int, int], seed: int) -> str:
     key = f"{size[0]},{size[1]},{seed}"
     return hashlib.md5(key.encode()).hexdigest()[:6]

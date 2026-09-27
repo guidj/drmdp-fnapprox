@@ -21,7 +21,7 @@ class DummyFTOp(transform.FTOp):
             )
         )
         if not isinstance(env.action_space, gym.spaces.Discrete):
-            raise ValueError(f"Action space must be Discrete. Got {env.action_space}")
+            raise TypeError(f"Action space must be Discrete. Got {env.action_space}")
         self._output_space = transform.ExampleSpace(
             observation_space=spaces.Box(low=-1, high=1, shape=(4,)),
             action_space=env.action_space,
@@ -126,14 +126,10 @@ def test_least_lfa_generative_reward_wrapper_invalid_spaces():
     env = DummyEnv()
 
     # Test invalid observation space
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         ft_op = DummyFTOp(env)
-        setattr(
-            ft_op,
-            "_output_space",
-            dataclasses.replace(
-                getattr(ft_op, "_output_space"), observation_space=spaces.Discrete(5)
-            ),
+        ft_op._output_space = dataclasses.replace(
+            ft_op._output_space, observation_space=spaces.Discrete(5)
         )
         rewdelay.LeastLfaGenerativeRewardWrapper(
             env,
@@ -142,15 +138,10 @@ def test_least_lfa_generative_reward_wrapper_invalid_spaces():
         )
 
     # Test invalid action space
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         ft_op = DummyFTOp(env)
-        setattr(
-            ft_op,
-            "_output_space",
-            dataclasses.replace(
-                getattr(ft_op, "_output_space"),
-                action_space=spaces.Box(low=-1, high=1, shape=(1,)),
-            ),
+        ft_op._output_space = dataclasses.replace(
+            ft_op._output_space, action_space=spaces.Box(low=-1, high=1, shape=(1,))
         )
         rewdelay.LeastLfaGenerativeRewardWrapper(
             env,
@@ -173,7 +164,7 @@ def test_least_lfa_generative_reward_wrapper_with_next_state():
                 )
             )
             if not isinstance(env.action_space, gym.spaces.Discrete):
-                raise ValueError(
+                raise TypeError(
                     f"Action space must be Discrete. Got {env.action_space}"
                 )
             self._output_space = transform.ExampleSpace(
@@ -310,14 +301,10 @@ def test_convex_solver_generative_reward_wrapper_invalid_spaces():
     env = DummyEnv()
 
     # Test invalid observation space
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         ft_op = DummyFTOp(env)
-        setattr(
-            ft_op,
-            "_output_space",
-            dataclasses.replace(
-                getattr(ft_op, "_output_space"), observation_space=spaces.Discrete(5)
-            ),
+        ft_op._output_space = dataclasses.replace(
+            ft_op._output_space, observation_space=spaces.Discrete(5)
         )
         rewdelay.ConvexSolverGenerativeRewardWrapper(
             env,
@@ -326,15 +313,10 @@ def test_convex_solver_generative_reward_wrapper_invalid_spaces():
         )
 
     # Test invalid action space
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         ft_op = DummyFTOp(env)
-        setattr(
-            ft_op,
-            "_output_space",
-            dataclasses.replace(
-                getattr(ft_op, "_output_space"),
-                action_space=spaces.Box(low=-1, high=1, shape=(1,)),
-            ),
+        ft_op._output_space = dataclasses.replace(
+            ft_op._output_space, action_space=spaces.Box(low=-1, high=1, shape=(1,))
         )
         rewdelay.ConvexSolverGenerativeRewardWrapper(
             env,
@@ -573,7 +555,7 @@ def test_data_buffer_max_capacity_with_first_acc_mode():
         buffer.add(value)
         assert buffer.size() <= 10
         # first
-        assert buffer.buffer == list(range(0, min(value + 1, 10)))
+        assert buffer.buffer == list(range(min(value + 1, 10)))
 
     buffer.clear()
     assert buffer.size() == 0
@@ -769,7 +751,7 @@ class DiscreteDummyFTOp(transform.FTOp):
             )
         )
         if not isinstance(env.action_space, gym.spaces.Discrete):
-            raise ValueError(f"Action space must be Discrete. Got {env.action_space}")
+            raise TypeError(f"Action space must be Discrete. Got {env.action_space}")
         self.num_features = num_features
         self._output_space = transform.ExampleSpace(
             observation_space=spaces.Discrete(num_features),

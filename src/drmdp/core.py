@@ -4,31 +4,22 @@ This module defines core abstractions and types.
 
 import abc
 import dataclasses
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    List,
-    Mapping,
-    Optional,
-    Sequence,
-    Tuple,
-    Union,
-)
+from collections.abc import Callable, Mapping, Sequence
+from typing import Any
 
 import gymnasium as gym
 import numpy as np
 from gymnasium.core import ActType, ObsType, RenderFrame, SupportsFloat
 
-NestedArray = Union[Mapping, np.ndarray]
-TimeStep = Tuple[ObsType, SupportsFloat, bool, bool, Mapping[str, Any]]
-InitState = Tuple[ObsType, Mapping[str, Any]]
-RenderType = Optional[Union[RenderFrame, Sequence[RenderFrame]]]
-StateTransition = Mapping[int, Sequence[Tuple[float, int, float, bool]]]
+NestedArray = Mapping | np.ndarray
+TimeStep = tuple[ObsType, SupportsFloat, bool, bool, Mapping[str, Any]]
+InitState = tuple[ObsType, Mapping[str, Any]]
+RenderType = RenderFrame | Sequence[RenderFrame] | None
+StateTransition = Mapping[int, Sequence[tuple[float, int, float, bool]]]
 # Type: Mapping[state, Mapping[action, Sequence[Tuple[prob, next_state, reward, terminated]]]]
 EnvTransition = Mapping[int, StateTransition]
-MutableStateTransition = Dict[int, List[Tuple[float, int, float, bool]]]
-MutableEnvTransition = Dict[int, MutableStateTransition]
+MutableStateTransition = dict[int, list[tuple[float, int, float, bool]]]
+MutableEnvTransition = dict[int, MutableStateTransition]
 MapsToIntId = Callable[[Any], int]
 
 
@@ -53,7 +44,7 @@ class PyPolicy(abc.ABC):
         self,
         action_space: gym.Space,
         emit_log_probability: bool = False,
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ):
         self.action_space = action_space
         self.emit_log_probability = emit_log_probability
@@ -61,7 +52,7 @@ class PyPolicy(abc.ABC):
         self.rng = np.random.default_rng(seed)
 
     @abc.abstractmethod
-    def get_initial_state(self, batch_size: Optional[int] = None) -> Any:
+    def get_initial_state(self, batch_size: int | None = None) -> Any:
         """Returns an initial state usable by the policy.
 
         Args:
@@ -122,9 +113,9 @@ class EnvSpec:
     """
 
     name: str
-    args: Optional[Mapping[str, Any]]
+    args: Mapping[str, Any] | None
     feats_spec: Sequence[Mapping[str, Any]]
-    metadata: Optional[Mapping[str, Any]] = None
+    metadata: Mapping[str, Any] | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -135,7 +126,7 @@ class ProblemSpec:
 
     policy_type: str
     reward_mapper: Mapping[str, Any]
-    delay_config: Optional[Mapping[str, Any]]
+    delay_config: Mapping[str, Any] | None
     epsilon: float
     gamma: float
     learning_rate_config: Mapping[str, Any]
@@ -175,7 +166,7 @@ class ExperimentInstance:
     instance_id: int
     experiment: Experiment
     run_config: RunConfig
-    context: Optional[Mapping[str, Any]]
+    context: Mapping[str, Any] | None
     export_model: bool
 
 
@@ -205,8 +196,8 @@ class EnvMonitor:
     """
 
     def __init__(self):
-        self.returns: List[float] = []
-        self.steps: List[int] = []
+        self.returns: list[float] = []
+        self.steps: list[int] = []
         self.rewards: float = 0
         self.step: int = 0
 
@@ -236,10 +227,10 @@ class Seeder:
     of integers into a unique integer.
     """
 
-    def __init__(self, instance: Optional[int] = None):
+    def __init__(self, instance: int | None = None):
         self.instance = instance
 
-    def get_seed(self, episode: int) -> Optional[int]:
+    def get_seed(self, episode: int) -> int | None:
         """
         For a given instance (seed), generated
         episode specific seeds consistently.

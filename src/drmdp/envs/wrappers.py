@@ -1,5 +1,6 @@
 import copy
-from typing import Any, Dict, Hashable, Optional, Sequence, Tuple
+from collections.abc import Hashable, Sequence
+from typing import Any
 
 import gymnasium as gym
 import numpy as np
@@ -16,10 +17,10 @@ class RandomBinaryObsWrapper(gym.ObservationWrapper):
             low=0, high=1, shape=(enc_size,), dtype=np.int64
         )
         self.enc_size = enc_size
-        self._representations: Dict[Hashable, Any] = {}
+        self._representations: dict[Hashable, Any] = {}
 
         if not isinstance(env.observation_space, (gym.spaces.Box, gym.spaces.Discrete)):
-            raise ValueError(
+            raise TypeError(
                 f"Environment space must be either Box or Discrete, not {type(env.observation_space)}"
             )
 
@@ -46,7 +47,7 @@ class ScaleObsWrapper(gym.ObservationWrapper):
     def __init__(self, env):
         super().__init__(env)
         if not isinstance(env.observation_space, gym.spaces.Box):
-            raise ValueError(
+            raise TypeError(
                 f"Expected Box observation_space. Got: {env.observation_space}"
             )
 
@@ -116,7 +117,7 @@ class ClusterCentroidObsWrapper(gym.ObservationWrapper):
         env: gym.Env,
         num_clusters: int,
         sample_steps: int,
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ):
         super().__init__(env)
         self.num_clusters = num_clusters
@@ -127,7 +128,7 @@ class ClusterCentroidObsWrapper(gym.ObservationWrapper):
             copy.copy(env), steps=self.sample_steps, seed=seed
         )
         if not isinstance(env.observation_space, gym.spaces.Box):
-            raise ValueError(
+            raise TypeError(
                 f"Source `env` observation space must be of type `Box`. Got {type(env.observation_space)}"
             )
         # To make centroids float64.
@@ -138,7 +139,7 @@ class ClusterCentroidObsWrapper(gym.ObservationWrapper):
         self.obs_dim = self.num_clusters
         self.observation_space = gym.spaces.Discrete(self.num_clusters)
 
-    def fit_clusters(self, matrix, seed: Optional[int] = None):
+    def fit_clusters(self, matrix, seed: int | None = None):
         """
         Fit clusters.
         """
@@ -165,7 +166,7 @@ class FlatGridCoordObsWrapper(gym.ObservationWrapper):
     def __init__(self, env: gym.Env, ohe: bool = False):
         super().__init__(env)
         if not isinstance(env.observation_space, gym.spaces.Box):
-            raise ValueError(
+            raise TypeError(
                 f"Source `env` observation space must be of type `Box`. Got {type(env.observation_space)}"
             )
 
@@ -237,8 +238,8 @@ class TilesObsWrapper(gym.ObservationWrapper):
         self,
         env: gym.Env,
         tiling_dim: int,
-        num_tilings: Optional[int] = None,
-        hash_dim: Optional[int] = None,
+        num_tilings: int | None = None,
+        hash_dim: int | None = None,
     ):
         super().__init__(env)
         self.tiles = tiles.Tiles(
@@ -417,7 +418,7 @@ class GaussianRewardNoiseWrapper(gym.Wrapper):
         env: gym.Env,
         scale: float = 1.0,
         clip_std: float = 1.96,
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ):
         super().__init__(env)
         self.scale = scale
@@ -479,11 +480,11 @@ class GridWorldGaussianReward(GaussianRewardNoiseWrapper):
     def __init__(
         self,
         env: gym.Env,
-        goal_pos: Tuple[int, int],
+        goal_pos: tuple[int, int],
         max_dist: float,
         scale: float = 1.0,
         clip_std: float = 1.96,
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ):
         super().__init__(env, scale=scale, clip_std=clip_std, seed=seed)
         self.goal_pos = np.array(goal_pos, dtype=np.float64)
@@ -496,7 +497,7 @@ class GridWorldGaussianReward(GaussianRewardNoiseWrapper):
         return 0.5 + 0.5 * normalized
 
 
-def wrap(env: gym.Env, wrapper: Optional[str] = None, **kwargs):
+def wrap(env: gym.Env, wrapper: str | None = None, **kwargs):
     """
     Creates an environment observation wrappers.
     """

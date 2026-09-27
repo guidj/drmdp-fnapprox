@@ -51,14 +51,14 @@ def test_random_binary_obs_wrapper():
 
     obs_1 = wrapped_env.observation(np.array([0]))
     np.testing.assert_array_equal(np.size(obs_1), 4)
-    np.testing.assert_array_equal(obs_1, getattr(wrapped_env, "_representations")[(0,)])
+    np.testing.assert_array_equal(obs_1, wrapped_env._representations[(0,)])
     assert np.min(obs_1) <= 0
     assert np.max(obs_1) <= 1
     assert np.sum(obs_1) <= 4
 
     obs_2 = wrapped_env.observation(np.array([1]))
     np.testing.assert_array_equal(np.size(obs_2), 4)
-    np.testing.assert_array_equal(obs_2, getattr(wrapped_env, "_representations")[(1,)])
+    np.testing.assert_array_equal(obs_2, wrapped_env._representations[(1,)])
     assert np.min(obs_2) <= 0
     assert np.max(obs_2) <= 1
     assert np.sum(obs_2) <= 4
@@ -154,7 +154,7 @@ class TestPotentialShapingWrapper:
     def test_non_terminal_applies_shaping(self):
         env = gym.make("MountainCar-v0", max_episode_steps=200)
         shaped = wrappers.MountainCarHeightShaping(env, gamma=0.99)
-        obs, _ = shaped.reset(seed=0)
+        _obs, _ = shaped.reset(seed=0)
         _, rew, _, _, _ = shaped.step(0)
         assert rew != -1.0
         shaped.close()
@@ -307,7 +307,7 @@ class TestTilesObsWrapper:
         env = envs.make("MountainCar-v0", max_episode_steps=200)
         wrapped = wrappers.TilesObsWrapper(env, tiling_dim=4)
         wrapped.reset(seed=0)
-        obs, rew, term, trunc, info = wrapped.step(0)
+        obs, rew, _term, _trunc, _info = wrapped.step(0)
         assert np.all((obs == 0) | (obs == 1))
         assert isinstance(rew, float)
         wrapped.close()

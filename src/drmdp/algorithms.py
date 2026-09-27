@@ -2,12 +2,15 @@ import abc
 import copy
 import dataclasses
 import logging
-from typing import Any, Iterator, Optional, Tuple
+from collections.abc import Iterator
+from typing import Any
 
 import gymnasium as gym
 import numpy as np
 
 from drmdp import core, mathutils, optsol, transform
+
+logger = logging.getLogger(__name__)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -18,7 +21,7 @@ class PolicyControlSnapshot:
 
 
 class FnApproxAlgorithm(abc.ABC):
-    def __init__(self, base_seed: Optional[int] = None):
+    def __init__(self, base_seed: int | None = None):
         super().__init__()
         self.seeder = core.Seeder(base_seed)
 
@@ -38,7 +41,7 @@ class SemigradientSARSAFnApprox(FnApproxAlgorithm):
         gamma: float,
         epsilon: float,
         policy: core.PyValueFnPolicy,
-        base_seed: Optional[int] = None,
+        base_seed: int | None = None,
         verbose: bool = True,
     ):
         super().__init__(base_seed)
@@ -100,7 +103,7 @@ class SemigradientSARSAFnApprox(FnApproxAlgorithm):
                 state_qvalues = next_state_qvalues
                 gradients = next_gradients
             if self.verbose and (episode + 1) % max((num_episodes // 5), 1) == 0:
-                logging.info(
+                logger.info(
                     "Episode %d mean returns: %f",
                     episode + 1,
                     np.mean(monitor.returns + [monitor.rewards]),
@@ -119,10 +122,10 @@ class LinearFnApproxPolicy(core.PyValueFnPolicy):
         ft_op: transform.FTOp,
         action_space: gym.Space,
         emit_log_probability: bool = False,
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ):
         if not isinstance(ft_op.output_space.action_space, gym.spaces.Discrete):
-            raise ValueError(
+            raise TypeError(
                 f"This policy only supports discrete action spaces. Got {type(ft_op.output_space.action_space)}"
             )
         super().__init__(action_space, emit_log_probability, seed)
@@ -195,10 +198,10 @@ class RandomFnApproxPolicy(core.PyValueFnPolicy):
         ft_op: transform.FTOp,
         action_space: gym.Space,
         emit_log_probability: bool = False,
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ):
         if not isinstance(action_space, gym.spaces.Discrete):
-            raise ValueError(
+            raise TypeError(
                 f"This policy only supports discrete action spaces. Got {type(action_space)}"
             )
         super().__init__(action_space, emit_log_probability, seed)
@@ -267,7 +270,7 @@ class OptionsSemigradientSARSAFnApprox(FnApproxAlgorithm):
         gamma: float,
         epsilon: float,
         policy: core.PyValueFnPolicy,
-        base_seed: Optional[int] = None,
+        base_seed: int | None = None,
         verbose: bool = True,
     ):
         super().__init__(base_seed)
@@ -344,7 +347,7 @@ class OptionsSemigradientSARSAFnApprox(FnApproxAlgorithm):
                 gradients = next_gradients
                 actions = next_actions
             if self.verbose and (episode + 1) % max(num_episodes // 5, 1) == 0:
-                logging.info(
+                logger.info(
                     "Episode %d mean returns: %f",
                     episode + 1,
                     np.mean(monitor.returns + [monitor.rewards]),
@@ -393,16 +396,16 @@ class OptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
         self,
         ft_op: transform.FTOp,
         action_space: gym.Space,
-        options_length_range: Tuple[int, int],
+        options_length_range: tuple[int, int],
         emit_log_probability: bool = False,
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ):
         if len(ft_op.output_space.observation_space.shape) != 1:
             raise ValueError(
                 f"Observation output space must be a vector. Got {type(ft_op.output_space.observation_space.shape)}"
             )
         if not isinstance(action_space, gym.spaces.Discrete):
-            raise ValueError(
+            raise TypeError(
                 f"This policy only supports discrete action spaces. Got {type(action_space)}"
             )
         super().__init__(action_space, emit_log_probability, seed)
@@ -510,16 +513,16 @@ class SingleActionOptionsLinearFnApproxPolicy(core.PyValueFnPolicy):
         self,
         ft_op: transform.FTOp,
         action_space: gym.Space,
-        options_length_range: Tuple[int, int],
+        options_length_range: tuple[int, int],
         emit_log_probability: bool = False,
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ):
         if len(ft_op.output_space.observation_space.shape) != 1:
             raise ValueError(
                 f"Observation output space must be a vector. Got {type(ft_op.output_space.observation_space.shape)}"
             )
         if not isinstance(action_space, gym.spaces.Discrete):
-            raise ValueError(
+            raise TypeError(
                 f"This policy only supports discrete action spaces. Got {type(action_space)}"
             )
         super().__init__(action_space, emit_log_probability, seed)
@@ -626,7 +629,7 @@ class DropMissingSemigradientSARSAFnApprox(FnApproxAlgorithm):
         gamma: float,
         epsilon: float,
         policy: core.PyValueFnPolicy,
-        base_seed: Optional[int] = None,
+        base_seed: int | None = None,
         verbose: bool = True,
     ):
         super().__init__(base_seed)
@@ -690,7 +693,7 @@ class DropMissingSemigradientSARSAFnApprox(FnApproxAlgorithm):
                 state_qvalues = next_state_qvalues
                 gradients = next_gradients
             if self.verbose and (episode + 1) % max((num_episodes // 5), 1) == 0:
-                logging.info(
+                logger.info(
                     "Episode %d mean returns: %f",
                     episode + 1,
                     np.mean(monitor.returns + [monitor.rewards]),

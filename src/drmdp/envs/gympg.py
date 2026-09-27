@@ -1,4 +1,4 @@
-from typing import Callable, Optional, Tuple
+from collections.abc import Callable
 
 import gymnasium as gym
 import numpy as np
@@ -32,7 +32,7 @@ class GridWorldObsAsVectorWrapper(gym.ObservationWrapper):
         self.states_mapping = gridworld.states_mapping(
             size=env._size, cliffs=tuple(env._cliffs)
         )
-        self._get_state_id: Callable[[Tuple[int, int]], int] = (
+        self._get_state_id: Callable[[tuple[int, int]], int] = (
             gridworld.create_obs_state_id_fn(states=self.states_mapping)
         )
         self.num_states = len(self.transition)
@@ -78,7 +78,7 @@ class RedgreenObsAsVectorWrapper(gym.ObservationWrapper):
         return np.array([observation["pos"]], dtype=np.int64)
 
 
-def make(env_name: str, wrapper: Optional[str] = None, **kwargs) -> gym.Env:
+def make(env_name: str, wrapper: str | None = None, **kwargs) -> gym.Env:
     if env_name.startswith("GridWorld-"):
         grid = kwargs.get("grid", DEFAULT_GW_GRID)
         size, cliffs, exits, start = gridworld.parse_grid_from_text(grid)
@@ -113,7 +113,7 @@ def make(env_name: str, wrapper: Optional[str] = None, **kwargs) -> gym.Env:
     return wrappers.wrap(env, wrapper=wrapper, **kwargs)
 
 
-def episode_steps_limit(env: gym.Env, max_episode_steps: Optional[int] = None):
+def episode_steps_limit(env: gym.Env, max_episode_steps: int | None = None):
     """
     Applies a `TimeLimit` wrapper, if `max_episode_steps` is defined.
     """

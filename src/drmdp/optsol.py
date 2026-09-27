@@ -1,6 +1,7 @@
 import abc
 import dataclasses
-from typing import Callable, Optional, Sequence
+from collections.abc import Callable, Sequence
+from typing import Optional
 
 import cvxpy as cp
 import cvxpy.error
@@ -51,7 +52,7 @@ class MultivariateNormal:
         except linalg.LinAlgError as err:
             if "Singular matrix" in err.args[0]:
                 return None
-            raise err
+            raise
         return MultivariateNormal(coeff, cov)
 
     @classmethod
@@ -60,7 +61,7 @@ class MultivariateNormal:
         matrix,
         rhs,
         constraint_fn: Callable[[cp.Variable], Sequence],
-        warm_start_initial_guess: Optional[np.ndarray] = None,
+        warm_start_initial_guess: np.ndarray | None = None,
         inverse: str = "pseudo",
     ) -> Optional["MultivariateNormal"]:
         """
@@ -87,7 +88,7 @@ class MultivariateNormal:
         except linalg.LinAlgError as err:
             if "Singular matrix" in err.args[0]:
                 return None
-            raise err
+            raise
         return MultivariateNormal(coeff, cov)
 
     @classmethod
@@ -125,7 +126,7 @@ class LearningRateSchedule(abc.ABC):
         self.initial_lr = initial_lr
 
     @abc.abstractmethod
-    def schedule(self, episode: Optional[int] = None, step: Optional[int] = None):
+    def schedule(self, episode: int | None = None, step: int | None = None):
         pass
 
     def __call__(self, episode: int, step: int):
@@ -145,7 +146,7 @@ class StreamingMean:
     """
 
     def __init__(self):
-        self.mean: Optional[float] = None
+        self.mean: float | None = None
         self.count: int = 0
 
     def add(self, value: float) -> float:
@@ -277,7 +278,7 @@ def solve_convex_least_squares(
     matrix: np.ndarray,
     rhs: np.ndarray,
     constraint_fn: Callable[[cp.Variable], Sequence],
-    warm_start_initial_guess: Optional[np.ndarray] = None,
+    warm_start_initial_guess: np.ndarray | None = None,
 ) -> np.ndarray:
     """
     Solves Least Squares with convex optimisation,

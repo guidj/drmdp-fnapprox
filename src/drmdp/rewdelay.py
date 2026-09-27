@@ -3,22 +3,19 @@ import dataclasses
 import logging
 import random
 import sys
+from collections.abc import Callable, Sequence
 from enum import Enum
 from typing import (
     Any,
-    Callable,
-    Dict,
-    List,
-    Optional,
     Protocol,
-    Sequence,
-    Tuple,
 )
 
 import gymnasium as gym
 import numpy as np
 
 from drmdp import mathutils, metrics, optsol, transform
+
+logger = logging.getLogger(__name__)
 
 
 class OptState(str, Enum):
@@ -39,7 +36,7 @@ class RewardDelay(abc.ABC):
     def sample(self) -> int: ...
 
     @abc.abstractmethod
-    def range(self) -> Tuple[int, int]: ...
+    def range(self) -> tuple[int, int]: ...
 
     @classmethod
     @abc.abstractmethod
@@ -58,7 +55,7 @@ class FixedDelay(RewardDelay):
     def sample(self) -> int:
         return self.delay
 
-    def range(self) -> Tuple[int, int]:
+    def range(self) -> tuple[int, int]:
         return self.delay, self.delay
 
     @classmethod
@@ -80,7 +77,7 @@ class UniformDelay(RewardDelay):
     def sample(self):
         return random.randint(self.min_delay, self.max_delay)
 
-    def range(self) -> Tuple[int, int]:
+    def range(self) -> tuple[int, int]:
         return self.min_delay, self.max_delay
 
     @classmethod
@@ -94,7 +91,7 @@ class ClippedPoissonDelay(RewardDelay):
     """
 
     def __init__(
-        self, lam: int, min_delay: Optional[int] = None, max_delay: Optional[int] = None
+        self, lam: int, min_delay: int | None = None, max_delay: int | None = None
     ):
         """
         Calculate upper and lower bounds if not provided.
@@ -109,7 +106,7 @@ class ClippedPoissonDelay(RewardDelay):
     def sample(self):
         return np.clip(self.rng.poisson(self.lam), self.min_delay, self.max_delay)
 
-    def range(self) -> Tuple[int, int]:
+    def range(self) -> tuple[int, int]:
         return self.min_delay, self.max_delay
 
     @classmethod
@@ -131,8 +128,8 @@ class DataBuffer:
 
     def __init__(
         self,
-        max_capacity: Optional[int] = None,
-        max_size_bytes: Optional[int] = None,
+        max_capacity: int | None = None,
+        max_size_bytes: int | None = None,
         acc_mode: str = ACC_LASTEST,
     ):
         """
@@ -141,7 +138,7 @@ class DataBuffer:
         self.max_capacity = max_capacity
         self.max_size_bytes = max_size_bytes
         self.acc_mode = acc_mode
-        self.buffer: List[Any] = []
+        self.buffer: list[Any] = []
 
     def add(self, element: Any):
         """
@@ -323,10 +320,10 @@ class DelayedRewardWrapper(gym.Wrapper, SupportsName):
     ):
         super().__init__(env)
         self.reward_delay = reward_delay
-        self.segment: Optional[int] = None
-        self.segment_step: Optional[int] = None
-        self.delay: Optional[int] = None
-        self.rewards: List[float] = []
+        self.segment: int | None = None
+        self.segment_step: int | None = None
+        self.delay: int | None = None
+        self.rewards: list[float] = []
         self.op = op
 
     def step(self, action):
@@ -414,7 +411,7 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
         ft_op: transform.FTOp,
         use_bias: bool = False,
         impute_value: float = 0.0,
-        estimation_buffer_mult: Optional[int] = None,
+        estimation_buffer_mult: int | None = None,
         use_next_state: bool = False,
     ):
         super().__init__(env)
@@ -443,7 +440,7 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
     def _validate_action_space(self, ft_op: transform.FTOp):
         """Validate action space is Discrete."""
         if not isinstance(ft_op.output_space.action_space, gym.spaces.Discrete):
-            raise ValueError(
+            raise TypeError(
                 f"ft_op action space must be Discrete. "
                 f"Got: {type(ft_op.output_space.action_space)}"
             )
@@ -533,14 +530,14 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
         del next_obs
         del action
 
-    def _get_estimator_info(self) -> Dict[str, Any]:
+    def _get_estimator_info(self) -> dict[str, Any]:
         """
         Get estimator-specific info to include in step return.
         Override to add custom info.
         """
         return {}
 
-    def _extract_buffer_data(self) -> Tuple[np.ndarray, np.ndarray, int]:
+    def _extract_buffer_data(self) -> tuple[np.ndarray, np.ndarray, int]:
         """
         Extract and prepare data from estimation buffer.
 
@@ -569,7 +566,7 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
         self, err: ValueError, matrix: np.ndarray, rewards: np.ndarray
     ):
         """Handle estimation failure by logging and dropping 5% of samples."""
-        logging.debug(
+        logger.debug(
             "%s - Failed estimation for %s: \n%s",
             self.get_name(),
             self.get_env_name(),
@@ -582,7 +579,7 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
         obs_buffer = matrix.tolist()
         rew_buffer = rewards.tolist()
         self.est_buffer.buffer = list(zip(obs_buffer, rew_buffer))
-        logging.debug(
+        logger.debug(
             "%s - Dropped %d samples",
             self.get_name(),
             nexamples_dropped,
@@ -601,7 +598,7 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
         weights: np.ndarray,
         error: float,
         **extra_fields,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Create estimation snapshot for metadata tracking.
 
@@ -733,7 +730,7 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         env: gym.Env,
         ft_op: transform.FTOp,
         attempt_estimation_episode: int,
-        estimation_buffer_mult: Optional[int] = None,
+        estimation_buffer_mult: int | None = None,
         use_bias: bool = False,
         impute_value: float = 0.0,
         check_factors: bool = False,
@@ -758,7 +755,7 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
 
     def _validate_observation_space(self, ft_op: transform.FTOp):
         if not isinstance(ft_op.output_space.observation_space, gym.spaces.Discrete):
-            raise ValueError(
+            raise TypeError(
                 f"ft_op space must be Discrete. "
                 f"Got: {type(ft_op.output_space.observation_space)}"
             )
@@ -814,7 +811,7 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
             error = self._calculate_rmse(matrix, weights, rewards)
             snapshot = self._create_snapshot(nexamples, matrix, weights, error)
             self.estimation_meta["snapshots"].append(snapshot)
-            logging.info(
+            logger.info(
                 "%s - Estimated rewards for %s. RMSE: %f; No. Samples: %d",
                 self.get_name(),
                 self.get_env_name(),
@@ -841,7 +838,7 @@ class LeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         env: gym.Env,
         ft_op: transform.FTOp,
         attempt_estimation_episode: int,
-        estimation_buffer_mult: Optional[int] = None,
+        estimation_buffer_mult: int | None = None,
         use_bias: bool = False,
         impute_value: float = 0.0,
         check_factors: bool = False,
@@ -866,7 +863,7 @@ class LeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
 
     def _validate_observation_space(self, ft_op: transform.FTOp):
         if not isinstance(ft_op.output_space.observation_space, gym.spaces.Box):
-            raise ValueError(
+            raise TypeError(
                 f"ft_op space must be Box. "
                 f"Got: {type(ft_op.output_space.observation_space)}"
             )
@@ -915,7 +912,7 @@ class LeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
             error = self._calculate_rmse(matrix, weights, rewards)
             snapshot = self._create_snapshot(nexamples, matrix, weights, error)
             self.estimation_meta["snapshots"].append(snapshot)
-            logging.info(
+            logger.info(
                 "%s - Estimated rewards for %s. RMSE: %f; No. Samples: %d",
                 self.get_name(),
                 self.get_env_name(),
@@ -946,7 +943,7 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         ft_op: transform.FTOp,
         mode: str = WindowedTaskSchedule.DOUBLE,
         init_attempt_estimation_episode: int = 10,
-        estimation_buffer_mult: Optional[int] = None,
+        estimation_buffer_mult: int | None = None,
         use_bias: bool = False,
         impute_value: float = 0.0,
         check_factors: bool = False,
@@ -970,8 +967,8 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         )
         self.update_episode = init_attempt_estimation_episode
         self.posterior_updates = 0
-        self.mv_normal_rewards: Optional[optsol.MultivariateNormal] = None
-        self.estimation_meta: Dict[str, Any] = {
+        self.mv_normal_rewards: optsol.MultivariateNormal | None = None
+        self.estimation_meta: dict[str, Any] = {
             "use_bias": use_bias,
             "check_factors": check_factors,
             "snapshots": [],
@@ -979,7 +976,7 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
 
     def _validate_observation_space(self, ft_op: transform.FTOp):
         if not isinstance(ft_op.output_space.observation_space, gym.spaces.Box):
-            raise ValueError(
+            raise TypeError(
                 f"ft_op space must be Box. "
                 f"Got: {type(ft_op.output_space.observation_space)}"
             )
@@ -1019,7 +1016,7 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
     def _on_estimation_complete(self, success: bool):
         self.windowed_task_schedule.set_state(succ=success)
 
-    def _get_estimator_info(self) -> Dict[str, Any]:
+    def _get_estimator_info(self) -> dict[str, Any]:
         return {
             "posterior_updates": self.posterior_updates,
             "sample_weights": self.sample_weights,
@@ -1063,7 +1060,7 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
                 snapshot = self._create_snapshot(nexamples, matrix, weights, error)
                 self.estimation_meta["snapshots"].append(snapshot)
 
-                logging.info(
+                logger.info(
                     "%s - %s rewards for %s. RMSE: %f; No. Samples: %d",
                     "Estimated" if self.posterior_updates == 0 else "Updated",
                     self.get_name(),
@@ -1099,10 +1096,10 @@ class ConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         env: gym.Env,
         ft_op: transform.FTOp,
         attempt_estimation_episode: int,
-        estimation_buffer_mult: Optional[int] = None,
+        estimation_buffer_mult: int | None = None,
         use_bias: bool = False,
         impute_value: float = 0.0,
-        constraints_buffer_limit: Optional[int] = None,
+        constraints_buffer_limit: int | None = None,
         use_next_state: bool = False,
     ):
         super().__init__(
@@ -1122,7 +1119,7 @@ class ConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
 
     def _validate_observation_space(self, ft_op: transform.FTOp):
         if not isinstance(ft_op.output_space.observation_space, gym.spaces.Box):
-            raise ValueError(
+            raise TypeError(
                 f"ft_op space must be Box. "
                 f"Got: {type(ft_op.output_space.observation_space)}"
             )
@@ -1197,7 +1194,7 @@ class ConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
             )
             self.estimation_meta["snapshots"].append(snapshot)
 
-            logging.info(
+            logger.info(
                 "%s - Estimated rewards for %s. RMSE: %f; No. Samples: %d, # Constraints: %d",
                 self.get_name(),
                 self.get_env_name(),
@@ -1230,10 +1227,10 @@ class RecurringConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         ft_op: transform.FTOp,
         mode: str = WindowedTaskSchedule.DOUBLE,
         init_attempt_estimation_episode: int = 10,
-        estimation_buffer_mult: Optional[int] = None,
+        estimation_buffer_mult: int | None = None,
         use_bias: bool = False,
         impute_value: float = 0.0,
-        constraints_buffer_limit: Optional[int] = None,
+        constraints_buffer_limit: int | None = None,
         use_next_state: bool = False,
     ):
         super().__init__(
@@ -1252,8 +1249,8 @@ class RecurringConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         )
         self.update_episode = init_attempt_estimation_episode
         self.posterior_updates = 0
-        self.weights: Optional[np.ndarray] = None
-        self.estimation_meta: Dict[str, Any] = {
+        self.weights: np.ndarray | None = None
+        self.estimation_meta: dict[str, Any] = {
             "use_bias": self.use_bias,
             "snapshots": [],
         }
@@ -1262,7 +1259,7 @@ class RecurringConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
 
     def _validate_observation_space(self, ft_op: transform.FTOp):
         if not isinstance(ft_op.output_space.observation_space, gym.spaces.Box):
-            raise ValueError(
+            raise TypeError(
                 f"ft_op space must be Box. "
                 f"Got: {type(ft_op.output_space.observation_space)}"
             )
@@ -1300,7 +1297,7 @@ class RecurringConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
     def _on_estimation_complete(self, success: bool):
         self.windowed_task_schedule.set_state(succ=success)
 
-    def _get_estimator_info(self) -> Dict[str, Any]:
+    def _get_estimator_info(self) -> dict[str, Any]:
         return {"posterior_updates": self.posterior_updates}
 
     def estimate_rewards(self) -> bool:
@@ -1355,7 +1352,7 @@ class RecurringConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
             )
             self.estimation_meta["snapshots"].append(snapshot)
 
-            logging.info(
+            logger.info(
                 "%s - %s rewards for %s. RMSE: %f; No. Samples: %d, # Constraints: %d",
                 "Estimated" if self.posterior_updates == 0 else "Updated",
                 self.get_name(),
@@ -1371,7 +1368,7 @@ class RecurringConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         return True
 
 
-def list_size(xs: List[Any]) -> int:
+def list_size(xs: list[Any]) -> int:
     """
     Gets the size of a list in bytes.
     """
@@ -1380,7 +1377,7 @@ def list_size(xs: List[Any]) -> int:
 
 def drop_samples(
     frac: float, arrays: Sequence[np.ndarray], rng: np.random.Generator
-) -> Tuple[int, Sequence[np.ndarray]]:
+) -> tuple[int, Sequence[np.ndarray]]:
     """
     Drops a fraction of examples of every arrays.
     Arrays are assumed to be of equal length in their

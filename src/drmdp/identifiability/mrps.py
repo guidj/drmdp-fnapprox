@@ -1,6 +1,5 @@
 from collections import deque
 from math import gcd
-from typing import Optional
 
 import numpy as np
 
@@ -163,7 +162,7 @@ def get_complete_mrp(num_states=8):
 # 6. RANDOM EXPANDER GRAPH (The Spectral Gap Model)
 # Ref: Hoory, S., Linial, N., & Wigderson, A. (2006). "Expander graphs and their applications."
 # DOI: 10.1090/S0273-0979-06-01126-8
-def get_expander_mrp(num_states=10, degree=3, seed: Optional[int] = None):
+def get_expander_mrp(num_states=10, degree=3, seed: int | None = None):
     """Random walk on a random degree-regular-like graph of num_states states.
 
     Each state is connected to degree randomly chosen neighbors (not necessarily

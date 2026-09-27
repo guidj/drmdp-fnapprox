@@ -13,7 +13,7 @@ class TestCollectionTrajData:
         env = gym.make("MountainCar-v0", max_episode_steps=200)
         buffer = dataproc.collection_traj_data(env, steps=50, seed=0)
         assert len(buffer) == 50
-        obs, action, next_obs, reward = buffer[0]
+        obs, _action, next_obs, _reward = buffer[0]
         assert obs.shape == (2,)
         assert next_obs.shape == (2,)
         env.close()

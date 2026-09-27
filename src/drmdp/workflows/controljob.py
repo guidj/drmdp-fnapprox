@@ -6,13 +6,16 @@ import argparse
 import dataclasses
 import itertools
 import logging
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 import numpy as np
 import ray
 
 from drmdp import core, task
 from drmdp.workflows import controlexps
+
+logger = logging.getLogger(__name__)
 
 EM_PS = "electric-motor"
 GW_PS = "grid-world"
@@ -29,7 +32,7 @@ class ControlPipelineArgs:
 
     # problem args
     problem_set: str
-    grids_file: Optional[str]
+    grids_file: str | None
     num_runs: int
     num_episodes: int
     output_dir: str
@@ -38,7 +41,7 @@ class ControlPipelineArgs:
     use_seed: bool
     export_model: bool
     # ray args
-    cluster_uri: Optional[str]
+    cluster_uri: str | None
 
 
 def wait_till_completion(tasks_refs):
@@ -48,7 +51,7 @@ def wait_till_completion(tasks_refs):
     unfinished_tasks = tasks_refs
     while True:
         finished_tasks, unfinished_tasks = ray.wait(unfinished_tasks)
-        logging.info(
+        logger.info(
             "Completed %d task(s). %d left out of %d.",
             len(finished_tasks),
             len(unfinished_tasks),
@@ -99,7 +102,7 @@ def create_tasks(
     # shuffle tasks to balance workload
     np.random.shuffle(experiment_instances)  # type: ignore
 
-    logging.info(
+    logger.info(
         "Parsed %d experiments into %d instances.",
         len(experiments),
         len(experiment_instances),
@@ -113,7 +116,7 @@ def parse_experiments(
     """
     Convert experiments from Dict into typed datastructures.
     """
-    experiment_specs: List[core.Experiment] = []
+    experiment_specs: list[core.Experiment] = []
     for spec in specs:
         for feat_tfx_spec, problem_spec in itertools.product(
             spec["feats_specs"], spec["problem_specs"]
@@ -141,7 +144,7 @@ def run_experiment(
     Run experiments.
     """
     task_id = f"{experiment_instance.exp_id}/{experiment_instance.instance_id}"
-    logging.info(
+    logger.info(
         "Experiment %s starting: %s",
         task_id,
         experiment_instance,
@@ -149,9 +152,9 @@ def run_experiment(
     try:
         task.policy_control(experiment_instance)
     except Exception as err:
-        logging.error("Error in experiment %s: %s", task_id, err)
+        logger.error("Error in experiment %s: %s", task_id, err)
         raise RuntimeError(f"Experiment {experiment_instance} failed") from err
-    logging.info("Experiment %s finished", task_id)
+    logger.info("Experiment %s finished", task_id)
     return task_id
 
 
@@ -160,8 +163,8 @@ def main(args: ControlPipelineArgs):
     Program entry point.
     """
 
-    ray_env: Dict[str, Any] = {}
-    logging.info("Ray environment: %s", ray_env)
+    ray_env: dict[str, Any] = {}
+    logger.info("Ray environment: %s", ray_env)
     experiment_instances = create_tasks(
         problem_set=args.problem_set,
         config_args={"grids_file": args.grids_file},
@@ -175,10 +178,10 @@ def main(args: ControlPipelineArgs):
     )
 
     with ray.init(args.cluster_uri, runtime_env=ray_env) as context:
-        logging.info("Ray Context: %s", context)
-        logging.info("Ray Nodes: %s", ray.nodes())
+        logger.info("Ray Context: %s", context)
+        logger.info("Ray Nodes: %s", ray.nodes())
 
-        logging.info("Submitting %d tasks", len(experiment_instances))
+        logger.info("Submitting %d tasks", len(experiment_instances))
         results_refs = []
         for experiment_instance in experiment_instances:
             result_ref = run_experiment.remote(experiment_instance)
@@ -205,7 +208,7 @@ def parse_args() -> ControlPipelineArgs:
     )
     arg_parser.add_argument("--cluster-uri", type=str, default=None)
     known_args, unknown_args = arg_parser.parse_known_args()
-    logging.info("Unknown args: %s", unknown_args)
+    logger.info("Unknown args: %s", unknown_args)
     return ControlPipelineArgs(**vars(known_args))
 
 

@@ -144,7 +144,7 @@ dev = [
     "python-dateutil==2.8.2",
     "pyyaml==6.0.2",
     "pyyaml-env-tag==0.1",
-    "ruff>=0.8.6",
+    "ruff==0.16.9",
     "seaborn==0.13.1",
     "six==1.16.0",
     "sortedcontainers==2.4.0",

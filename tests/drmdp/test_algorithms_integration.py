@@ -3,7 +3,8 @@
 import json
 import os
 import tempfile
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 import numpy as np
 
@@ -264,9 +265,9 @@ def _make_experiment_instance(
     output_dir: str,
     episodes_per_run: int,
     log_episode_frequency: int,
-    reward_mapper: Optional[Mapping[str, Any]] = None,
-    delay_config: Optional[Mapping[str, Any]] = None,
-    env_args: Optional[Mapping[str, Any]] = None,
+    reward_mapper: Mapping[str, Any] | None = None,
+    delay_config: Mapping[str, Any] | None = None,
+    env_args: Mapping[str, Any] | None = None,
     export_model: bool = False,
     exp_id: str = "test-mc",
 ) -> core.ExperimentInstance:
@@ -313,14 +314,14 @@ def _make_experiment_instance(
     )
 
 
-def _read_log_entries(output_dir: str) -> List[Dict[str, Any]]:
+def _read_log_entries(output_dir: str) -> list[dict[str, Any]]:
     log_path = os.path.join(output_dir, logger.ExperimentLogger.LOG_FILE_NAME)
     with open(log_path) as readable:
         return [json.loads(line) for line in readable]
 
 
-def _read_params(output_dir: str) -> Dict[str, Any]:
+def _read_params(output_dir: str) -> dict[str, Any]:
     param_path = os.path.join(output_dir, logger.ExperimentLogger.PARAM_FILE_NAME)
     with open(param_path) as readable:
-        params: Dict[str, Any] = json.load(readable)
+        params: dict[str, Any] = json.load(readable)
     return params
