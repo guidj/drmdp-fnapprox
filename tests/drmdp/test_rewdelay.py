@@ -69,6 +69,31 @@ class DummyEnv(gym.Env):
         return np.ones(3) * -1, {}
 
 
+class DummyTruncEnv(gym.Env):
+    """Truncates on `trunc_steps`, never terminates."""
+
+    def __init__(self, trunc_steps: int = 3):
+        self.observation_space = spaces.Box(low=-1, high=1, shape=(3,))
+        self.action_space = spaces.Discrete(3)
+        self.step_count = 0
+        self.trunc_steps = trunc_steps
+
+    def step(self, action):
+        del action
+        self.step_count += 1
+        obs = np.ones(3) * self.step_count
+        reward = 1.0
+        terminated = False
+        truncated = self.step_count >= self.trunc_steps
+        return obs, reward, terminated, truncated, {}
+
+    def reset(self, seed=None, options=None):
+        del seed
+        del options
+        self.step_count = 0
+        return np.ones(3) * -1, {}
+
+
 def test_least_lfa_generative_reward_wrapper_init():
     env = DummyEnv()
     ft_op = DummyFTOp(env)
@@ -402,11 +427,11 @@ def test_delayed_reward_wrapper_with_fixed_delay_reset():
     assert wrapped.segment_step == -1
     assert not wrapped.rewards
 
-    # Seg 2, Step 1
+    # Seg 2, Step 1 — env still terminated, partial flush clears rewards
     wrapped.step(0)
     assert wrapped.segment == 1
     assert wrapped.segment_step == 0
-    assert wrapped.rewards == [1]
+    assert not wrapped.rewards
 
     # Reset
     wrapped.reset()
@@ -472,7 +497,7 @@ def test_delayed_reward_wrapper_with_poisson_delay_step(monkeypatch):
     # Ep 1, Seg 2, Step 1
     obs, reward, term, trunc, info = wrapped.step(0)
     np.testing.assert_array_equal(obs, np.array([4, 4, 4]))
-    assert (reward, term, trunc) == (None, True, False)
+    assert (reward, term, trunc) == (1.0, True, False)
     assert info == {"delay": 2, "segment": 1, "segment_step": 0, "next_delay": None}
 
     # Reset after termination
@@ -495,6 +520,175 @@ def test_delayed_reward_wrapper_with_poisson_delay_step(monkeypatch):
     np.testing.assert_array_equal(obs, np.array([3, 3, 3]))
     assert (reward, term, trunc) == (None, False, False)
     assert info == {"delay": 2, "segment": 1, "segment_step": 0, "next_delay": None}
+
+
+def test_delayed_reward_wrapper_no_flush_on_truncation():
+    env = DummyTruncEnv(trunc_steps=3)
+    reward_delay = rewdelay.FixedDelay(2)
+    wrapped = rewdelay.DelayedRewardWrapper(env, reward_delay=reward_delay)
+
+    wrapped.reset()
+    # Step 1: segment 0, segment_step=0
+    _, reward, term, trunc, _ = wrapped.step(0)
+    assert (reward, term, trunc) == (None, False, False)
+
+    # Step 2: segment 0, segment_step=1 (boundary)
+    _, reward, term, trunc, _ = wrapped.step(0)
+    assert (reward, term, trunc) == (2.0, False, False)
+
+    # Step 3: segment 1, segment_step=0 — truncated, NOT terminated
+    _, reward, term, trunc, _ = wrapped.step(0)
+    assert (reward, term, trunc) == (None, False, True)
+
+
+def test_delayed_reward_wrapper_flush_on_term_mid_window():
+    env = DummyEnv(term_steps=5)
+    reward_delay = rewdelay.FixedDelay(3)
+    wrapped = rewdelay.DelayedRewardWrapper(env, reward_delay=reward_delay)
+
+    wrapped.reset()
+    # Steps 1-3: segment 0 (boundary at step 3)
+    wrapped.step(0)
+    wrapped.step(0)
+    _, reward, term, trunc, _ = wrapped.step(0)
+    assert (reward, term, trunc) == (3.0, False, False)
+
+    # Step 4: segment 1, segment_step=0
+    _, reward, term, trunc, _ = wrapped.step(0)
+    assert (reward, term, trunc) == (None, False, False)
+
+    # Step 5: segment 1, segment_step=1 — terminates mid-window
+    _, reward, term, trunc, _ = wrapped.step(0)
+    assert (reward, term, trunc) == (2.0, True, False)
+
+
+def test_delayed_reward_wrapper_term_at_segment_step_zero():
+    env = DummyEnv(term_steps=3)
+    reward_delay = rewdelay.FixedDelay(2)
+    wrapped = rewdelay.DelayedRewardWrapper(env, reward_delay=reward_delay)
+
+    wrapped.reset()
+    # Steps 1-2: segment 0 (boundary)
+    wrapped.step(0)
+    _, reward, term, trunc, _ = wrapped.step(0)
+    assert (reward, term, trunc) == (2.0, False, False)
+
+    # Step 3: segment 1, segment_step=0 — terminates
+    _, reward, term, trunc, _ = wrapped.step(0)
+    assert (reward, term, trunc) == (1.0, True, False)
+
+
+def test_delayed_reward_wrapper_multi_episode_mid_window_term():
+    env = DummyEnv(term_steps=3)
+    reward_delay = rewdelay.FixedDelay(2)
+    wrapped = rewdelay.DelayedRewardWrapper(env, reward_delay=reward_delay)
+
+    # Episode 1
+    wrapped.reset()
+    wrapped.step(0)
+    _, reward, _, _, _ = wrapped.step(0)
+    assert reward == 2.0
+
+    _, reward, term, trunc, _ = wrapped.step(0)
+    assert (reward, term, trunc) == (1.0, True, False)
+
+    # Episode 2 — no state leakage
+    wrapped.reset()
+    _, reward, term, trunc, _ = wrapped.step(0)
+    assert (reward, term, trunc) == (None, False, False)
+
+    _, reward, term, trunc, _ = wrapped.step(0)
+    assert (reward, term, trunc) == (2.0, False, False)
+
+
+def test_delayed_reward_wrapper_delay_one():
+    env = DummyEnv(term_steps=3)
+    reward_delay = rewdelay.FixedDelay(1)
+    wrapped = rewdelay.DelayedRewardWrapper(env, reward_delay=reward_delay)
+
+    wrapped.reset()
+    for step_idx in range(3):
+        _, reward, term, trunc, _ = wrapped.step(0)
+        assert reward == 1.0
+        if step_idx < 2:
+            assert (term, trunc) == (False, False)
+        else:
+            assert (term, trunc) == (True, False)
+
+
+def test_least_lfa_partial_segment_buffered_on_termination():
+    env = DummyEnv(term_steps=3)
+    delay_env = rewdelay.DelayedRewardWrapper(env, reward_delay=rewdelay.FixedDelay(2))
+    ft_op = DummyFTOp(env)
+    wrapped = rewdelay.LeastLfaGenerativeRewardWrapper(
+        delay_env,
+        ft_op=ft_op,
+        impute_value=0.0,
+        attempt_estimation_episode=100,
+    )
+
+    wrapped.reset()
+    # Steps 1-2: full segment (boundary), features buffered
+    wrapped.step(0)
+    wrapped.step(0)
+    assert wrapped.est_buffer.size() == 1
+
+    # Step 3: terminates mid-window — partial segment buffered
+    wrapped.step(0)
+    assert wrapped.est_buffer.size() == 2
+    _, partial_reward = wrapped.est_buffer.buffer[-1]
+    assert partial_reward == 1.0
+    np.testing.assert_array_equal(
+        wrapped._segment_features, wrapped._initialize_segment_features()
+    )
+
+
+def test_bayes_partial_segment_buffered_on_termination():
+    env = DummyEnv(term_steps=3)
+    delay_env = rewdelay.DelayedRewardWrapper(env, reward_delay=rewdelay.FixedDelay(2))
+    ft_op = DummyFTOp(env)
+    wrapped = rewdelay.BayesLeastLfaGenerativeRewardWrapper(
+        delay_env,
+        ft_op=ft_op,
+        impute_value=0.0,
+        init_attempt_estimation_episode=100,
+    )
+
+    wrapped.reset()
+    wrapped.step(0)
+    wrapped.step(0)
+    assert wrapped.est_buffer.size() == 1
+
+    wrapped.step(0)
+    assert wrapped.est_buffer.size() == 2
+    _, partial_reward = wrapped.est_buffer.buffer[-1]
+    assert partial_reward == 1.0
+    np.testing.assert_array_equal(
+        wrapped._segment_features, wrapped._initialize_segment_features()
+    )
+
+
+def test_least_lfa_no_partial_buffer_on_truncation():
+    env = DummyTruncEnv(trunc_steps=3)
+    delay_env = rewdelay.DelayedRewardWrapper(env, reward_delay=rewdelay.FixedDelay(2))
+    ft_op = DummyFTOp(env)
+    wrapped = rewdelay.LeastLfaGenerativeRewardWrapper(
+        delay_env,
+        ft_op=ft_op,
+        impute_value=0.0,
+        attempt_estimation_episode=100,
+    )
+
+    wrapped.reset()
+    wrapped.step(0)
+    wrapped.step(0)
+    assert wrapped.est_buffer.size() == 1
+
+    # Step 3: truncates mid-window — partial segment NOT buffered
+    _, reward, term, trunc, _ = wrapped.step(0)
+    assert wrapped.est_buffer.size() == 1
+    assert (term, trunc) == (False, True)
+    assert reward == 0.0
 
 
 def test_data_buffer():
