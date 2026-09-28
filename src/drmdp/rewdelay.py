@@ -345,6 +345,9 @@ class DelayedRewardWrapper(gym.Wrapper, SupportsName):
             self.rewards = []
         else:
             reward = None
+        if term and not final_segment_step:
+            reward = self.op(self.rewards)
+            self.rewards = []
         return (
             obs,
             reward,
@@ -649,13 +652,12 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
         if not self._has_estimate() or self._should_buffer_when_estimated():
             self._accumulate_step_features(step_features)
 
+        partial_term = term and info["segment_step"] != info["delay"] - 1
+        at_segment_end = info["segment_step"] == info["delay"] - 1
+
         # Buffer segment data at segment end (for continual learning)
-        if (
-            self._should_buffer_when_estimated()
-            and info["segment_step"] == info["delay"] - 1
-        ):
+        if self._should_buffer_when_estimated() and (at_segment_end or partial_term):
             self.est_buffer.add((self._segment_features, reward))
-            # Reset for the next segment
             self._segment_features = self._initialize_segment_features()
 
         if self._has_estimate():
@@ -666,18 +668,14 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
         else:
             # Add example to buffer and use aggregate reward (one-time learning)
             if not self._should_buffer_when_estimated():
-                if info["segment_step"] == info["delay"] - 1:
+                if at_segment_end or partial_term:
                     self.est_buffer.add((self._segment_features, reward))
-                    # Reset for the next segment
                     self._segment_features = self._initialize_segment_features()
                 else:
-                    # Impute until rewards are estimated
                     reward = self.impute_value
             else:
-                # Impute when not at segment end
-                if info["segment_step"] != info["delay"] - 1:
+                if not at_segment_end and not partial_term:
                     reward = self.impute_value
-                # else, use aggregate reward
             est_state = OptState.UNSOLVED
 
         # Handle terminal state
