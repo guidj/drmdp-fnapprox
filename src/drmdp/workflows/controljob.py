@@ -44,22 +44,39 @@ class ControlPipelineArgs:
     cluster_uri: str | None
 
 
-def wait_till_completion(tasks_refs):
+def wait_till_completion(task_refs: Sequence[ray.ObjectRef]) -> None:
     """
-    Waits for every ray task to complete.
-    """
-    unfinished_tasks = tasks_refs
-    while True:
-        finished_tasks, unfinished_tasks = ray.wait(unfinished_tasks)
-        logger.info(
-            "Completed %d task(s). %d left out of %d.",
-            len(finished_tasks),
-            len(unfinished_tasks),
-            len(tasks_refs),
-        )
+    Waits for every ray task to complete, raising if any failed.
 
-        if len(unfinished_tasks) == 0:
-            break
+    Task failures surface only when results are fetched via ray.get;
+    ray.wait alone reports failed tasks as ready. Raising at the end
+    keeps the driver's exit code - and thus the job's status -
+    consistent with experiment outcomes, without aborting
+    independent tasks on the first failure.
+    """
+    unfinished_tasks = list(task_refs)
+    failures: list[Exception] = []
+    while unfinished_tasks:
+        finished_tasks, unfinished_tasks = ray.wait(unfinished_tasks)
+        for task_ref in finished_tasks:
+            try:
+                ray.get(task_ref)
+            except ray.exceptions.RayError as err:
+                # app-level task failures arrive wrapped in RayError
+                # subclasses; anything else is a driver bug and must abort
+                failures.append(err)
+                logger.error("Task failed: %s", err)
+        logger.info(
+            "Finished %d task(s), %d failure(s) so far. %d left out of %d.",
+            len(finished_tasks),
+            len(failures),
+            len(unfinished_tasks),
+            len(task_refs),
+        )
+    if failures:
+        raise RuntimeError(
+            f"{len(failures)} of {len(task_refs)} experiment task(s) failed"
+        ) from failures[0]
 
 
 def create_tasks(
@@ -158,7 +175,7 @@ def run_experiment(
     return task_id
 
 
-def main(args: ControlPipelineArgs):
+def main(args: ControlPipelineArgs) -> None:
     """
     Program entry point.
     """
