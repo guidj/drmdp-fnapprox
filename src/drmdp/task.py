@@ -20,9 +20,7 @@ REWARD_SHAPING_BUILDERS: Mapping[str, type] = {
 }
 
 REWARD_NOISE_BUILDERS: Mapping[str, type] = {
-    "gaussian-mountain-car": wrappers.MountainCarGaussianReward,
-    "gaussian-acrobot": wrappers.AcrobotGaussianReward,
-    "gaussian-gridworld": wrappers.GridWorldGaussianReward,
+    "gaussian": wrappers.ConstantGaussianNoiseReward,
 }
 
 DELAYS: Sequence[type[rewdelay.RewardDelay]] = (
@@ -172,7 +170,6 @@ def create_env(name: str, args: Mapping[str, Any] | None) -> core.ProxiedEnv:
             raise ValueError(f"Unknown reward noise: {noise_name}")
         noise_cls = REWARD_NOISE_BUILDERS[noise_name]
         env = noise_cls(env, **noise_args)
-        proxy = noise_cls(proxy, **noise_args)
 
     return core.ProxiedEnv(env=env, proxy=proxy)
 
