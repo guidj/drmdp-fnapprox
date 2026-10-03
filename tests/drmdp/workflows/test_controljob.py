@@ -1,7 +1,4 @@
-"""Tests for controljob.py — experiment parsing and completion tracking."""
-
-import pytest
-import ray
+"""Tests for controljob.py — experiment parsing without Ray."""
 
 from drmdp import core
 from drmdp.workflows import controlexps, controljob
@@ -101,59 +98,3 @@ class TestCreateTasks:
             export_model=False,
         )
         assert len(instances) == len(experiments) * num_runs
-
-
-class TestWaitTillCompletion:
-    def test_returns_when_all_tasks_succeed(self, local_cluster):
-        task_refs = [succeeding_task.remote() for _ in range(3)]
-
-        controljob.wait_till_completion(task_refs)
-
-    @pytest.mark.parametrize(
-        ("num_failures", "total"),
-        [(1, 3), (2, 5)],
-    )
-    def test_raises_when_tasks_fail(self, local_cluster, num_failures, total):
-        task_refs = [
-            failing_task.remote(f"experiment {idx} crashed")
-            for idx in range(num_failures)
-        ]
-        task_refs.extend(succeeding_task.remote() for _ in range(total - num_failures))
-
-        with pytest.raises(RuntimeError) as excinfo:
-            controljob.wait_till_completion(task_refs)
-
-        assert f"{num_failures} of {total} experiment task(s) failed" in str(
-            excinfo.value
-        )
-        assert isinstance(excinfo.value.__cause__, ray.exceptions.RayTaskError)
-        assert "crashed" in str(excinfo.value.__cause__)
-
-    def test_returns_for_empty_task_set(self):
-        controljob.wait_till_completion([])
-
-
-@pytest.fixture(scope="module")
-def local_cluster():
-    """
-    Starts a local Ray cluster so completion tracking runs against real
-    task semantics; reuses an existing cluster when one is running.
-    """
-    already_running = ray.is_initialized()
-    if not already_running:
-        ray.init(num_cpus=1, include_dashboard=False, logging_level="ERROR")
-    yield
-    if not already_running:
-        ray.shutdown()
-
-
-@ray.remote
-def succeeding_task() -> str:
-    """Remote task that completes normally."""
-    return "ok"
-
-
-@ray.remote
-def failing_task(message: str) -> None:
-    """Remote task that fails with an application-level exception."""
-    raise RuntimeError(message)

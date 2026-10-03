@@ -37,9 +37,9 @@ import numpy as np
 import pandas as pd
 import ray
 import ray.data
-from ray.data import aggregate
 
 from drmdp import core, dataproc, envs, ioutils, metrics, rewdelay, task, transform
+from drmdp.workflows import raytasks
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ SAMPLES_PER_ENV = 100_000
 DATASET_SEED = 42
 
 
-class BiasVarianceAggregator(aggregate.AggregateFn):
+class BiasVarianceAggregator(ray.data.aggregate.AggregateFn):
     """
     Aggregates predictions to compute bias-variance decomposition.
     """
@@ -980,8 +980,8 @@ def main():
         # PHASE 1: Train models and extract artifacts (in-memory)
         logger.info("PHASE 1: Training %d reward models...", len(job_specs))
         model_refs = [train_reward_model_run.remote(spec) for spec in job_specs]
-        model_artifacts: Sequence[RewardModelArtifact | None] = wait_till_completion(
-            model_refs, fetch=True
+        model_artifacts: Sequence[RewardModelArtifact | None] = (
+            raytasks.wait_till_completion(model_refs, fetch=True)
         )
         model_artifacts: Sequence[RewardModelArtifact] = [
             model_artifact
@@ -1025,7 +1025,7 @@ def main():
             )
 
         # Wait till all predictions are complete
-        prediction_file_paths = wait_till_completion(pred_refs, fetch=True)
+        prediction_file_paths = raytasks.wait_till_completion(pred_refs, fetch=True)
 
         # Read exported predictions into distributed
         # dataset
@@ -1043,32 +1043,6 @@ def main():
         logger.info(
             "Summary: %d samples, %d configurations", len(df_sample), len(df_summary)
         )
-
-
-def wait_till_completion(
-    tasks_refs, fetch: bool = False
-) -> Sequence[ray.ObjectRef | Any]:
-    """
-    Waits for every ray task to complete.
-    """
-    results = []
-    unfinished_tasks = tasks_refs
-    while True:
-        finished_tasks, unfinished_tasks = ray.wait(unfinished_tasks)
-        if fetch:
-            results.extend(
-                [ray.get(task) if fetch else task for task in finished_tasks]
-            )
-        logger.info(
-            "Completed %d task(s). %d left out of %d.",
-            len(finished_tasks),
-            len(unfinished_tasks),
-            len(tasks_refs),
-        )
-
-        if len(unfinished_tasks) == 0:
-            break
-    return results
 
 
 def parse_args() -> Args:

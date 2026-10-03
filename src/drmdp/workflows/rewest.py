@@ -25,6 +25,7 @@ from drmdp import (
     task,
     transform,
 )
+from drmdp.workflows import raytasks
 
 _logger = logging.getLogger(__name__)
 
@@ -523,9 +524,9 @@ def run_reward_estimation_study(specs, turns: int, num_episodes: int, output_pat
             for idx, job in enumerate(jobs)
         ]
         # Finish all estimation tasks.
-        wait_till_completion(results_refs, name="Reward-Estimation")
+        raytasks.wait_till_completion(results_refs, name="Reward-Estimation")
         # Flush buffers
-        wait_till_completion(
+        raytasks.wait_till_completion(
             [
                 result_writer.sync.remote()
                 for result_writer in result_writers  # type: ignore
@@ -582,46 +583,6 @@ def proc_result(result: Mapping[str, Any]) -> Mapping[str, Any]:
     meta["all_steps_error"] = all_steps_error
     meta["post_est_error"] = post_est_error
     return output
-
-
-def wait_till_completion(tasks_refs, name: str | None = None):
-    """
-    Waits for every ray task to complete.
-    """
-    unfinished_tasks = tasks_refs
-    while True:
-        finished_tasks, unfinished_tasks = ray.wait(unfinished_tasks)
-        _logger.info(
-            "Completed %d %s task(s). %d left out of %d.",
-            len(finished_tasks),
-            name,
-            len(unfinished_tasks),
-            len(tasks_refs),
-        )
-
-        if len(unfinished_tasks) == 0:
-            break
-
-
-def yield_as_completed(tasks_refs, name: str | None = None):
-    """
-    Waits for every ray task to complete.
-    """
-    unfinished_tasks = tasks_refs
-    finished_tasks = []
-    while True:
-        finished_tasks, unfinished_tasks = ray.wait(unfinished_tasks)
-        _logger.info(
-            "Yielding %d %s task(s). %d left out of %d.",
-            len(finished_tasks),
-            name,
-            len(unfinished_tasks),
-            len(tasks_refs),
-        )
-        yield from finished_tasks
-
-        if len(unfinished_tasks) == 0:
-            break
 
 
 def reward_estimation(job_spec: JobSpec):

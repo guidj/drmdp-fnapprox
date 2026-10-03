@@ -19,7 +19,8 @@ import pandas as pd
 import ray
 import ray.data
 import tensorflow as tf
-from ray.data import aggregate
+
+from drmdp.workflows import raytasks
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,7 @@ class PipelineArgs:
     output_dir: str
 
 
-class StepSnapshotAggretator(aggregate.AggregateFn):
+class StepSnapshotAggretator(ray.data.aggregate.AggregateFn):
     """
     Aggregates returns.
     """
@@ -117,12 +118,7 @@ def main():
 
         results_ref = pipeline.remote(ds_logs_and_metadata)
         write_results_ref = write_results.remote(results_ref, args.output_dir)
-        unfinished_tasks = [write_results_ref]
-
-        while True:
-            _, unfinished_tasks = ray.wait(unfinished_tasks)
-            if len(unfinished_tasks) == 0:
-                break
+        raytasks.wait_till_completion([write_results_ref])
 
 
 def parse_experiment_metadata(paths: Sequence[str]) -> Mapping[str, Any]:

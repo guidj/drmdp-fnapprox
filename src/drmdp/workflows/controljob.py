@@ -13,7 +13,7 @@ import numpy as np
 import ray
 
 from drmdp import core, task
-from drmdp.workflows import controlexps
+from drmdp.workflows import controlexps, raytasks
 
 logger = logging.getLogger(__name__)
 
@@ -42,41 +42,6 @@ class ControlPipelineArgs:
     export_model: bool
     # ray args
     cluster_uri: str | None
-
-
-def wait_till_completion(task_refs: Sequence[ray.ObjectRef]) -> None:
-    """
-    Waits for every ray task to complete, raising if any failed.
-
-    Task failures surface only when results are fetched via ray.get;
-    ray.wait alone reports failed tasks as ready. Raising at the end
-    keeps the driver's exit code - and thus the job's status -
-    consistent with experiment outcomes, without aborting
-    independent tasks on the first failure.
-    """
-    unfinished_tasks = list(task_refs)
-    failures: list[Exception] = []
-    while unfinished_tasks:
-        finished_tasks, unfinished_tasks = ray.wait(unfinished_tasks)
-        for task_ref in finished_tasks:
-            try:
-                ray.get(task_ref)
-            except ray.exceptions.RayError as err:
-                # app-level task failures arrive wrapped in RayError
-                # subclasses; anything else is a driver bug and must abort
-                failures.append(err)
-                logger.error("Task failed: %s", err)
-        logger.info(
-            "Finished %d task(s), %d failure(s) so far. %d left out of %d.",
-            len(finished_tasks),
-            len(failures),
-            len(unfinished_tasks),
-            len(task_refs),
-        )
-    if failures:
-        raise RuntimeError(
-            f"{len(failures)} of {len(task_refs)} experiment task(s) failed"
-        ) from failures[0]
 
 
 def create_tasks(
@@ -204,7 +169,7 @@ def main(args: ControlPipelineArgs) -> None:
             result_ref = run_experiment.remote(experiment_instance)
             results_refs.append(result_ref)
 
-        wait_till_completion(results_refs)
+        raytasks.wait_till_completion(results_refs, name="experiment")
 
 
 def parse_args() -> ControlPipelineArgs:
