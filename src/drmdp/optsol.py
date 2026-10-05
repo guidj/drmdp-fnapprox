@@ -20,6 +20,25 @@ class MultivariateNormal:
 
     mean: np.ndarray
     cov: np.ndarray
+    _factor: np.ndarray | None = dataclasses.field(
+        default=None, init=False, repr=False, compare=False
+    )
+
+    def sample(self, rng: np.random.Generator) -> np.ndarray:
+        """Samples from the posterior using a cached PSD factorization.
+
+        Factorizing once per posterior object makes per-episode weight draws
+        cheap: each draw costs O(d^2) via mean + factor @ z instead of
+        numpy's per-call O(d^3) SVD. The factor satisfies
+        factor @ factor.T == cov for PSD covariances, so draws match
+        Generator.multivariate_normal in distribution; eigenvalues below
+        epsilon (numerical round-off from pseudo-inverse posteriors) are
+        clipped, i.e. the nearest PSD covariance is sampled.
+        """
+        if self._factor is None:
+            self._factor = self._psd_factor(self.cov)
+        standard_normal = rng.standard_normal(self.mean.shape[0])
+        return self.mean + self._factor @ standard_normal
 
     @staticmethod
     def perturb_covariance_matrix(cov, noise: float = 1e-6):
@@ -113,6 +132,15 @@ class MultivariateNormal:
             return MultivariateNormal(coeff, cov)
         except linalg.LinAlgError as err:
             raise ValueError("Failed Bayesian estimation") from err
+
+    @staticmethod
+    def _psd_factor(cov: np.ndarray, epsilon: float = 1e-12) -> np.ndarray:
+        # symmetrize to guard against round-off asymmetry, then project
+        # onto the PSD cone by clipping eigenvalues below epsilon
+        cov = 0.5 * (cov + cov.T)
+        eig_values, eig_vectors = np.linalg.eigh(cov)
+        eig_values = np.clip(eig_values, epsilon, None)
+        return eig_vectors @ np.diag(np.sqrt(eig_values))  # type: ignore[no-any-return]
 
 
 class LearningRateSchedule(abc.ABC):

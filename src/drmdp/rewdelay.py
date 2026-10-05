@@ -966,6 +966,8 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         self.update_episode = init_attempt_estimation_episode
         self.posterior_updates = 0
         self.mv_normal_rewards: optsol.MultivariateNormal | None = None
+        self._sampled_weights: np.ndarray | None = None
+        self._sampled_posterior: optsol.MultivariateNormal | None = None
         self.estimation_meta: dict[str, Any] = {
             "use_bias": use_bias,
             "check_factors": check_factors,
@@ -985,6 +987,13 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
     def _initialize_segment_features(self):
         return np.zeros(shape=(self.mdim))
 
+    def reset(self, *, seed=None, options=None):
+        # Episode boundary: forget the held weights so the next
+        # reward estimate draws a fresh posterior sample
+        obs, info = super().reset(seed=seed, options=options)
+        self._sampled_weights = None
+        return obs, info
+
     def _has_estimate(self) -> bool:
         return self.mv_normal_rewards is not None
 
@@ -994,11 +1003,17 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
 
     def _get_estimated_reward(self, feats: np.ndarray) -> float:
         if self.sample_weights:
-            weights = self.rng.multivariate_normal(
-                self.mv_normal_rewards.mean,  # type: ignore[union-attr]
-                self.mv_normal_rewards.cov,  # type: ignore[union-attr]
-            )
-            return float(np.dot(feats, weights))
+            # One weight draw per episode (PSRL cadence): redraw only at
+            # episode starts or when a continual update replaced the
+            # posterior object, otherwise hold the sampled weights.
+            posterior = self.mv_normal_rewards
+            if (
+                self._sampled_weights is None
+                or self._sampled_posterior is not posterior
+            ):
+                self._sampled_weights = posterior.sample(self.rng)  # type: ignore[union-attr]
+                self._sampled_posterior = posterior
+            return float(np.dot(feats, self._sampled_weights))
         return float(np.dot(feats, self.mv_normal_rewards.mean))  # type: ignore[union-attr]
 
     def _should_attempt_estimation(self, term: bool, trunc: bool) -> bool:

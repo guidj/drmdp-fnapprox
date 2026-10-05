@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 import pytest
 
@@ -182,6 +184,145 @@ class TestMultivariateNormal:
         assert result is not None
         for idx in range(3):
             assert abs(result.mean[idx]) > abs(prior.mean[idx])
+
+    def test_sample_matches_multivariate_normal(self):
+        # Posterior-like distribution at the production dimension (d=216)
+        dim = 216
+        rng = np.random.default_rng(5)
+
+        def tile_rows(num_rows):
+            matrix = np.zeros((num_rows, dim))
+            for idx in range(num_rows):
+                columns = rng.choice(dim, size=8, replace=False)
+                matrix[idx, columns] = 1.0
+            rhs = -rng.integers(2, 14, num_rows) + rng.normal(scale=2.0, size=num_rows)
+            return matrix, rhs
+
+        matrix, rhs = tile_rows(256)
+        prior = optsol.MultivariateNormal.least_squares(matrix, rhs, inverse="pseudo")
+        matrix, rhs = tile_rows(5400)
+        posterior = optsol.MultivariateNormal.bayes_linear_regression(
+            matrix, rhs, prior
+        )
+        # the reference sampler is only exact for PSD covariances
+        assert np.linalg.eigvalsh(posterior.cov).min() > 0
+
+        num_samples = 20000
+        draw_rng = np.random.default_rng(7)
+        samples = np.empty((num_samples, dim))
+        for idx in range(num_samples):
+            samples[idx] = posterior.sample(draw_rng)
+        ref_rng = np.random.default_rng(11)
+        reference = ref_rng.multivariate_normal(
+            posterior.mean, posterior.cov, size=num_samples
+        )
+
+        def max_z_score(estimate, target, std_error):
+            return np.max(np.abs(estimate - target) / std_error)
+
+        # empirical means within Monte-Carlo error of the analytic mean
+        mean_std_error = np.sqrt(np.diag(posterior.cov) / num_samples)
+        assert max_z_score(samples.mean(axis=0), posterior.mean, mean_std_error) < 6.0
+        assert max_z_score(reference.mean(axis=0), posterior.mean, mean_std_error) < 6.0
+
+        # empirical covariance entries within Monte-Carlo error of the analytic cov
+        cov_std_error = np.sqrt(
+            (
+                np.outer(np.diag(posterior.cov), np.diag(posterior.cov))
+                + posterior.cov * posterior.cov
+            )
+            / num_samples
+        )
+        assert (
+            max_z_score(np.cov(samples, rowvar=False), posterior.cov, cov_std_error)
+            < 6.0
+        )
+        assert (
+            max_z_score(np.cov(reference, rowvar=False), posterior.cov, cov_std_error)
+            < 6.0
+        )
+
+        # variance along a feature direction matches feats @ cov @ feats
+        feats = np.zeros(dim)
+        feats[rng.choice(dim, size=8, replace=False)] = 1.0
+        target_variance = feats @ posterior.cov @ feats
+        variance_std_error = target_variance * np.sqrt(2.0 / num_samples)
+        assert (
+            abs(np.var(samples @ feats, ddof=1) - target_variance)
+            < 6.0 * variance_std_error
+        )
+        assert (
+            abs(np.var(reference @ feats, ddof=1) - target_variance)
+            < 6.0 * variance_std_error
+        )
+
+    def test_sample_non_psd_covariance_clips(self):
+        # a small negative eigenvalue must not warn and must yield finite
+        # draws; at this magnitude numpy's own sampler emits a
+        # `covariance is not symmetric positive-semidefinite` warning and
+        # silently samples an absolutized variant instead
+        dim = 6
+        rng = np.random.default_rng(3)
+        base = rng.normal(size=(dim, dim))
+        psd = base @ base.T + 0.5 * np.eye(dim)
+        eig_values, eig_vectors = np.linalg.eigh(psd)
+        eig_values[0] = -1e-6
+        cov = (eig_vectors * eig_values) @ eig_vectors.T
+        mv = optsol.MultivariateNormal(mean=rng.normal(size=dim), cov=cov)
+
+        draw_rng = np.random.default_rng(4)
+        num_samples = 200
+        samples = np.empty((num_samples, dim))
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            for idx in range(num_samples):
+                samples[idx] = mv.sample(draw_rng)
+        assert np.all(np.isfinite(samples))
+        np.testing.assert_allclose(samples.mean(axis=0), mv.mean, atol=1.0)
+
+    def test_sample_singular_covariance_clips(self):
+        # rank-deficient posteriors (e.g. identical-feature segments)
+        # have exact zero eigenvalues; draws must stay finite and silent,
+        # with full variance along the row space and ~none (the clipped
+        # 1e-12) along null directions
+        dim = 6
+        rng = np.random.default_rng(6)
+        direction = rng.normal(size=dim)
+        unit = direction / np.linalg.norm(direction)
+        orthogonal = rng.normal(size=dim)
+        orthogonal -= (orthogonal @ unit) * unit
+        orthogonal /= np.linalg.norm(orthogonal)
+        cov = np.outer(direction, direction)
+        mv = optsol.MultivariateNormal(mean=np.zeros(dim), cov=cov)
+
+        draw_rng = np.random.default_rng(9)
+        num_samples = 4000
+        samples = np.empty((num_samples, dim))
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            for idx in range(num_samples):
+                samples[idx] = mv.sample(draw_rng)
+        assert np.all(np.isfinite(samples))
+
+        row_target = float(unit @ cov @ unit)
+        row_variance = float(np.var(samples @ unit, ddof=1))
+        row_std_error = row_target * np.sqrt(2.0 / num_samples)
+        assert abs(row_variance - row_target) < 6.0 * row_std_error
+
+        null_variance = float(np.var(samples @ orthogonal, ddof=1))
+        assert null_variance < 1e-8
+
+    def test_sample_factor_cached(self):
+        # the PSD factor is computed once per posterior, not per draw
+        mv = optsol.MultivariateNormal(mean=np.zeros(4), cov=np.eye(4))
+        rng = np.random.default_rng(0)
+        first = mv.sample(rng)
+        assert first.shape == (4,)
+        assert mv._factor is not None
+        factor = mv._factor
+        second = mv.sample(rng)
+        assert second.shape == (4,)
+        assert mv._factor is factor
 
 
 class TestSolveConvexLeastSquares:
