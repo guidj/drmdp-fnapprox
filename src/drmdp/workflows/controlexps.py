@@ -101,6 +101,7 @@ def bayes_least_specs(
     delay_configs: Sequence[Mapping[str, Any]] = default_delay_config(),
     discounts: Sequence[float] = DEFAULT_DISCOUNT_FACTORS,
     impute_value: float = DEFAULT_IMPUTE_VALUE,
+    sample_weights: bool = False,
 ) -> Sequence[Mapping[str, Any]]:
     """
     Bayesian linear regression specs.
@@ -125,6 +126,7 @@ def bayes_least_specs(
                         "use_bias": False,
                         "impute_value": impute_value,
                         "estimation_buffer_mult": 25,
+                        "sample_weights": sample_weights,
                     },
                 },
                 "delay_config": delay_config,
@@ -596,57 +598,18 @@ def illustration_experiment_specs(
     return tuple(specs)
 
 
-def _bayes_least_specs_sample_weights(
-    init_attempt_estimation_episodes: Sequence[int],
-    feats_specs: Sequence[Sequence[Mapping[str, Any]]],
-    delay_configs: Sequence[Mapping[str, Any]] = default_delay_config(),
-    discounts: Sequence[float] = DEFAULT_DISCOUNT_FACTORS,
-    impute_value: float = DEFAULT_IMPUTE_VALUE,
-) -> Sequence[Mapping[str, Any]]:
-    """Bayesian specs with sample_weights=True for Gaussian reward experiments."""
-    specs = []
-    for (
-        delay_config,
-        gamma,
-        feats_spec,
-        init_attempt_estimation_episode,
-    ) in itertools.product(
-        delay_configs, discounts, feats_specs, init_attempt_estimation_episodes
-    ):
-        specs.append(
-            {
-                "policy_type": "markovian",
-                "reward_mapper": {
-                    "name": "bayes-least-lfa",
-                    "args": {
-                        "init_attempt_estimation_episode": init_attempt_estimation_episode,
-                        "feats_spec": feats_spec,
-                        "use_bias": False,
-                        "impute_value": impute_value,
-                        "estimation_buffer_mult": 25,
-                        "sample_weights": True,
-                    },
-                },
-                "delay_config": delay_config,
-                "epsilon": EPSILON,
-                "gamma": gamma,
-                "learning_rate_config": LEARNING_RATE_SPEC,
-            },
-        )
-    return tuple(specs)
-
-
 def gaussian_illustration_experiment_specs(
     mc_tiling_dim: int = 4,
     acrobot_tiling_dim: int = 3,
     acrobot_hash_dim: int = 8192,
     gw_tiling_dim: int = 5,
-    noise_scale: float = 1.0,
+    noise_scales: Sequence[float] = (0.0, 0.25, 0.5, 1.0, 2.0),
 ) -> Sequence[Mapping[str, Any]]:
-    """Illustration specs with Gaussian reward noise.
+    """Illustration specs with constant Gaussian reward noise.
 
-    Mirrors ``illustration_experiment_specs`` but adds state-dependent
-    Gaussian noise and uses ``sample_weights=True`` for BLADE-TD.
+    Produces one spec per (env, noise_scale) combination, sweeping
+    noise variance from zero to large values. BLADE-TD uses
+    ``sample_weights=True`` to sample from the posterior.
     """
     mc_est_feats: Sequence[Sequence[Mapping[str, Any]]] = [
         [{"name": "tile-observation-action-ft", "args": {"tiling_dim": 3}}]
@@ -674,23 +637,14 @@ def gaussian_illustration_experiment_specs(
         ]
     ]
 
-    gw_nrows = len(MINES_GW_GRID)
-    gw_ncols = len(MINES_GW_GRID[0])
-    gw_goal_row = gw_nrows - 1
-    gw_goal_col = gw_ncols - 1
-
-    specs: list[Mapping[str, Any]] = [
+    env_templates: list[Mapping[str, Any]] = [
         {
             "name": "MountainCar-v0",
-            "args": {
+            "base_args": {
                 "max_episode_steps": 2500,
                 "reward_shaping": {
                     "name": "mountain-car-height",
                     "args": {"scale": 1.0},
-                },
-                "reward_noise": {
-                    "name": "gaussian-mountain-car",
-                    "args": {"scale": noise_scale},
                 },
             },
             "feats_specs": [
@@ -701,29 +655,28 @@ def gaussian_illustration_experiment_specs(
                     }
                 ]
             ],
-            "problem_specs": common_problem_specs(include_options=False)
-            + least_specs(
-                attempt_estimation_episodes=(10,),
-                check_factors=True,
-                feats_specs=mc_est_feats,
-            )
-            + _bayes_least_specs_sample_weights(
-                init_attempt_estimation_episodes=(10,),
-                feats_specs=mc_est_feats,
+            "problem_specs_fn": lambda: (
+                common_problem_specs(include_options=False)
+                + least_specs(
+                    attempt_estimation_episodes=(10,),
+                    check_factors=True,
+                    feats_specs=mc_est_feats,
+                )
+                + bayes_least_specs(
+                    init_attempt_estimation_episodes=(10,),
+                    feats_specs=mc_est_feats,
+                    sample_weights=True,
+                )
             ),
             "epochs": 10,
         },
         {
             "name": "Acrobot-v1",
-            "args": {
+            "base_args": {
                 "max_episode_steps": 500,
                 "reward_shaping": {
                     "name": "action-cost",
                     "args": {"action_costs": [0.0, 0.5, 1.0]},
-                },
-                "reward_noise": {
-                    "name": "gaussian-acrobot",
-                    "args": {"scale": noise_scale},
                 },
             },
             "feats_specs": [
@@ -737,31 +690,26 @@ def gaussian_illustration_experiment_specs(
                     }
                 ]
             ],
-            "problem_specs": common_problem_specs(include_options=False)
-            + least_specs(
-                attempt_estimation_episodes=(10,),
-                check_factors=True,
-                feats_specs=acrobot_est_feats,
-            )
-            + _bayes_least_specs_sample_weights(
-                init_attempt_estimation_episodes=(10,),
-                feats_specs=acrobot_est_feats,
+            "problem_specs_fn": lambda: (
+                common_problem_specs(include_options=False)
+                + least_specs(
+                    attempt_estimation_episodes=(10,),
+                    check_factors=True,
+                    feats_specs=acrobot_est_feats,
+                )
+                + bayes_least_specs(
+                    init_attempt_estimation_episodes=(10,),
+                    feats_specs=acrobot_est_feats,
+                    sample_weights=True,
+                )
             ),
             "epochs": 10,
         },
         {
             "name": "GridWorld-MINES",
-            "args": {
+            "base_args": {
                 "grid": MINES_GW_GRID,
                 "max_episode_steps": 200,
-                "reward_noise": {
-                    "name": "gaussian-gridworld",
-                    "args": {
-                        "goal_pos": [gw_goal_row, gw_goal_col],
-                        "max_dist": float(gw_nrows + gw_ncols - 2),
-                        "scale": noise_scale,
-                    },
-                },
             },
             "feats_specs": [
                 [
@@ -771,20 +719,42 @@ def gaussian_illustration_experiment_specs(
                     }
                 ]
             ],
-            "problem_specs": common_problem_specs(include_options=False)
-            + least_specs(
-                attempt_estimation_episodes=(10,),
-                use_next_state=False,
-                check_factors=True,
-                feats_specs=gw_est_feats,
-            )
-            + _bayes_least_specs_sample_weights(
-                init_attempt_estimation_episodes=(10,),
-                feats_specs=gw_est_feats,
+            "problem_specs_fn": lambda: (
+                common_problem_specs(include_options=False)
+                + least_specs(
+                    attempt_estimation_episodes=(10,),
+                    use_next_state=False,
+                    check_factors=True,
+                    feats_specs=gw_est_feats,
+                )
+                + bayes_least_specs(
+                    init_attempt_estimation_episodes=(10,),
+                    feats_specs=gw_est_feats,
+                    sample_weights=True,
+                )
             ),
             "epochs": 5,
         },
     ]
+
+    specs: list[Mapping[str, Any]] = []
+    for noise_scale in noise_scales:
+        for template in env_templates:
+            env_args = dict(template["base_args"])
+            env_args["reward_noise"] = {
+                "name": "gaussian",
+                "args": {"scale": noise_scale},
+            }
+            specs.append(
+                {
+                    "name": template["name"],
+                    "args": env_args,
+                    "feats_specs": template["feats_specs"],
+                    "problem_specs": template["problem_specs_fn"](),
+                    "metadata": {"noise_scale": noise_scale},
+                    "epochs": template["epochs"],
+                }
+            )
     return tuple(specs)
 
 

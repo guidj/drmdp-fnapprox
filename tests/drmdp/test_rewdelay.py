@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from gymnasium import spaces
 
-from drmdp import rewdelay, transform
+from drmdp import optsol, rewdelay, transform
 
 
 class DummyFTOp(transform.FTOp):
@@ -1080,7 +1080,7 @@ class TestBayesSegmentAccumulationAfterEstimation:
 
 
 class TestBayesSampleWeights:
-    def _make_wrapper(self, term_steps, delay, sample_weights):
+    def _make_wrapper(self, term_steps, delay, sample_weights, use_bias=False):
         base = DummyEnv(term_steps=term_steps)
         delayed = rewdelay.DelayedRewardWrapper(base, rewdelay.FixedDelay(delay=delay))
         ft_op = DummyFTOp(base)
@@ -1089,6 +1089,7 @@ class TestBayesSampleWeights:
             ft_op=ft_op,
             init_attempt_estimation_episode=1,
             sample_weights=sample_weights,
+            use_bias=use_bias,
         )
         return wrapper
 
@@ -1110,14 +1111,110 @@ class TestBayesSampleWeights:
         feats_with_est = wrapper._get_estimation_inputs(feats)
         rewards = [wrapper._get_estimated_reward(feats_with_est) for _ in range(20)]
         assert all(r == rewards[0] for r in rewards)
+        # and the value is the posterior mean's dot product
+        expected = float(np.dot(feats_with_est, wrapper.mv_normal_rewards.mean))
+        assert rewards[0] == expected
 
-    def test_sample_mode_is_stochastic(self):
+    def test_sample_mode_stochastic_across_episodes(self):
+        # one weight draw per episode: rewards are constant within an
+        # episode (weights held) and vary across episodes (posterior
+        # sampling, PSRL-style)
         wrapper = self._make_wrapper(term_steps=8, delay=2, sample_weights=True)
         self._force_estimate(wrapper)
         feats = np.array([0.5, -0.5, 0.5, -0.5])
         feats_with_est = wrapper._get_estimation_inputs(feats)
-        rewards = [wrapper._get_estimated_reward(feats_with_est) for _ in range(50)]
-        assert not all(r == rewards[0] for r in rewards)
+        within_episode = [
+            wrapper._get_estimated_reward(feats_with_est) for _ in range(50)
+        ]
+        assert all(reward == within_episode[0] for reward in within_episode)
+
+        across_episodes = {within_episode[0]}
+        for _ in range(20):
+            wrapper.reset()
+            across_episodes.add(wrapper._get_estimated_reward(feats_with_est))
+        # every reset redraws: 21 draws from a continuous distribution
+        # are pairwise distinct with probability 1 - ~1e-14, so equality
+        # is strictly stronger than `> 1` at no flakiness cost
+        assert len(across_episodes) == 21
+
+    def test_weights_redrawn_on_posterior_update(self):
+        # continual updates replace the posterior object; the held weights
+        # must be redrawn from the new posterior even without an episode
+        # reset in between
+        wrapper = self._make_wrapper(term_steps=8, delay=2, sample_weights=True)
+        self._force_estimate(wrapper)
+        feats = np.array([0.5, 0.5, 0.5, 0.5])
+        feats_with_est = wrapper._get_estimation_inputs(feats)
+        first = wrapper._get_estimated_reward(feats_with_est)
+
+        posterior = wrapper.mv_normal_rewards
+        wrapper.mv_normal_rewards = optsol.MultivariateNormal(
+            mean=posterior.mean + 1e6, cov=posterior.cov
+        )
+        second = wrapper._get_estimated_reward(feats_with_est)
+        third = wrapper._get_estimated_reward(feats_with_est)
+        # the mean shift is along the all-ones direction:
+        # dot(feats, 1e6 * ones) = 2e6, sampling noise is orders below
+        assert abs((second - first) - 2e6) < 1e4
+        # redrawn weights are held for the rest of the episode
+        assert second == third
+
+    def test_weights_held_on_estimation_failure(self, monkeypatch):
+        # a failed continual update must leave the posterior object (and
+        # thus the held weights) untouched: rewards continue from the
+        # last draw instead of reverting or disappearing
+        wrapper = self._make_wrapper(term_steps=8, delay=2, sample_weights=True)
+        self._force_estimate(wrapper)
+        feats = np.array([0.5, -0.5, 0.5, -0.5])
+        feats_with_est = wrapper._get_estimation_inputs(feats)
+        held = wrapper._get_estimated_reward(feats_with_est)
+        posterior = wrapper.mv_normal_rewards
+
+        # re-buffer one episode so a continual update is attempted
+        done = False
+        while not done:
+            _, _, term, trunc, _ = wrapper.step(0)
+            done = term or trunc
+
+        def _raise_estimation_error(*args, **kwargs):
+            raise ValueError("estimation failure")
+
+        monkeypatch.setattr(
+            optsol.MultivariateNormal,
+            "bayes_linear_regression",
+            _raise_estimation_error,
+        )
+        assert wrapper.estimate_rewards() is False
+        assert wrapper.mv_normal_rewards is posterior
+        assert wrapper._get_estimated_reward(feats_with_est) == held
+
+    def test_bias_mode_sampled_rewards_dimension_consistent(self):
+        # with use_bias=True the posterior gains a bias dimension and the
+        # estimation inputs append 1.0: sampled weights must match that
+        # dimension and remain held within the episode
+        wrapper = self._make_wrapper(
+            term_steps=8, delay=2, sample_weights=True, use_bias=True
+        )
+        self._force_estimate(wrapper)
+        assert wrapper.mv_normal_rewards.mean.shape[0] == wrapper.mdim + 1
+        feats = np.array([0.5, -0.5, 0.5, -0.5])
+        feats_with_bias = wrapper._get_estimation_inputs(feats)
+        assert feats_with_bias.shape[0] == wrapper.mdim + 1
+        first = wrapper._get_estimated_reward(feats_with_bias)
+        second = wrapper._get_estimated_reward(feats_with_bias)
+        assert isinstance(first, float)
+        assert first == second
+
+    def test_step_rewards_stable_within_episode(self):
+        # within an episode, equal features (constant DummyFTOp output)
+        # map to equal step rewards: the sampled weights are held
+        wrapper = self._make_wrapper(term_steps=8, delay=2, sample_weights=True)
+        self._force_estimate(wrapper)
+        wrapper.reset()
+        _, reward_one, _, _, _ = wrapper.step(0)
+        _, reward_two, _, _, _ = wrapper.step(0)
+        assert reward_one is not None
+        assert reward_one == reward_two
 
     def test_estimator_info_includes_sample_weights(self):
         wrapper = self._make_wrapper(term_steps=8, delay=2, sample_weights=True)

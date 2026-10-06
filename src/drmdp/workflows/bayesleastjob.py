@@ -8,6 +8,7 @@ from typing import Any
 import ray
 
 from drmdp import constants, core, task
+from drmdp.workflows import raytasks
 
 logger = logging.getLogger(__name__)
 
@@ -350,19 +351,7 @@ def main(args: ControlPipelineArgs):
         # since ray tracks objectref items
         # we swap the key:value
         results_refs = [result_ref for _, result_ref in tasks_results_refs]
-        unfinished_tasks = results_refs
-        while True:
-            finished_tasks, unfinished_tasks = ray.wait(unfinished_tasks)
-            for finished_task in finished_tasks:
-                logger.info(
-                    "Completed task %s, %d left out of %d.",
-                    ray.get(finished_task),
-                    len(unfinished_tasks),
-                    len(results_refs),
-                )
-
-            if len(unfinished_tasks) == 0:
-                break
+        raytasks.wait_till_completion(results_refs, name="experiment")
 
 
 def create_tasks(

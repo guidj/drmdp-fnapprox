@@ -1,5 +1,5 @@
 pip-sync:
-	uv sync --index https://pypi.org/simple
+	uv sync --default-index https://pypi.org/simple
 
 format:
 	tox -e lint

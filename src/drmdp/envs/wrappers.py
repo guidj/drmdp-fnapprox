@@ -440,61 +440,11 @@ class GaussianRewardNoiseWrapper(gym.Wrapper):
         return obs, reward, term, trunc, info
 
 
-class MountainCarGaussianReward(GaussianRewardNoiseWrapper):
-    """Variance depends on hill position: 0.5 + 0.5 * |sin(3*pos)|.
-
-    More noise near hill peaks, less in the valley.
-    """
+class ConstantGaussianNoiseReward(GaussianRewardNoiseWrapper):
+    """Constant unit variance: effective noise std is sqrt(scale)."""
 
     def _variance(self, obs: np.ndarray, action: int) -> float:
-        del action
-        position = float(obs[0])
-        return float(0.5 + 0.5 * abs(np.sin(3.0 * position)))
-
-
-class AcrobotGaussianReward(GaussianRewardNoiseWrapper):
-    """Variance depends on tip height: 0.5 + 0.5 * |tip_height / 2|.
-
-    More noise when the second link is swung high.
-    """
-
-    def _variance(self, obs: np.ndarray, action: int) -> float:
-        del action
-        cos_theta1 = float(obs[0])
-        sin_theta1 = float(obs[1])
-        cos_theta2 = float(obs[2])
-        sin_theta2 = float(obs[3])
-        cos_sum = cos_theta1 * cos_theta2 - sin_theta1 * sin_theta2
-        tip_height = -(cos_theta1 + cos_sum)
-        return 0.5 + 0.5 * abs(tip_height / 2.0)
-
-
-class GridWorldGaussianReward(GaussianRewardNoiseWrapper):
-    """Variance depends on Manhattan distance from the goal.
-
-    More noise far from the goal, less near it.
-    ``goal_pos`` is the (row, col) of the goal cell.
-    ``max_dist`` is the normalizing constant (e.g. nrows + ncols - 2).
-    """
-
-    def __init__(
-        self,
-        env: gym.Env,
-        goal_pos: tuple[int, int],
-        max_dist: float,
-        scale: float = 1.0,
-        clip_std: float = 1.96,
-        seed: int | None = None,
-    ):
-        super().__init__(env, scale=scale, clip_std=clip_std, seed=seed)
-        self.goal_pos = np.array(goal_pos, dtype=np.float64)
-        self.max_dist = float(max_dist)
-
-    def _variance(self, obs: np.ndarray, action: int) -> float:
-        del action
-        dist = float(np.sum(np.abs(obs - self.goal_pos)))
-        normalized = dist / self.max_dist if self.max_dist > 0 else 0.0
-        return 0.5 + 0.5 * normalized
+        return 1.0
 
 
 def wrap(env: gym.Env, wrapper: str | None = None, **kwargs):

@@ -13,7 +13,7 @@ import numpy as np
 import ray
 
 from drmdp import core, task
-from drmdp.workflows import controlexps
+from drmdp.workflows import controlexps, raytasks
 
 logger = logging.getLogger(__name__)
 
@@ -42,24 +42,6 @@ class ControlPipelineArgs:
     export_model: bool
     # ray args
     cluster_uri: str | None
-
-
-def wait_till_completion(tasks_refs):
-    """
-    Waits for every ray task to complete.
-    """
-    unfinished_tasks = tasks_refs
-    while True:
-        finished_tasks, unfinished_tasks = ray.wait(unfinished_tasks)
-        logger.info(
-            "Completed %d task(s). %d left out of %d.",
-            len(finished_tasks),
-            len(unfinished_tasks),
-            len(tasks_refs),
-        )
-
-        if len(unfinished_tasks) == 0:
-            break
 
 
 def create_tasks(
@@ -158,7 +140,7 @@ def run_experiment(
     return task_id
 
 
-def main(args: ControlPipelineArgs):
+def main(args: ControlPipelineArgs) -> None:
     """
     Program entry point.
     """
@@ -187,7 +169,7 @@ def main(args: ControlPipelineArgs):
             result_ref = run_experiment.remote(experiment_instance)
             results_refs.append(result_ref)
 
-        wait_till_completion(results_refs)
+        raytasks.wait_till_completion(results_refs, name="experiment")
 
 
 def parse_args() -> ControlPipelineArgs:
