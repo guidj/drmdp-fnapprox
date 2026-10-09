@@ -146,6 +146,45 @@ class TestMaxAchievableDistance:
         assert dist < 187
 
 
+class TestGridBfsDistances:
+    def test_single_source_open_grid(self):
+        grid = np.array([[1, 0, 0], [0, 0, 0], [0, 0, 2]], dtype=np.int8)
+        distances = gridutils.grid_bfs_distances(grid, sources=[8])
+        assert distances[8] == 0
+        assert distances[5] == 1
+        assert distances[7] == 1
+        assert distances[0] == 4
+
+    def test_nearest_of_multiple_sources(self):
+        grid = np.zeros((1, 5), dtype=np.int8)
+        distances = gridutils.grid_bfs_distances(grid, sources=[0, 4])
+        np.testing.assert_array_equal(distances, [0, 1, 2, 1, 0])
+
+    def test_cliffs_block_and_pocket_is_unreachable(self):
+        # Cliff column 1 separates the left column from the source at (1, 2)
+        grid = np.array([[0, 3, 0], [0, 3, 2], [0, 3, 0]], dtype=np.int8)
+        distances = gridutils.grid_bfs_distances(grid, sources=[5])
+        assert distances[5] == 0
+        assert distances[2] == 1
+        assert distances[8] == 1
+        assert distances[0] == -1
+        assert distances[3] == -1
+        assert distances[6] == -1
+
+    def test_cliff_source_is_ignored(self):
+        grid = np.array([[3, 0, 2]], dtype=np.int8)
+        distances = gridutils.grid_bfs_distances(grid, sources=[0, 2])
+        assert distances[0] == -1
+        assert distances[1] == 1
+        assert distances[2] == 0
+
+    def test_agrees_with_grid_bfs(self):
+        grid, start, end = gridutils.create_grid(size=(8, 8), num_cliffs=12, seed=3)
+        distances = gridutils.grid_bfs_distances(grid, sources=[end])
+        expected = gridutils.grid_bfs(grid, source=start, target=end)
+        assert distances[start] == expected
+
+
 class TestGridBfsPath:
     def test_connected(self):
         grid = np.array([[1, 0, 0], [0, 0, 0], [0, 0, 2]], dtype=np.int8)
