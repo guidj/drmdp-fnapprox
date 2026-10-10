@@ -23,15 +23,11 @@ class RandomStartGridWorld(gridworld.GridWorld):
     Candidates are non-cliff, non-exit cells that can reach an exit,
     with BFS distance to the nearest exit at or above the median over
     those cells. `reset` draws one uniformly and the drawn cell is the
-    episode's start: cliff falls send the agent back to it, and the
-    transition table describes it. The table is rebuilt lazily on
-    access, once per distinct start, so `reset` pays only the draw.
-    Grids where no cell reaches an exit fall back to the textual start.
+    episode's initial agent position. Cliff falls send the agent to
+    the start given at construction, so the transition table — the
+    teleport target included — is the same for every episode. Grids
+    where no cell reaches an exit fall back to the textual start.
     """
-
-    _episode_start: tuple[int, int] | None = None
-    _transition_table: gridworld.MutableEnvTransition
-    _transition_table_start: tuple[int, int]
 
     def __init__(
         self,
@@ -46,10 +42,6 @@ class RandomStartGridWorld(gridworld.GridWorld):
         self._state_id_fn = gridworld.create_obs_state_id_fn(
             states=gridworld.states_mapping(size=size, cliffs=tuple(self._cliffs))
         )
-        self._episode_start = self._start
-        self._transition_cache: dict[
-            tuple[int, int], gridworld.MutableEnvTransition
-        ] = {self._start: self._transition_table}
         self._start_candidates = _random_start_candidates(
             size=size, cliffs=tuple(self._cliffs), exits=tuple(self._exits)
         ) or (self._start,)
@@ -59,62 +51,32 @@ class RandomStartGridWorld(gridworld.GridWorld):
         """Cells `reset` samples from, sorted by position."""
         return self._start_candidates
 
-    @property
-    def transition(self) -> gridworld.MutableEnvTransition:
-        """Transition table for the current episode's start.
-
-        The cliff-teleport target is the episode's start, so the table
-        is rebuilt when the start changed since the last read. Builds
-        are cached per distinct start.
-        """
-        episode_start = self._episode_start
-        if episode_start is not None and episode_start != self._transition_table_start:
-            self._transition_table = self._transition_for_start(episode_start)
-            self._transition_table_start = episode_start
-        return self._transition_table
-
-    @transition.setter
-    def transition(self, value: gridworld.MutableEnvTransition) -> None:
-        # `GridWorld.__init__` builds the table for the textual start;
-        # record that association.
-        self._transition_table = value
-        self._transition_table_start = self._start
-
     def reset(
         self, *, seed: int | None = None, options: Mapping[str, Any] | None = None
     ) -> InitState:
         """Starts a new sequence from a uniformly sampled start state."""
         del options
         self.seed(seed)
-        self._episode_start = self._sample_start()
-        self._observation = gridworld.create_observation(
-            size=self._size,
-            start=self._episode_start,
-            agent=self._episode_start,
-            cliffs=tuple(self._cliffs),
-            exits=tuple(self._exits),
-            get_state_id=self._state_id_fn,
+        episode_start = self._sample_start()
+        observation = dict(
+            gridworld.create_observation(
+                size=self._size,
+                start=self._start,
+                agent=episode_start,
+                cliffs=tuple(self._cliffs),
+                exits=tuple(self._exits),
+                get_state_id=self._state_id_fn,
+            )
         )
+        # `create_observation` derives the id from the start cell;
+        # the agent begins at the sampled position
+        observation[gridworld.OBS_KEY_ID] = self._state_id_fn(episode_start)
+        self._observation = observation
         return copy.copy(self._observation), {}
 
     def _sample_start(self) -> tuple[int, int]:
         idx = int(self._rng.integers(low=0, high=len(self._start_candidates)))
         return self._start_candidates[idx]
-
-    def _transition_for_start(
-        self, start_pos: tuple[int, int]
-    ) -> gridworld.MutableEnvTransition:
-        """Transition table for a cliff-teleport target of `start_pos`.
-
-        The table depends on the teleport target only. Building it via
-        a throwaway `GridWorld` reuses the parent's builder; the result
-        is cached so each distinct start builds at most once.
-        """
-        if start_pos not in self._transition_cache:
-            self._transition_cache[start_pos] = gridworld.GridWorld(
-                self._size, tuple(self._cliffs), tuple(self._exits), start_pos
-            ).transition
-        return self._transition_cache[start_pos]
 
 
 class GridWorldObsAsVectorWrapper(gym.ObservationWrapper):
@@ -144,8 +106,8 @@ class GridWorldObsAsVectorWrapper(gym.ObservationWrapper):
     def transition(self) -> gridworld.MutableEnvTransition:
         """Transition table of the wrapped env.
 
-        Reflects the current episode's start, which is the cliff-teleport
-        target when the env randomises starts.
+        Cliff-teleport targets are the start given at construction;
+        the table is the same for every episode.
         """
         return self._grid_env.transition
 

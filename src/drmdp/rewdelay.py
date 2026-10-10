@@ -3,7 +3,7 @@ import dataclasses
 import logging
 import random
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from enum import Enum
 from typing import (
     Any,
@@ -416,6 +416,7 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
         impute_value: float = 0.0,
         estimation_buffer_mult: int | None = None,
         use_next_state: bool = False,
+        reward_error_fn: Callable[[np.ndarray], Mapping[str, Any]] | None = None,
     ):
         super().__init__(env)
         self._validate_observation_space(ft_op)
@@ -426,6 +427,7 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
         self.impute_value = impute_value
         self.estimation_buffer_mult = estimation_buffer_mult
         self.use_next_state = use_next_state
+        self.reward_error_fn = reward_error_fn
 
         self.episodes = 0
         self.ft_op_dim = self._compute_ftop_dim(ft_op)
@@ -524,6 +526,33 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
             success: Whether estimation succeeded (for windowed classes that return bool)
         """
         del success
+
+    def _record_reward_error(self, weights: np.ndarray) -> None:
+        """
+        Measures the estimate's error against true rewards.
+
+        One record per estimation event, when an evaluator is
+        configured; `update_index` counts events within this run,
+        1-based, so a Bayesian estimator's first record is its
+        empirical prior. A failing measurement is logged and skipped:
+        it must not fail the control run it instruments.
+        """
+        if self.reward_error_fn is None:
+            return
+        try:
+            report = self.reward_error_fn(weights)
+        except Exception as err:  # noqa: BLE001 - measurement must not abort control
+            logger.warning(
+                "%s - reward-error measurement failed: %s", self.get_name(), err
+            )
+            return
+        self.estimation_meta.setdefault("reward_errors", []).append(
+            {
+                "update_index": len(self.estimation_meta["reward_errors"]) + 1,
+                "episode": self.episodes,
+                **report,
+            }
+        )
 
     def _on_terminal_state(self, next_obs, action: int = 0):
         """
@@ -841,6 +870,7 @@ class LeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         impute_value: float = 0.0,
         check_factors: bool = False,
         use_next_state: bool = False,
+        reward_error_fn: Callable[[np.ndarray], Mapping[str, Any]] | None = None,
     ):
         super().__init__(
             env=env,
@@ -849,6 +879,7 @@ class LeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
             impute_value=impute_value,
             estimation_buffer_mult=estimation_buffer_mult,
             use_next_state=use_next_state,
+            reward_error_fn=reward_error_fn,
         )
         self.attempt_estimation_episode = attempt_estimation_episode
         self.check_factors = check_factors
@@ -857,6 +888,7 @@ class LeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
             "use_bias": use_bias,
             "check_factors": check_factors,
             "snapshots": [],
+            "reward_errors": [],
         }
 
     def _validate_observation_space(self, ft_op: transform.FTOp):
@@ -910,6 +942,7 @@ class LeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
             error = self._calculate_rmse(matrix, weights, rewards)
             snapshot = self._create_snapshot(nexamples, matrix, weights, error)
             self.estimation_meta["snapshots"].append(snapshot)
+            self._record_reward_error(weights)
             logger.info(
                 "%s - Estimated rewards for %s. RMSE: %f; No. Samples: %d",
                 self.get_name(),
@@ -947,6 +980,7 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         check_factors: bool = False,
         use_next_state: bool = False,
         sample_weights: bool = False,
+        reward_error_fn: Callable[[np.ndarray], Mapping[str, Any]] | None = None,
     ):
         super().__init__(
             env=env,
@@ -955,6 +989,7 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
             impute_value=impute_value,
             estimation_buffer_mult=estimation_buffer_mult,
             use_next_state=use_next_state,
+            reward_error_fn=reward_error_fn,
         )
         self.mode = mode
         self.init_attempt_estimation_episode = init_attempt_estimation_episode
@@ -972,6 +1007,7 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
             "use_bias": use_bias,
             "check_factors": check_factors,
             "snapshots": [],
+            "reward_errors": [],
         }
 
     def _validate_observation_space(self, ft_op: transform.FTOp):
@@ -1072,6 +1108,7 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
                 self.mv_normal_rewards = mv_normal
                 snapshot = self._create_snapshot(nexamples, matrix, weights, error)
                 self.estimation_meta["snapshots"].append(snapshot)
+                self._record_reward_error(mv_normal.mean)
 
                 logger.info(
                     "%s - %s rewards for %s. RMSE: %f; No. Samples: %d",

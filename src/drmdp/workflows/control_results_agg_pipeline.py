@@ -20,6 +20,7 @@ import ray
 import ray.data
 import tensorflow as tf
 
+from drmdp import dataproc
 from drmdp.workflows import raytasks
 
 logger = logging.getLogger(__name__)
@@ -217,12 +218,57 @@ def parse_path_from_filename(file_name: str) -> str:
     return os.path.join(*matches.groups()) if matches else dir_name
 
 
+class EstimationEventDedup(ray.data.aggregate.AggregateFn):
+    """
+    Keeps the first row per (exp_id, instance_id, update_index).
+
+    Events are attached to every log entry of their run, so the same
+    event reaches the aggregation many times.
+    """
+
+    AggType = Mapping[str, Any] | None
+    Row = Mapping[str, Any]
+
+    def __init__(self, name: str = "estimation_event_dedup"):
+        super().__init__(
+            init=self._init,
+            merge=self._merge,
+            accumulate_row=self._accumulate_row,
+            finalize=self._finalize,
+            name=name,
+        )
+
+    def _init(self, key: Any) -> AggType:
+        del key
+        return None
+
+    def _accumulate_row(self, acc: AggType, row: Row) -> AggType:
+        if acc is not None:
+            return acc
+        return dict(row)
+
+    def _merge(self, acc_left: AggType, acc_right: AggType) -> AggType:
+        return acc_left if acc_left is not None else acc_right
+
+    def _finalize(self, acc: AggType) -> Any:
+        return acc
+
+
 @ray.remote
 def pipeline(ds_logs: ray.data.Dataset) -> Mapping[str, ray.data.Dataset]:
     """
     This pipeline aggregates the output of
     multiple runs from each experiment.
     """
+    # Estimation events are attached to every log entry of their run;
+    # keep one row per event and update.
+    ds_estimations = (
+        ds_logs.filter(has_estimation_events)
+        .flat_map(estimation_event_rows)
+        .groupby(["exp_id", "instance_id", "update_index"])
+        .aggregate(EstimationEventDedup())
+        .flat_map(lambda row: [row["estimation_event_dedup"]])
+    )
     ds_logs = (
         ds_logs.groupby("episode")
         .aggregate(StepSnapshotAggretator(name="step_snapshot_agg"))
@@ -234,7 +280,7 @@ def pipeline(ds_logs: ray.data.Dataset) -> Mapping[str, ray.data.Dataset]:
         )
     )
     ds_metrics = calculate_metrics(ds_logs)
-    return {"logs": ds_logs, "metrics": ds_metrics}
+    return {"logs": ds_logs, "metrics": ds_metrics, "estimations": ds_estimations}
 
 
 @ray.remote
@@ -243,9 +289,67 @@ def write_results(results_datasets: Mapping[str, ray.data.Dataset], output_dir: 
     Exports results
     """
     for key, ds in results_datasets.items():
+        if ds.count() == 0:
+            logger.info("Skipping empty %s", key)
+            continue
         output_path = os.path.join(output_dir, key)
         logger.info("Writing %s to %s", key, output_path)
         ds.write_parquet(output_path)
+
+
+def has_estimation_events(row: Mapping[str, Any]) -> bool:
+    """
+    Whether a log record carries reward-estimation events.
+    """
+    return len(reward_error_events(row)) > 0
+
+
+def reward_error_events(row: Mapping[str, Any]) -> Sequence[Any]:
+    """
+    Estimation events attached to a log record.
+
+    Ray reads the events as a numpy object array of dicts; log entries
+    from before the first estimation carry an empty `info`.
+    """
+    info = row.get("info")
+    if not info:
+        return ()
+    events = info.get("reward_errors")
+    if events is None:
+        return ()
+    return list(events)
+
+
+def estimation_event_rows(row: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """
+    Per estimation-event rows from one experiment log record.
+
+    Each row carries the run identity, the event's episode and update
+    index, the error report, and the experiment configuration the
+    event belongs to.
+    """
+    events = reward_error_events(row)
+    if not events:
+        return []
+    meta = row["meta"]
+    experiment = meta["experiment"]
+    problem_spec = experiment["problem_spec"]
+    method = dataproc.MAPPERS_NAMES[problem_spec["reward_mapper"]["name"]]
+    return [
+        {
+            "exp_id": row["exp_id"],
+            "instance_id": row["instance_id"],
+            "episode": event["episode"],
+            "update_index": event["update_index"],
+            "rmse": event["rmse"],
+            "num_samples": event["num_samples"],
+            "method": method,
+            "env_name": experiment["env_spec"]["name"],
+            "gamma": problem_spec["gamma"],
+            "delay_config": problem_spec["delay_config"],
+        }
+        for event in events
+    ]
 
 
 def calculate_metrics(ds: ray.data.Dataset) -> ray.data.Dataset:
