@@ -14,10 +14,11 @@ classifiers = [
     "Operating System :: POSIX :: Linux",
     "Operating System :: MacOS :: MacOS X",
     "Programming Language :: Python",
+    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: Implementation :: CPython",
 ]
 urls = {Homepage = "https://github.com/guidj/drmdp-fnapprox"}
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 dependencies = [
     "pillow>=10.4.0",
     "scipy>=1.14.1",
@@ -25,7 +26,7 @@ dependencies = [
     "rlplg==0.21.8",
     "ray[data,default,tune]==2.48",
     "tensorflow>=2.11.1",
-    "cvxpy>=1.5.3,<1.6",
+    "cvxpy>=1.6,<1.7",
     "stable-baselines3>=2.4.1",
     "torch>=2.1.2",
     "scikit-learn>=1.6.1",
@@ -112,6 +113,24 @@ rendering = [
     "pyglet>=1.5.31",
 ]
 
+lint = [
+    "ruff==0.16.9",
+]
+
+types = [
+    "mypy==2.3.1",
+    "numpy>=1.23.5",
+    "type-extensions>=0.1.2",
+]
+
+manifest = [
+    "check-manifest==0.51",
+]
+
+docs = [
+    "mkdocs==1.6.1",
+]
+
 dev = [
     "attrs==22.2.0",
     "bumpver>=2024.1130",
@@ -140,7 +159,7 @@ dev = [
     "mkdocs==1.6.1",
     "mkdocs-get-deps==0.2.0",
     "packaging==23.0",
-    "pathspec==0.11.2",
+    "pathspec>=0.11.2",
     "platformdirs==4.0.0",
     "pluggy==1.5.0",
     "pytest>=8.3.1",
@@ -152,7 +171,7 @@ dev = [
     "seaborn==0.13.1",
     "six==1.16.0",
     "sortedcontainers==2.4.0",
-    "statsmodels==0.14.1",
+    "statsmodels>=0.14.4,<0.15",
     "tqdm>=4.66.2",
     "typing-extensions>4.12",
     "watchdog==2.3.1",

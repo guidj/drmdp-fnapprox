@@ -9,11 +9,12 @@ on:
 
 jobs:
   build:
+    name: build-main
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.11']
+        python-version: ['3.13']
     steps:
     - uses: actions/checkout@v4
     - name: Install the latest version of uv and set the python version
@@ -23,5 +24,5 @@ jobs:
     - name: Install tox and any other packages
       run: uv tool install tox
     - name: Run tox
-      # (defaults to pyproject.tolm)
+      # (defaults to tox.ini)
       run: tox
