@@ -5,10 +5,6 @@ format:
 	tox -e lint
 	tox -e format
 
-format-nb:
-	tox -e lint-nb
-	tox -e format-nb
-
 check:
 	tox -e check-lint-types 
 	tox -e check-formatting	

@@ -73,8 +73,6 @@ target/
 # Jupyter Notebook
 .ipynb_checkpoints
 *.pdf
-# Igore the base path by default
-notebooks/
 
 # pyenv
 .python-version
