@@ -273,6 +273,41 @@ def grid_bfs(grid: np.ndarray, source: int, target: int) -> int:
     return -1
 
 
+def grid_bfs_distances(grid: np.ndarray, sources: Sequence[int]) -> np.ndarray:
+    """BFS distance from the nearest source cell to every cell.
+
+    Args:
+        grid: 2D cell grid; CELL_CLIFF cells are impassable.
+        sources: flat indices of source cells; sources on cliffs are ignored.
+    Returns:
+        A 1D array of length ``nrows * ncols`` with the number of steps
+        from the nearest source, or -1 when no source reaches the cell.
+    """
+    nrows, ncols = grid.shape
+    distances = np.full(nrows * ncols, -1, dtype=np.int64)
+    queue: collections.deque[tuple[int, int]] = collections.deque()
+    for source in sources:
+        row, col = divmod(source, ncols)
+        if grid[row, col] != CELL_CLIFF and distances[source] == -1:
+            distances[source] = 0
+            queue.append((row, col))
+    while queue:
+        row, col = queue.popleft()
+        distance = distances[row * ncols + col]
+        for d_row, d_col in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            next_row, next_col = row + d_row, col + d_col
+            next_flat = next_row * ncols + next_col
+            if (
+                0 <= next_row < nrows
+                and 0 <= next_col < ncols
+                and grid[next_row, next_col] != CELL_CLIFF
+                and distances[next_flat] == -1
+            ):
+                distances[next_flat] = distance + 1
+                queue.append((next_row, next_col))
+    return distances
+
+
 def grid_bfs_path(
     grid: np.ndarray, source: int, target: int
 ) -> tuple[int, tuple[int, ...]]:

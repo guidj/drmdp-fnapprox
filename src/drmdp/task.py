@@ -2,16 +2,29 @@ import logging
 import os
 import os.path
 import uuid
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from typing import Any
 
 import gymnasium as gym
 import numpy as np
 
-from drmdp import algorithms, core, envs, logger, optsol, rewdelay, transform
+from drmdp import (
+    algorithms,
+    core,
+    envs,
+    logger,
+    optsol,
+    rewardeval,
+    rewdelay,
+    transform,
+)
 from drmdp.envs import wrappers
 
 _logger = logging.getLogger(__name__)
+
+# fixed sampling seed for reward-error measurement: pairs successive
+# estimation events of a run on the same state-action samples
+REWARD_ERROR_SAMPLING_SEED = 0
 
 REWARD_SHAPING_BUILDERS: Mapping[str, type] = {
     "mountain-car-height": wrappers.MountainCarHeightBonus,
@@ -87,7 +100,7 @@ def policy_control(exp_instance: core.ExperimentInstance):
                         episode=episode,
                         steps=snapshot.steps,
                         returns=np.mean(eval_returns).item(),
-                        info={},
+                        info=reward_estimation_info(env),
                     )
                     if exp_instance.export_model:
                         export_model_snapshot(
@@ -321,12 +334,14 @@ def reward_mapper(env: gym.Env, proxy_env: gym.Env, mapping_spec: Mapping[str, A
         return rewdelay.LeastLfaGenerativeRewardWrapper(
             env=env,
             ft_op=ft_op,
+            reward_error_fn=true_reward_error_fn(proxy_env, ft_op, m_args),
             **m_args,
         )
     elif name == "bayes-least-lfa":
         return rewdelay.BayesLeastLfaGenerativeRewardWrapper(
             env=env,
             ft_op=ft_op,
+            reward_error_fn=true_reward_error_fn(proxy_env, ft_op, m_args),
             **m_args,
         )
     elif name == "cvlps":
@@ -343,6 +358,44 @@ def reward_mapper(env: gym.Env, proxy_env: gym.Env, mapping_spec: Mapping[str, A
         )
 
     raise ValueError(f"Unknown mapping_method: {mapping_spec}")
+
+
+def true_reward_error_fn(
+    proxy_env: gym.Env, ft_op: transform.FTOp, mapper_args: Mapping[str, Any]
+) -> Callable[[np.ndarray], Mapping[str, Any]]:
+    """
+    True-reward error evaluator for an estimator mapper.
+
+    Built from the clean proxy env the estimator's features are built
+    from; measures every estimate the mapper produces against true
+    rewards. The sampling seed is fixed so successive estimation events
+    of a run are scored on the same state-action samples: RMSE changes
+    across updates reflect the estimates, not the sample.
+    """
+    return rewardeval.true_reward_error_fn(
+        proxy_env=proxy_env,
+        ft_op=ft_op,
+        use_bias=mapper_args.get("use_bias", False),
+        use_next_state=mapper_args.get("use_next_state", False),
+        seed=REWARD_ERROR_SAMPLING_SEED,
+    )
+
+
+def reward_estimation_info(env: gym.Env) -> Mapping[str, Any]:
+    """
+    Reward-estimation events recorded by the reward mapper so far.
+
+    The full list is attached to each log entry and the aggregation
+    pipeline deduplicates by update index, so every event is reported
+    once regardless of the log frequency.
+    """
+    if not env.has_wrapper_attr("estimation_meta"):
+        return {}
+    estimation_meta = env.get_wrapper_attr("estimation_meta")
+    reward_errors = estimation_meta.get("reward_errors", [])
+    if not reward_errors:
+        return {}
+    return {"reward_errors": [dict(event) for event in reward_errors]}
 
 
 def observation_encoder(
