@@ -220,33 +220,60 @@ class DataBuffer:
 
 class WindowedTaskSchedule:
     """
-    Sets schedule for updates, using two types of schedules:
+    Sets schedule for updates, using three types of schedules:
     1. Fixed interval (fixed)
-    2. Doubling size (double)
+    2. Exponentially growing interval (exponential): each window is
+    `rho` times the previous one
+    3. Doubling size (double)
+
+    The first window spans episodes `init_update_ep` through
+    `2 * init_update_ep`; the first update fires at its end. The
+    initial estimate itself is gated by the estimation buffer, not by
+    this schedule. Each later window grows from the previous one:
+    fixed keeps it at `init_update_ep`, exponential multiplies it by
+    `rho` (rounded up to whole episodes), double multiplies it by
+    two.
     """
 
     FIXED = "fixed"
+    EXPONENTIAL = "exponential"
     DOUBLE = "double"
+    DEFAULT_RHO = 1.05
 
-    def __init__(self, mode: str, init_update_ep: int):
+    def __init__(
+        self,
+        mode: str = EXPONENTIAL,
+        init_update_ep: int = 10,
+        rho: float = DEFAULT_RHO,
+    ):
         """
-        Instatiates the class for a given update schedule.
+        Instantiates the class for a given update schedule.
         """
-        if mode not in (self.FIXED, self.DOUBLE):
+        if mode not in (self.FIXED, self.EXPONENTIAL, self.DOUBLE):
             raise ValueError(
-                f"Unsupported mode: {mode}. Must be ({self.FIXED}, {self.DOUBLE})"
+                f"Unsupported mode: {mode}. "
+                f"Must be ({self.FIXED}, {self.EXPONENTIAL}, {self.DOUBLE})"
+            )
+        if mode == self.EXPONENTIAL and not (np.isfinite(rho) and rho > 1.0):
+            raise ValueError(
+                f"Exponential schedule requires a finite rho > 1.0. Got: {rho}"
+            )
+        if init_update_ep < 1:
+            raise ValueError(
+                f"init_update_ep must be a positive episode count. "
+                f"Got: {init_update_ep}"
             )
 
         self.mode = mode
         self.init_update_ep = init_update_ep
+        self.rho = rho
         self.curr_update_ep = init_update_ep
         self._done = False
 
-        self.next_update_ep = (
-            self.curr_update_ep * 2
-            if self.mode == self.DOUBLE
-            else self.curr_update_ep + self.init_update_ep
-        )
+        # the first window spans `init_update_ep` episodes; the first
+        # update fires at its end
+        self._window = init_update_ep
+        self.next_update_ep = self.curr_update_ep + self._window
 
     def step(self, episode: int) -> None:
         """
@@ -255,11 +282,8 @@ class WindowedTaskSchedule:
         if episode == self.next_update_ep:
             # New window
             self.curr_update_ep = self.next_update_ep
-            self.next_update_ep = (
-                self.curr_update_ep * 2
-                if self.mode == self.DOUBLE
-                else self.curr_update_ep + self.init_update_ep
-            )
+            self._window = self._grow_window(self._window)
+            self.next_update_ep = self.curr_update_ep + self._window
             # Reset window state.
             self._done = False
 
@@ -276,6 +300,18 @@ class WindowedTaskSchedule:
         Returns true if the current cycle state is `False`.
         """
         return self._done
+
+    def _grow_window(self, window: int) -> int:
+        """
+        Length of the window that follows one of `window` episodes.
+        """
+        if self.mode == self.FIXED:
+            return self.init_update_ep
+        if self.mode == self.EXPONENTIAL:
+            # ceil keeps whole episodes and, for any rho > 1,
+            # guarantees each window is at least one episode longer
+            return int(np.ceil(window * self.rho))
+        return window * 2
 
 
 class SupportsName(Protocol):
@@ -962,9 +998,10 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
     presented, and zero is used otherwise.
 
     Rewards are estimated with Bayesian Least-Squares.
-    Rewards are first estimated after `init_attempt_estimation_episode`.
-    After that, they are either updated following a doubling
-    schedule or at fixed intervals.
+    The initial estimate is gated by the estimation buffer, not by
+    episode count. After it, posterior updates follow the windowed
+    schedule — exponential (the default), fixed, or doubling — set
+    by `mode`.
     Uses Box observation space with continual learning (buffering continues after estimation).
     """
 
@@ -972,8 +1009,9 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         self,
         env: gym.Env,
         ft_op: transform.FTOp,
-        mode: str = WindowedTaskSchedule.DOUBLE,
+        mode: str = WindowedTaskSchedule.EXPONENTIAL,
         init_attempt_estimation_episode: int = 10,
+        schedule_rho: float = WindowedTaskSchedule.DEFAULT_RHO,
         estimation_buffer_mult: int | None = None,
         use_bias: bool = False,
         impute_value: float = 0.0,
@@ -996,7 +1034,9 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         self.check_factors = check_factors
         self.sample_weights = sample_weights
         self.windowed_task_schedule = WindowedTaskSchedule(
-            mode=mode, init_update_ep=init_attempt_estimation_episode
+            mode=mode,
+            init_update_ep=init_attempt_estimation_episode,
+            rho=schedule_rho,
         )
         self.update_episode = init_attempt_estimation_episode
         self.posterior_updates = 0
@@ -1265,9 +1305,9 @@ class RecurringConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
 
     Rewards are estimated convex Least-Squares.
     Each estimate uses the previous value as an initial guess.
-    Rewards are first estimated after `init_attempt_estimation_episode`.
-    After that, they are either updated following a doubling
-    schedule or at fixed intervals.
+    The initial estimate is gated by the estimation buffer, not by
+    episode count. After it, recurring updates follow the windowed
+    schedule — exponential (the default), fixed, or doubling.
     Uses Box observation space with continual learning and terminal state constraints.
     """
 
@@ -1275,8 +1315,9 @@ class RecurringConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         self,
         env: gym.Env,
         ft_op: transform.FTOp,
-        mode: str = WindowedTaskSchedule.DOUBLE,
+        mode: str = WindowedTaskSchedule.EXPONENTIAL,
         init_attempt_estimation_episode: int = 10,
+        schedule_rho: float = WindowedTaskSchedule.DEFAULT_RHO,
         estimation_buffer_mult: int | None = None,
         use_bias: bool = False,
         impute_value: float = 0.0,
@@ -1295,7 +1336,9 @@ class RecurringConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         self.init_attempt_estimation_episode = init_attempt_estimation_episode
         self.constraints_buffer_limit = constraints_buffer_limit
         self.windowed_task_schedule = WindowedTaskSchedule(
-            mode=mode, init_update_ep=init_attempt_estimation_episode
+            mode=mode,
+            init_update_ep=init_attempt_estimation_episode,
+            rho=schedule_rho,
         )
         self.update_episode = init_attempt_estimation_episode
         self.posterior_updates = 0

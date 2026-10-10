@@ -870,7 +870,14 @@ class TestDiscretisedLeastLfaGenerativeRewardWrapper:
 class TestBayesLeastLfaGenerativeRewardWrapper:
     """Tests for BayesLeastLfaGenerativeRewardWrapper — episode-boundary buffering, segment accumulation for posterior updates, and sampled-weights control."""
 
-    def _make_wrapper(self, term_steps, delay, sample_weights=False, use_bias=False):
+    def _make_wrapper(
+        self,
+        term_steps,
+        delay,
+        sample_weights=False,
+        use_bias=False,
+        schedule_rho=rewdelay.WindowedTaskSchedule.DEFAULT_RHO,
+    ):
         base = DummyEnv(term_steps=term_steps)
         delayed = rewdelay.DelayedRewardWrapper(base, rewdelay.FixedDelay(delay=delay))
         ft_op = DummyFTOp(base)
@@ -879,10 +886,51 @@ class TestBayesLeastLfaGenerativeRewardWrapper:
             ft_op=ft_op,
             init_attempt_estimation_episode=1,
             check_factors=False,
+            schedule_rho=schedule_rho,
             sample_weights=sample_weights,
             use_bias=use_bias,
         )
         return wrapper
+
+    def test_default_schedule_is_exponential(self):
+        """The wrapper defaults to the exponential schedule (rho 1.05)."""
+        wrapper = self._make_wrapper(term_steps=8, delay=2)
+        assert wrapper.mode == rewdelay.WindowedTaskSchedule.EXPONENTIAL
+        assert (
+            wrapper.windowed_task_schedule.rho
+            == rewdelay.WindowedTaskSchedule.DEFAULT_RHO
+        )
+
+    def test_schedule_rho_passthrough(self):
+        wrapper = self._make_wrapper(term_steps=8, delay=2, schedule_rho=1.2)
+        assert wrapper.windowed_task_schedule.rho == 1.2
+
+    def test_schedule_rho_changes_update_episodes(self):
+        """
+        The growth factor sets the episodes at which posterior
+        updates fire: rho=1.05 grows windows 10, 11, 12, ...;
+        rho=2 gives the doubling windows 10, 20, 40.
+        """
+        episodes_by_rho = {}
+        for rho in (1.05, 2.0):
+            env = DummyEnv(term_steps=2)
+            delayed = rewdelay.DelayedRewardWrapper(env, rewdelay.FixedDelay(delay=2))
+            wrapper = rewdelay.BayesLeastLfaGenerativeRewardWrapper(
+                delayed,
+                ft_op=DummyFTOp(env),
+                init_attempt_estimation_episode=10,
+                check_factors=False,
+                schedule_rho=rho,
+                reward_error_fn=stub_reward_error_fn([]),
+            )
+            drive_episodes(wrapper, num_episodes=85, steps_per_episode=2)
+            episodes_by_rho[rho] = [
+                event["episode"]
+                for event in wrapper.estimation_meta["reward_errors"]
+                if event["update_index"] > 1
+            ]
+        assert episodes_by_rho[1.05] == [20, 31, 43, 56, 70, 85]
+        assert episodes_by_rho[2.0] == [20, 40, 80]
 
     def _force_estimate(self, wrapper):
         mdim = wrapper.mdim
@@ -1074,7 +1122,7 @@ class TestBayesLeastLfaGenerativeRewardWrapper:
             check_factors=False,
             reward_error_fn=stub_reward_error_fn(seen_weights),
         )
-        # prior on first full buffer, then updates on each doubling window
+        # prior on first full buffer, then updates on each exponential window
         drive_episodes(wrapper, num_episodes=36, steps_per_episode=2)
 
         errors = wrapper.estimation_meta["reward_errors"]
@@ -1206,6 +1254,139 @@ class TestConvexSolverGenerativeRewardWrapper:
                 ft_op=ft_op,
                 attempt_estimation_episode=5,
             )
+
+
+class TestWindowedTaskSchedule:
+    """Windowed update schedules: when updates fire."""
+
+    def _boundaries(self, schedule, max_episode):
+        """Episodes at which the schedule opens a new window."""
+        boundaries = []
+        for episode in range(1, max_episode + 1):
+            if episode == schedule.next_update_ep:
+                boundaries.append(episode)
+                schedule.step(episode)
+        return boundaries
+
+    def test_fixed_schedule_boundaries(self):
+        schedule = rewdelay.WindowedTaskSchedule(
+            mode=rewdelay.WindowedTaskSchedule.FIXED, init_update_ep=10
+        )
+        assert self._boundaries(schedule, 100) == [
+            20,
+            30,
+            40,
+            50,
+            60,
+            70,
+            80,
+            90,
+            100,
+        ]
+
+    def test_double_schedule_boundaries(self):
+        schedule = rewdelay.WindowedTaskSchedule(
+            mode=rewdelay.WindowedTaskSchedule.DOUBLE, init_update_ep=10
+        )
+        assert self._boundaries(schedule, 500) == [20, 40, 80, 160, 320]
+
+    def test_exponential_schedule_boundaries(self):
+        """
+        Windows 10, 11, 12, 13, ... — each 5% larger, rounded up to
+        whole episodes.
+        """
+        schedule = rewdelay.WindowedTaskSchedule(
+            mode=rewdelay.WindowedTaskSchedule.EXPONENTIAL,
+            init_update_ep=10,
+            rho=1.05,
+        )
+        assert self._boundaries(schedule, 101) == [20, 31, 43, 56, 70, 85, 101]
+
+    def test_default_is_exponential(self):
+        schedule = rewdelay.WindowedTaskSchedule(init_update_ep=10)
+        assert schedule.mode == rewdelay.WindowedTaskSchedule.EXPONENTIAL
+        assert schedule.rho == rewdelay.WindowedTaskSchedule.DEFAULT_RHO
+        assert self._boundaries(schedule, 101) == [20, 31, 43, 56, 70, 85, 101]
+
+    @pytest.mark.parametrize(
+        "mode",
+        (
+            rewdelay.WindowedTaskSchedule.FIXED,
+            rewdelay.WindowedTaskSchedule.EXPONENTIAL,
+            rewdelay.WindowedTaskSchedule.DOUBLE,
+        ),
+    )
+    def test_first_update_at_twice_init_for_all_modes(self, mode):
+        """The first window spans `init_update_ep` episodes on every mode."""
+        schedule = rewdelay.WindowedTaskSchedule(mode=mode, init_update_ep=7)
+        assert schedule.next_update_ep == 14
+
+    @pytest.mark.parametrize("rho", (1.0, 0.5, -1.0, float("nan"), float("inf")))
+    def test_exponential_rejects_non_growth_rho(self, rho):
+        with pytest.raises(ValueError, match="finite rho > 1"):
+            rewdelay.WindowedTaskSchedule(
+                mode=rewdelay.WindowedTaskSchedule.EXPONENTIAL,
+                init_update_ep=10,
+                rho=rho,
+            )
+
+    def test_init_update_ep_must_be_positive(self):
+        with pytest.raises(ValueError, match="positive episode count"):
+            rewdelay.WindowedTaskSchedule(
+                mode=rewdelay.WindowedTaskSchedule.FIXED, init_update_ep=0
+            )
+
+    @pytest.mark.parametrize(
+        "mode",
+        (
+            rewdelay.WindowedTaskSchedule.FIXED,
+            rewdelay.WindowedTaskSchedule.DOUBLE,
+        ),
+    )
+    def test_fixed_and_double_ignore_rho(self, mode):
+        """Only the exponential mode reads rho."""
+        default = rewdelay.WindowedTaskSchedule(mode=mode, init_update_ep=10)
+        other = rewdelay.WindowedTaskSchedule(mode=mode, init_update_ep=10, rho=3.0)
+        assert self._boundaries(default, 100) == self._boundaries(other, 100)
+
+    def test_step_at_non_boundary_is_noop(self):
+        """
+        Only an exact match with `next_update_ep` opens a window; the
+        wrappers rely on this exact-equality semantics.
+        """
+        schedule = rewdelay.WindowedTaskSchedule(
+            mode=rewdelay.WindowedTaskSchedule.EXPONENTIAL,
+            init_update_ep=10,
+        )
+        schedule.set_state(True)
+        before = (
+            schedule.curr_update_ep,
+            schedule.next_update_ep,
+            schedule._window,
+            schedule.current_window_done,
+        )
+        for episode in (1, 5, 19, 21, 30):
+            schedule.step(episode)
+        after = (
+            schedule.curr_update_ep,
+            schedule.next_update_ep,
+            schedule._window,
+            schedule.current_window_done,
+        )
+        assert before == after
+
+    def test_unsupported_mode_raises(self):
+        with pytest.raises(ValueError, match="Unsupported mode"):
+            rewdelay.WindowedTaskSchedule(mode="quarterly", init_update_ep=10)
+
+    def test_new_window_resets_state(self):
+        schedule = rewdelay.WindowedTaskSchedule(
+            mode=rewdelay.WindowedTaskSchedule.FIXED, init_update_ep=2
+        )
+        schedule.set_state(True)
+        assert schedule.current_window_done
+        schedule.step(schedule.next_update_ep)
+        assert not schedule.current_window_done
 
 
 def stub_reward_error_fn(seen_weights):
