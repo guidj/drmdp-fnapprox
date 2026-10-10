@@ -6,8 +6,8 @@ format:
 	tox -e format
 
 format-nb:
-	ruff check --extend-select I --fix notebooks
-	ruff format notebooks
+	tox -e lint-nb
+	tox -e format-nb
 
 check:
 	tox -e check-lint-types 
