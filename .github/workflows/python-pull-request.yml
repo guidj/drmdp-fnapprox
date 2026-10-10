@@ -9,7 +9,7 @@ on:
 
 jobs:
   build:
-
+    name: build-pr
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

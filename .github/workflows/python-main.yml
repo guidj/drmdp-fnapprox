@@ -9,6 +9,7 @@ on:
 
 jobs:
   build:
+    name: build-main
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
