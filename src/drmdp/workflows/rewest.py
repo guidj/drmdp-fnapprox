@@ -207,7 +207,7 @@ def bayes_least_specs(
                 "name": "bayes-least-lfa",
                 "args": {
                     "init_attempt_estimation_episode": iaee,
-                    "mode": "double",
+                    "mode": "exponential",
                     "feats_spec": feat_spec,
                     "estimation_buffer_mult": est_buffer_mult,
                 },
@@ -261,6 +261,7 @@ def recurring_cvlps(
                 "name": "recurring-cvlps",
                 "args": {
                     "init_attempt_estimation_episode": iaee,
+                    "mode": "exponential",
                     "feats_spec": feat_spec,
                     "constraints_buffer_limit": constraints_buffer_limit,
                     "estimation_buffer_mult": est_buffer_mult,

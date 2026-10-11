@@ -122,6 +122,7 @@ def bayes_least_specs(
                     "name": "bayes-least-lfa",
                     "args": {
                         "init_attempt_estimation_episode": init_attempt_estimation_episode,
+                        "mode": "exponential",
                         "feats_spec": feats_spec,
                         "use_bias": False,
                         "impute_value": impute_value,

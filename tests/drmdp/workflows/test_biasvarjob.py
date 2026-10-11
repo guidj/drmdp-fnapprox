@@ -1,5 +1,6 @@
 """Tests for biasvarjob.py — spec builders and job creation."""
 
+from drmdp import rewdelay
 from drmdp.workflows import biasvarjob
 
 
@@ -27,13 +28,22 @@ class TestLeastLfaSpecs:
 
 
 class TestBayesLeastLfaSpecs:
-    def test_mode_defaults_to_double(self):
+    def test_mode_is_exponential(self):
+        """
+        The recorded mode must be a schedule the library accepts, and
+        must be the default mode.
+        """
         feats = [[{"name": "scale-observation-ft", "args": None}]]
         result = biasvarjob.bayes_least_lfa_specs(
             init_attempt_estimation_episodes=(10,),
             feat_specs=feats,
         )
-        assert result[0]["args"]["mode"] == "double"
+        args = result[0]["args"]
+        schedule = rewdelay.WindowedTaskSchedule(
+            mode=args["mode"],
+            init_update_ep=args["init_attempt_estimation_episode"],
+        )
+        assert schedule.mode == rewdelay.WindowedTaskSchedule.EXPONENTIAL
 
 
 class TestCreateAllJobSpecs:

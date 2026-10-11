@@ -173,9 +173,9 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
         )
 
     return (
-        specs(mode="double", init_attempt_estimation_episodes=10)
-        + specs(mode="double", init_attempt_estimation_episodes=50)
-        + specs(mode="double", init_attempt_estimation_episodes=100)
+        specs(mode="exponential", init_attempt_estimation_episodes=10)
+        + specs(mode="exponential", init_attempt_estimation_episodes=50)
+        + specs(mode="exponential", init_attempt_estimation_episodes=100)
     )
 
 

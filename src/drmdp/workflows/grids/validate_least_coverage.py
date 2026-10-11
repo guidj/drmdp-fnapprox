@@ -43,6 +43,7 @@ METHOD_CONFIGS: dict[str, dict[str, Any]] = {
     },
     "bayes-least-lfa": {
         "init_attempt_estimation_episode": 10,
+        "mode": "exponential",
         "use_bias": False,
         "impute_value": 0,
         "estimation_buffer_mult": 25,

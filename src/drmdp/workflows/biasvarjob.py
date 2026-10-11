@@ -241,7 +241,7 @@ def bayes_least_lfa_specs(
                 "name": "bayes-least-lfa",
                 "args": {
                     "init_attempt_estimation_episode": iaee,
-                    "mode": "double",
+                    "mode": "exponential",
                     "feats_spec": feat_spec,
                     "estimation_buffer_mult": 25,
                 },
