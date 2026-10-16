@@ -41,7 +41,7 @@ class StepSnapshotAggretator(ray.data.aggregate.AggregateFn):
     Aggregates returns.
     """
 
-    AggType = Mapping[tuple[str, int], Any]
+    AggType = Mapping[str, dict[str, Any]]
     Row = Mapping[str, Any]
 
     def __init__(self, name: str = "StepSnapshotAggretator()"):
@@ -67,9 +67,14 @@ class StepSnapshotAggretator(ray.data.aggregate.AggregateFn):
             # Path is a random pick
             # from one of the runs
             del meta["path"]
-            new_acc[row["exp_id"]] = {"meta": meta, "returns": [], "steps": []}
-        new_acc[row["exp_id"]]["returns"].append(row["returns"])
-        new_acc[row["exp_id"]]["steps"].append(row["steps"])
+            new_acc[row["exp_id"]] = {"meta": meta, "records": []}
+        new_acc[row["exp_id"]]["records"].append(
+            {
+                "instance_id": row["instance_id"],
+                "returns": row["returns"],
+                "steps": row["steps"],
+            }
+        )
         return new_acc
 
     def _merge(self, acc_left: AggType, acc_right: AggType) -> AggType:
@@ -82,15 +87,27 @@ class StepSnapshotAggretator(ray.data.aggregate.AggregateFn):
                 # copy meta and values
                 acc[key] = copy.deepcopy(value)
             else:
-                acc[key]["returns"].extend(value["returns"])
-                acc[key]["steps"].extend(value["steps"])
+                acc[key]["records"].extend(value["records"])
         return acc
 
     def _finalize(self, acc: AggType) -> Any:
         """
         Project final output.
         """
-        return acc
+        # Records are sorted by run so array position k is run k of the
+        # same experiment for every row of the output; the arrival-order
+        # arrays were an arbitrary per-row permutation, which made
+        # index pairing across rows invalid
+        projected = {}
+        for exp_id, data in acc.items():
+            records = sorted(data["records"], key=lambda record: record["instance_id"])
+            projected[exp_id] = {
+                "meta": data["meta"],
+                "returns": [record["returns"] for record in records],
+                "steps": [record["steps"] for record in records],
+                "instance_ids": [record["instance_id"] for record in records],
+            }
+        return projected
 
 
 def main():
@@ -269,6 +286,9 @@ def pipeline(ds_logs: ray.data.Dataset) -> Mapping[str, ray.data.Dataset]:
         .aggregate(EstimationEventDedup())
         .flat_map(lambda row: [row["estimation_event_dedup"]])
     )
+    # Per-run rows are projected from the joined stream before `ds_logs`
+    # is rebound to the episode-grouped view, which drops per-run rows
+    ds_runs = ds_logs.flat_map(run_rows)
     ds_logs = (
         ds_logs.groupby("episode")
         .aggregate(StepSnapshotAggretator(name="step_snapshot_agg"))
@@ -280,7 +300,12 @@ def pipeline(ds_logs: ray.data.Dataset) -> Mapping[str, ray.data.Dataset]:
         )
     )
     ds_metrics = calculate_metrics(ds_logs)
-    return {"logs": ds_logs, "metrics": ds_metrics, "estimations": ds_estimations}
+    return {
+        "logs": ds_logs,
+        "metrics": ds_metrics,
+        "estimations": ds_estimations,
+        "runs": ds_runs,
+    }
 
 
 @ray.remote
@@ -349,6 +374,45 @@ def estimation_event_rows(row: Mapping[str, Any]) -> list[dict[str, Any]]:
             "delay_config": problem_spec["delay_config"],
         }
         for event in events
+    ]
+
+
+def run_rows(row: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """
+    One per-run row from one experiment log record.
+
+    Each row carries the run identity, the logged point of the
+    cumulative evaluation-mean curve, and the experiment configuration,
+    so per-run analyses such as learning time need no re-read of the raw
+    logs. `policy_eval_mean` is None for runs logged before the
+    per-checkpoint evaluation mean was recorded; those runs are
+    recovered by differencing the cumulative mean.
+    """
+    meta = row["meta"]
+    experiment = meta["experiment"]
+    problem_spec = experiment["problem_spec"]
+    # Ray reads an empty `info` as {} or None; neither carries an
+    # evaluation mean
+    info = row.get("info") or {}
+    policy_eval = info.get("policy_eval") or {}
+    return [
+        {
+            "exp_id": row["exp_id"],
+            "instance_id": row["instance_id"],
+            "episode": row["episode"],
+            "returns": row["returns"],
+            "steps": row["steps"],
+            "policy_eval_mean": policy_eval.get("mean"),
+            "method": dataproc.MAPPERS_NAMES[problem_spec["reward_mapper"]["name"]],
+            "env_name": experiment["env_spec"]["name"],
+            "gamma": problem_spec["gamma"],
+            "delay_config": problem_spec["delay_config"],
+            "noise_scale": (experiment["env_spec"].get("metadata") or {}).get(
+                "noise_scale"
+            ),
+            "episodes_per_run": meta["run_config"]["episodes_per_run"],
+            "log_episode_frequency": meta["run_config"]["log_episode_frequency"],
+        }
     ]
 
 
