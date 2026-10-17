@@ -6,7 +6,6 @@ from typing import Any
 
 import numpy as np
 
-from drmdp import mathutils
 from drmdp.envs import gridutils
 
 EPSILON = 0.1
@@ -30,13 +29,18 @@ DEFAULT_DISCOUNT_FACTORS = (1.0, 0.99)
 
 
 def default_delay_config() -> list[dict[str, Any]]:
+    """Uniform delay ranges for the control experiment families.
+
+    The ranges replace the clipped-poisson delays (lam 2/5/7): the
+    shortest range stays within the option-delay budget
+    (MAX_OPTIONS_DELAY), so option specs are generated only for it.
+    """
     delay_configs = []
-    for lam in (2, 5, 7):
-        lb, ub = mathutils.poisson_exact_confidence_interval(observed_value=lam)
+    for min_delay, max_delay in ((3, 5), (9, 11), (15, 17)):
         delay_configs.append(
             {
-                "name": "clipped-poisson",
-                "args": {"lam": lam, "min_delay": max(2, lb), "max_delay": ub},
+                "name": "uniform",
+                "args": {"min_delay": min_delay, "max_delay": max_delay},
             },
         )
     return delay_configs
