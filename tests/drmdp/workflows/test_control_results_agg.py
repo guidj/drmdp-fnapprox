@@ -172,6 +172,37 @@ class TestEstimationEventDedup:
         assert dedup._init(key=None) is None
 
 
+class TestStepSnapshotRows:
+    """The aggregation output projects to one row per experiment."""
+
+    def _snapshot_row(self, snapshot):
+        return {"episode": 25, "step_snapshot_agg": snapshot}
+
+    def _data(self, exp_id):
+        return {
+            "meta": {"exp_id": exp_id},
+            "returns": [-10.0],
+            "steps": [100],
+            "instance_ids": [0],
+        }
+
+    def test_rows_carry_episode_and_exp_identity(self):
+        rows = agg.step_snapshot_rows(self._snapshot_row({"exp": self._data("exp")}))
+        assert len(rows) == 1
+        assert rows[0]["episode"] == 25
+        assert rows[0]["exp_id"] == "exp"
+        assert rows[0]["instance_ids"] == [0]
+        assert rows[0]["meta"] == {"exp_id": "exp"}
+
+    def test_rows_skip_null_entries(self):
+        # an exp_id that logged no run at the episode arrives as a null
+        # struct field (see StepSnapshotAggretator._merge)
+        rows = agg.step_snapshot_rows(
+            self._snapshot_row({"exp": self._data("exp"), "exp-b": None, "exp-c": None})
+        )
+        assert [row["exp_id"] for row in rows] == ["exp"]
+
+
 class TestStepSnapshotAggretator:
     """Records carry run identity; finalize sorts into parallel arrays."""
 
@@ -224,6 +255,47 @@ class TestStepSnapshotAggretator:
         acc_right = aggregator._accumulate_row(acc_right, self._row("exp-b", 1, -20.0))
         merged = aggregator._merge(acc_left, acc_right)
         assert set(merged) == {"exp-a", "exp-b"}
+
+    def test_merge_treats_null_right_entry_as_absent(self):
+        # Arrow represents an accumulator from another block as a struct
+        # whose fields are the block's exp_ids; an exp_id with no records
+        # at the episode arrives as a null field
+        aggregator = self._aggregator()
+        acc_left = aggregator._init(key=None)
+        acc_left = aggregator._accumulate_row(acc_left, self._row("exp", 0, -10.0))
+        acc_right = {"exp": None, "exp-b": None}
+        merged = aggregator._merge(acc_left, acc_right)
+        records = merged["exp"]["records"]
+        assert [record["instance_id"] for record in records] == [0]
+
+    def test_merge_replaces_null_left_entry_with_records(self):
+        aggregator = self._aggregator()
+        acc_left = aggregator._init(key=None)
+        acc_left = aggregator._accumulate_row(acc_left, self._row("exp", 0, -10.0))
+        acc_left["exp-b"] = None
+        acc_right = aggregator._init(key=None)
+        acc_right = aggregator._accumulate_row(acc_right, self._row("exp-b", 1, -20.0))
+        merged = aggregator._merge(acc_left, acc_right)
+        records = merged["exp-b"]["records"]
+        assert [record["instance_id"] for record in records] == [1]
+
+    def test_merge_null_on_both_sides_keeps_no_records(self):
+        aggregator = self._aggregator()
+        acc_left = aggregator._init(key=None)
+        acc_left = aggregator._accumulate_row(acc_left, self._row("exp", 0, -10.0))
+        acc_left["exp-b"] = None
+        merged = aggregator._merge(acc_left, {"exp-b": None})
+        assert merged["exp"]["records"][0]["returns"] == -10.0
+        # a null on both sides carries no records; finalize drops it
+        assert merged["exp-b"] is None
+
+    def test_finalize_skips_null_entries(self):
+        aggregator = self._aggregator()
+        acc = aggregator._init(key=None)
+        acc = aggregator._accumulate_row(acc, self._row("exp", 0, -10.0))
+        acc["exp-b"] = None
+        result = aggregator._finalize(acc)
+        assert set(result) == {"exp"}
 
     def test_finalize_sorts_records_into_parallel_arrays(self):
         aggregator = self._aggregator()

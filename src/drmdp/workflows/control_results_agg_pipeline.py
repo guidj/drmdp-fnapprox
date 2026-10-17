@@ -81,10 +81,16 @@ class StepSnapshotAggretator(ray.data.aggregate.AggregateFn):
         """
         Combine two accumulators.
         """
+        # Arrow stores a partial accumulator as a struct with one field
+        # per exp_id of the block; an exp_id that logged no run at an
+        # episode of that block comes back as a null field ({exp_id: None}).
+        # A null entry means "no records here", not data, so it merges
+        # as absent on either side.
         acc = dict(**copy.deepcopy(acc_left))
         for key, value in acc_right.items():
-            if key not in acc:
-                # copy meta and values
+            if value is None:
+                continue
+            if key not in acc or acc[key] is None:
                 acc[key] = copy.deepcopy(value)
             else:
                 acc[key]["records"].extend(value["records"])
@@ -100,6 +106,10 @@ class StepSnapshotAggretator(ray.data.aggregate.AggregateFn):
         # index pairing across rows invalid
         projected = {}
         for exp_id, data in acc.items():
+            # exp_id logged no run at this episode in any block (see
+            # _merge on null struct fields)
+            if data is None:
+                continue
             records = sorted(data["records"], key=lambda record: record["instance_id"])
             projected[exp_id] = {
                 "meta": data["meta"],
@@ -292,12 +302,7 @@ def pipeline(ds_logs: ray.data.Dataset) -> Mapping[str, ray.data.Dataset]:
     ds_logs = (
         ds_logs.groupby("episode")
         .aggregate(StepSnapshotAggretator(name="step_snapshot_agg"))
-        .flat_map(
-            lambda row: [
-                {"episode": row["episode"], "exp_id": exp_id, **data}
-                for exp_id, data in row["step_snapshot_agg"].items()
-            ]
-        )
+        .flat_map(step_snapshot_rows)
     )
     ds_metrics = calculate_metrics(ds_logs)
     return {
@@ -413,6 +418,21 @@ def run_rows(row: Mapping[str, Any]) -> list[dict[str, Any]]:
             "episodes_per_run": meta["run_config"]["episodes_per_run"],
             "log_episode_frequency": meta["run_config"]["log_episode_frequency"],
         }
+    ]
+
+
+def step_snapshot_rows(row: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """
+    One row per experiment of an episode's snapshot aggregation.
+
+    A null-valued entry (see StepSnapshotAggretator._merge on null
+    struct fields) is an experiment that logged no run at the episode;
+    it produces no row.
+    """
+    return [
+        {"episode": row["episode"], "exp_id": exp_id, **data}
+        for exp_id, data in row["step_snapshot_agg"].items()
+        if data is not None
     ]
 
 
