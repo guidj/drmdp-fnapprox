@@ -38,6 +38,7 @@ REWARD_SHAPING_BUILDERS: Mapping[str, type] = {
 
 REWARD_NOISE_BUILDERS: Mapping[str, type] = {
     "gaussian": wrappers.ConstantGaussianNoiseReward,
+    "relative-gaussian": wrappers.RewardRangeGaussianNoiseReward,
 }
 
 DELAYS: Sequence[type[rewdelay.RewardDelay]] = (

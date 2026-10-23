@@ -53,7 +53,7 @@ class TestDefaultDelayConfig:
         assert [
             (config["args"]["min_delay"], config["args"]["max_delay"])
             for config in configs
-        ] == [(3, 5), (9, 11), (15, 17)]
+        ] == [(2, 4), (8, 10), (14, 16)]
 
     def test_configs_are_uniform(self):
         for config in controlexps.default_delay_config():
@@ -74,3 +74,39 @@ class TestDefaultDelayConfig:
             for config in controlexps.default_delay_config()
         ]
         assert within_budget == [True, False, False]
+
+
+class TestGaussianIllustrationNoiseSpecs:
+    def test_relative_noise_with_per_env_ranges(self):
+        expected_ranges = {
+            "MountainCar-v0": 2.0,
+            "Acrobot-v1": 2.0,
+            "GridWorld-MINES": 100.0,
+        }
+        specs = controlexps.gaussian_illustration_experiment_specs()
+        for exp in specs:
+            noise = exp["args"]["reward_noise"]
+            assert noise["name"] == "relative-gaussian"
+            assert noise["args"]["reward_range"] == expected_ranges[exp["name"]]
+            assert noise["args"]["scale"] == exp["metadata"]["noise_scale"]
+
+    def test_noise_scales_cover_the_sweep(self):
+        specs = controlexps.gaussian_illustration_experiment_specs()
+        scales = sorted({exp["args"]["reward_noise"]["args"]["scale"] for exp in specs})
+        assert scales == [0.0, 0.25, 0.5, 1.0, 2.0]
+
+
+class TestIllustrationNoiseSpecs:
+    def test_zero_noise_relative_config_with_per_env_ranges(self):
+        expected_ranges = {
+            "MountainCar-v0": 2.0,
+            "Acrobot-v1": 2.0,
+            "GridWorld-MINES": 100.0,
+        }
+        specs = controlexps.illustration_experiment_specs()
+        for exp in specs:
+            noise = exp["args"]["reward_noise"]
+            assert noise["name"] == "relative-gaussian"
+            assert noise["args"]["scale"] == 0.0
+            assert noise["args"]["reward_range"] == expected_ranges[exp["name"]]
+            assert exp["metadata"]["noise_scale"] == 0.0

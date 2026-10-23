@@ -29,14 +29,9 @@ DEFAULT_DISCOUNT_FACTORS = (1.0, 0.99)
 
 
 def default_delay_config() -> list[dict[str, Any]]:
-    """Uniform delay ranges for the control experiment families.
-
-    The ranges replace the clipped-poisson delays (lam 2/5/7): the
-    shortest range stays within the option-delay budget
-    (MAX_OPTIONS_DELAY), so option specs are generated only for it.
-    """
+    """Uniform delay ranges for the control experiment families."""
     delay_configs = []
-    for min_delay, max_delay in ((3, 5), (9, 11), (15, 17)):
+    for min_delay, max_delay in ((2, 4), (8, 10), (14, 16)):
         delay_configs.append(
             {
                 "name": "uniform",
@@ -519,6 +514,13 @@ def illustration_experiment_specs(
                     "name": "mountain-car-height",
                     "args": {"scale": 1.0},
                 },
+                # zero-noise relative config; the range derivation is
+                # the one in gaussian_illustration_experiment_specs
+                # (base -1 plus the sin(3*position) bonus in [-1, 1])
+                "reward_noise": {
+                    "name": "relative-gaussian",
+                    "args": {"scale": 0.0, "reward_range": 2.0},
+                },
             },
             "feats_specs": [
                 [
@@ -538,6 +540,7 @@ def illustration_experiment_specs(
                 init_attempt_estimation_episodes=(10,),
                 feats_specs=mc_est_feats,
             ),
+            "metadata": {"noise_scale": 0.0},
             "epochs": 10,
         },
         {
@@ -547,6 +550,13 @@ def illustration_experiment_specs(
                 "reward_shaping": {
                     "name": "action-cost",
                     "args": {"action_costs": [0.0, 0.5, 1.0]},
+                },
+                # zero-noise relative config; the range derivation is
+                # the one in gaussian_illustration_experiment_specs
+                # (base -1 plus the action costs [0, 1], 0 at termination)
+                "reward_noise": {
+                    "name": "relative-gaussian",
+                    "args": {"scale": 0.0, "reward_range": 2.0},
                 },
             },
             "feats_specs": [
@@ -570,6 +580,7 @@ def illustration_experiment_specs(
                 init_attempt_estimation_episodes=(10,),
                 feats_specs=acrobot_est_feats,
             ),
+            "metadata": {"noise_scale": 0.0},
             "epochs": 10,
         },
         {
@@ -577,6 +588,13 @@ def illustration_experiment_specs(
             "args": {
                 "grid": MINES_GW_GRID,
                 "max_episode_steps": 200,
+                # zero-noise relative config; the range derivation is
+                # the one in gaussian_illustration_experiment_specs
+                # (step -1, cliff -100, terminal 0)
+                "reward_noise": {
+                    "name": "relative-gaussian",
+                    "args": {"scale": 0.0, "reward_range": 100.0},
+                },
             },
             "feats_specs": [
                 [
@@ -597,6 +615,7 @@ def illustration_experiment_specs(
                 init_attempt_estimation_episodes=(10,),
                 feats_specs=gw_est_feats,
             ),
+            "metadata": {"noise_scale": 0.0},
             "epochs": 5,
         },
     ]
@@ -652,6 +671,9 @@ def gaussian_illustration_experiment_specs(
                     "args": {"scale": 1.0},
                 },
             },
+            # post-shaping per-step rewards in [-2, 0]: -1 base plus the
+            # sin(3*position) bonus in [-1, 1] (non-terminal steps)
+            "reward_range": 2.0,
             "feats_specs": [
                 [
                     {
@@ -684,6 +706,9 @@ def gaussian_illustration_experiment_specs(
                     "args": {"action_costs": [0.0, 0.5, 1.0]},
                 },
             },
+            # post-shaping per-step rewards in [-2, 0]: -1 base plus the
+            # action cost in [0, 1] (non-terminal), 0 at termination
+            "reward_range": 2.0,
             "feats_specs": [
                 [
                     {
@@ -716,6 +741,9 @@ def gaussian_illustration_experiment_specs(
                 "grid": MINES_GW_GRID,
                 "max_episode_steps": 200,
             },
+            # per-step rewards in [-100, 0]: step -1, cliff -100,
+            # terminal 0 (no shaping in this environment)
+            "reward_range": 100.0,
             "feats_specs": [
                 [
                     {
@@ -747,8 +775,11 @@ def gaussian_illustration_experiment_specs(
         for template in env_templates:
             env_args = dict(template["base_args"])
             env_args["reward_noise"] = {
-                "name": "gaussian",
-                "args": {"scale": noise_scale},
+                "name": "relative-gaussian",
+                "args": {
+                    "scale": noise_scale,
+                    "reward_range": template["reward_range"],
+                },
             }
             specs.append(
                 {

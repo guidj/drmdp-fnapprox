@@ -447,6 +447,31 @@ class ConstantGaussianNoiseReward(GaussianRewardNoiseWrapper):
         return 1.0
 
 
+class RewardRangeGaussianNoiseReward(GaussianRewardNoiseWrapper):
+    """Noise variance proportional to the reward range.
+
+    Variance = scale * reward_range^2, where reward_range is the
+    post-shaping per-step reward span of the environment, so scale acts
+    as a relative variance: the noise std is sqrt(scale) * range, and an
+    equal scale produces an equal relative perturbation across
+    environments with different reward magnitudes.
+    """
+
+    def __init__(
+        self,
+        env: gym.Env,
+        reward_range: float,
+        scale: float = 1.0,
+        clip_std: float = 1.96,
+        seed: int | None = None,
+    ):
+        super().__init__(env, scale=scale, clip_std=clip_std, seed=seed)
+        self.reward_range = reward_range
+
+    def _variance(self, obs: np.ndarray, action: int) -> float:
+        return float(self.reward_range**2)
+
+
 def wrap(env: gym.Env, wrapper: str | None = None, **kwargs):
     """
     Creates an environment observation wrappers.
