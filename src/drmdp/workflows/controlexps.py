@@ -514,12 +514,11 @@ def illustration_experiment_specs(
                     "name": "mountain-car-height",
                     "args": {"scale": 1.0},
                 },
-                # zero-noise relative config; the range derivation is
+                # zero-noise relative config; the unit magnitude is
                 # the one in gaussian_illustration_experiment_specs
-                # (base -1 plus the sin(3*position) bonus in [-1, 1])
                 "reward_noise": {
                     "name": "relative-gaussian",
-                    "args": {"scale": 0.0, "reward_range": 2.0},
+                    "args": {"scale": 0.0, "reward_range": 1.0},
                 },
             },
             "feats_specs": [
@@ -551,12 +550,11 @@ def illustration_experiment_specs(
                     "name": "action-cost",
                     "args": {"action_costs": [0.0, 0.5, 1.0]},
                 },
-                # zero-noise relative config; the range derivation is
+                # zero-noise relative config; the unit magnitude is
                 # the one in gaussian_illustration_experiment_specs
-                # (base -1 plus the action costs [0, 1], 0 at termination)
                 "reward_noise": {
                     "name": "relative-gaussian",
-                    "args": {"scale": 0.0, "reward_range": 2.0},
+                    "args": {"scale": 0.0, "reward_range": 1.0},
                 },
             },
             "feats_specs": [
@@ -588,12 +586,11 @@ def illustration_experiment_specs(
             "args": {
                 "grid": MINES_GW_GRID,
                 "max_episode_steps": 200,
-                # zero-noise relative config; the range derivation is
+                # zero-noise relative config; the unit magnitude is
                 # the one in gaussian_illustration_experiment_specs
-                # (step -1, cliff -100, terminal 0)
                 "reward_noise": {
                     "name": "relative-gaussian",
-                    "args": {"scale": 0.0, "reward_range": 100.0},
+                    "args": {"scale": 0.0, "reward_range": 1.0},
                 },
             },
             "feats_specs": [
@@ -627,13 +624,22 @@ def gaussian_illustration_experiment_specs(
     acrobot_tiling_dim: int = 3,
     acrobot_hash_dim: int = 8192,
     gw_tiling_dim: int = 5,
-    noise_scales: Sequence[float] = (0.0, 0.25, 0.5, 1.0, 2.0),
+    noise_magnitudes: Sequence[float] = (0.0, 0.25, 0.5, 1.0, 2.0),
 ) -> Sequence[Mapping[str, Any]]:
-    """Illustration specs with constant Gaussian reward noise.
+    """Illustration specs with unit-magnitude Gaussian reward noise.
 
-    Produces one spec per (env, noise_scale) combination, sweeping
-    noise variance from zero to large values. BLADE-TD uses
-    ``sample_weights=True`` to sample from the posterior.
+    Produces one spec per (env, noise_magnitude) combination, sweeping
+    the noise standard deviation as a factor of the environment's unit
+    reward magnitude: the logged magnitude m sets noise std = m * 1.0
+    (unit = modal per-step reward magnitude, 1 for all three
+    environments), so the logged config carries variance m^2 (``scale``)
+    and ``reward_range`` 1.0. The sweep follows the bsuite convention of
+    noise std as a magnitude ladder on unit-scale rewards (Osband et
+    al., 2019: std factors {0.1, 0.3, 1.0, 3.0, 10.0}); the full
+    post-shaping range is rejected as the unit because GridWorld's is
+    dominated by the -100 cliff penalty (std 25-200 against modal
+    rewards of -1). BLADE-TD uses ``sample_weights=True`` to sample
+    from the posterior.
     """
     mc_est_feats: Sequence[Sequence[Mapping[str, Any]]] = [
         [{"name": "tile-observation-action-ft", "args": {"tiling_dim": 3}}]
@@ -671,9 +677,10 @@ def gaussian_illustration_experiment_specs(
                     "args": {"scale": 1.0},
                 },
             },
-            # post-shaping per-step rewards in [-2, 0]: -1 base plus the
-            # sin(3*position) bonus in [-1, 1] (non-terminal steps)
-            "reward_range": 2.0,
+            # unit = modal per-step reward magnitude (base -1); the
+            # full post-shaping range [-2, 0] (base -1 plus the
+            # sin(3*position) bonus) is not the noise unit
+            "reward_range": 1.0,
             "feats_specs": [
                 [
                     {
@@ -706,9 +713,10 @@ def gaussian_illustration_experiment_specs(
                     "args": {"action_costs": [0.0, 0.5, 1.0]},
                 },
             },
-            # post-shaping per-step rewards in [-2, 0]: -1 base plus the
-            # action cost in [0, 1] (non-terminal), 0 at termination
-            "reward_range": 2.0,
+            # unit = modal per-step reward magnitude (base -1); the
+            # full post-shaping range [-2, 0] (base -1 plus the action
+            # cost) is not the noise unit
+            "reward_range": 1.0,
             "feats_specs": [
                 [
                     {
@@ -741,9 +749,11 @@ def gaussian_illustration_experiment_specs(
                 "grid": MINES_GW_GRID,
                 "max_episode_steps": 200,
             },
-            # per-step rewards in [-100, 0]: step -1, cliff -100,
-            # terminal 0 (no shaping in this environment)
-            "reward_range": 100.0,
+            # unit = modal per-step reward magnitude (step -1); the
+            # full range [-100, 0] is dominated by the -100 cliff and
+            # would scale noise std to 25-200 against modal rewards
+            # of -1
+            "reward_range": 1.0,
             "feats_specs": [
                 [
                     {
@@ -771,13 +781,13 @@ def gaussian_illustration_experiment_specs(
     ]
 
     specs: list[Mapping[str, Any]] = []
-    for noise_scale in noise_scales:
+    for noise_magnitude in noise_magnitudes:
         for template in env_templates:
             env_args = dict(template["base_args"])
             env_args["reward_noise"] = {
                 "name": "relative-gaussian",
                 "args": {
-                    "scale": noise_scale,
+                    "scale": noise_magnitude**2,
                     "reward_range": template["reward_range"],
                 },
             }
@@ -787,7 +797,7 @@ def gaussian_illustration_experiment_specs(
                     "args": env_args,
                     "feats_specs": template["feats_specs"],
                     "problem_specs": template["problem_specs_fn"](),
-                    "metadata": {"noise_scale": noise_scale},
+                    "metadata": {"noise_scale": noise_magnitude},
                     "epochs": template["epochs"],
                 }
             )

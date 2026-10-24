@@ -77,36 +77,33 @@ class TestDefaultDelayConfig:
 
 
 class TestGaussianIllustrationNoiseSpecs:
-    def test_relative_noise_with_per_env_ranges(self):
-        expected_ranges = {
-            "MountainCar-v0": 2.0,
-            "Acrobot-v1": 2.0,
-            "GridWorld-MINES": 100.0,
-        }
+    def test_relative_noise_with_unit_magnitude(self):
         specs = controlexps.gaussian_illustration_experiment_specs()
         for exp in specs:
             noise = exp["args"]["reward_noise"]
             assert noise["name"] == "relative-gaussian"
-            assert noise["args"]["reward_range"] == expected_ranges[exp["name"]]
-            assert noise["args"]["scale"] == exp["metadata"]["noise_scale"]
+            # unit = modal per-step reward magnitude, 1 for all envs
+            assert noise["args"]["reward_range"] == 1.0
+            # variance = magnitude^2 * unit^2; metadata records the
+            # magnitude factor
+            assert noise["args"]["scale"] == exp["metadata"]["noise_scale"] ** 2
 
-    def test_noise_scales_cover_the_sweep(self):
+    def test_noise_magnitudes_cover_the_sweep(self):
         specs = controlexps.gaussian_illustration_experiment_specs()
-        scales = sorted({exp["args"]["reward_noise"]["args"]["scale"] for exp in specs})
-        assert scales == [0.0, 0.25, 0.5, 1.0, 2.0]
+        magnitudes = sorted({exp["metadata"]["noise_scale"] for exp in specs})
+        assert magnitudes == [0.0, 0.25, 0.5, 1.0, 2.0]
+        variances = sorted(
+            {exp["args"]["reward_noise"]["args"]["scale"] for exp in specs}
+        )
+        assert variances == [0.0, 0.0625, 0.25, 1.0, 4.0]
 
 
 class TestIllustrationNoiseSpecs:
-    def test_zero_noise_relative_config_with_per_env_ranges(self):
-        expected_ranges = {
-            "MountainCar-v0": 2.0,
-            "Acrobot-v1": 2.0,
-            "GridWorld-MINES": 100.0,
-        }
+    def test_zero_noise_relative_config_with_unit_magnitude(self):
         specs = controlexps.illustration_experiment_specs()
         for exp in specs:
             noise = exp["args"]["reward_noise"]
             assert noise["name"] == "relative-gaussian"
             assert noise["args"]["scale"] == 0.0
-            assert noise["args"]["reward_range"] == expected_ranges[exp["name"]]
+            assert noise["args"]["reward_range"] == 1.0
             assert exp["metadata"]["noise_scale"] == 0.0
