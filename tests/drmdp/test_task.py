@@ -75,6 +75,41 @@ class TestCreateEnv:
         result.env.close()
         result.proxy.close()
 
+    def test_reward_noise_relative_gaussian(self):
+        result = task.create_env(
+            "MountainCar-v0",
+            {
+                "max_episode_steps": 200,
+                "reward_noise": {
+                    "name": "relative-gaussian",
+                    "args": {"scale": 1.0, "reward_range": 2.0},
+                },
+            },
+        )
+        assert isinstance(result.env, envs.wrappers.RewardRangeGaussianNoiseReward)
+        # the proxy stays un-noised for greedy evaluation
+        assert not isinstance(
+            result.proxy, envs.wrappers.RewardRangeGaussianNoiseReward
+        )
+        _obs, _ = result.env.reset(seed=0)
+        _obs, _ = result.proxy.reset(seed=0)
+        env_rewards, proxy_rewards = [], []
+        for _ in range(20):
+            _, rew, term, _, _ = result.env.step(0)
+            env_rewards.append(rew)
+            if term:
+                break
+        for _ in range(20):
+            _, rew, term, _, _ = result.proxy.step(0)
+            proxy_rewards.append(rew)
+            if term:
+                break
+        # noise std is sqrt(1.0) * 2.0 against the base reward of -1
+        assert not all(rew == -1.0 for rew in env_rewards)
+        assert all(rew == -1.0 for rew in proxy_rewards)
+        result.env.close()
+        result.proxy.close()
+
     def test_unknown_shaping_raises(self):
         with pytest.raises(ValueError, match="Unknown reward shaping"):
             task.create_env(

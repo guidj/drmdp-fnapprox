@@ -170,3 +170,233 @@ class TestEstimationEventDedup:
     def test_init_is_empty(self):
         dedup = agg.EstimationEventDedup()
         assert dedup._init(key=None) is None
+
+
+class TestStepSnapshotRows:
+    """The aggregation output projects to one row per experiment."""
+
+    def _snapshot_row(self, snapshot):
+        return {"episode": 25, "step_snapshot_agg": snapshot}
+
+    def _data(self, exp_id):
+        return {
+            "meta": {"exp_id": exp_id},
+            "returns": [-10.0],
+            "steps": [100],
+            "instance_ids": [0],
+        }
+
+    def test_rows_carry_episode_and_exp_identity(self):
+        rows = agg.step_snapshot_rows(self._snapshot_row({"exp": self._data("exp")}))
+        assert len(rows) == 1
+        assert rows[0]["episode"] == 25
+        assert rows[0]["exp_id"] == "exp"
+        assert rows[0]["instance_ids"] == [0]
+        assert rows[0]["meta"] == {"exp_id": "exp"}
+
+    def test_rows_skip_null_entries(self):
+        # an exp_id that logged no run at the episode arrives as a null
+        # struct field (see StepSnapshotAggretator._merge)
+        rows = agg.step_snapshot_rows(
+            self._snapshot_row({"exp": self._data("exp"), "exp-b": None, "exp-c": None})
+        )
+        assert [row["exp_id"] for row in rows] == ["exp"]
+
+
+class TestStepSnapshotAggretator:
+    """Records carry run identity; finalize sorts into parallel arrays."""
+
+    def _row(self, exp_id, instance_id, returns, steps=100):
+        return {
+            "episode": 25,
+            "exp_id": exp_id,
+            "instance_id": instance_id,
+            "returns": returns,
+            "steps": steps,
+            "meta": {"exp_id": exp_id, "path": "/some/run"},
+        }
+
+    def _aggregator(self):
+        return agg.StepSnapshotAggretator()
+
+    def test_accumulate_keeps_run_identity(self):
+        aggregator = self._aggregator()
+        acc = aggregator._init(key=None)
+        acc = aggregator._accumulate_row(acc, self._row("exp", 0, -10.0))
+        acc = aggregator._accumulate_row(acc, self._row("exp", 1, -20.0))
+        records = acc["exp"]["records"]
+        assert [record["instance_id"] for record in records] == [0, 1]
+        assert [record["returns"] for record in records] == [-10.0, -20.0]
+        assert [record["steps"] for record in records] == [100, 100]
+
+    def test_accumulate_separates_experiments(self):
+        aggregator = self._aggregator()
+        acc = aggregator._init(key=None)
+        acc = aggregator._accumulate_row(acc, self._row("exp-a", 0, -10.0))
+        acc = aggregator._accumulate_row(acc, self._row("exp-b", 0, -30.0))
+        assert [record["returns"] for record in acc["exp-a"]["records"]] == [-10.0]
+        assert [record["returns"] for record in acc["exp-b"]["records"]] == [-30.0]
+
+    def test_merge_extends_records(self):
+        aggregator = self._aggregator()
+        acc_left = aggregator._init(key=None)
+        acc_left = aggregator._accumulate_row(acc_left, self._row("exp", 0, -10.0))
+        acc_right = aggregator._init(key=None)
+        acc_right = aggregator._accumulate_row(acc_right, self._row("exp", 1, -20.0))
+        merged = aggregator._merge(acc_left, acc_right)
+        records = merged["exp"]["records"]
+        assert [record["instance_id"] for record in records] == [0, 1]
+
+    def test_merge_keeps_disjoint_experiments(self):
+        aggregator = self._aggregator()
+        acc_left = aggregator._init(key=None)
+        acc_left = aggregator._accumulate_row(acc_left, self._row("exp-a", 0, -10.0))
+        acc_right = aggregator._init(key=None)
+        acc_right = aggregator._accumulate_row(acc_right, self._row("exp-b", 1, -20.0))
+        merged = aggregator._merge(acc_left, acc_right)
+        assert set(merged) == {"exp-a", "exp-b"}
+
+    def test_merge_treats_null_right_entry_as_absent(self):
+        # Arrow represents an accumulator from another block as a struct
+        # whose fields are the block's exp_ids; an exp_id with no records
+        # at the episode arrives as a null field
+        aggregator = self._aggregator()
+        acc_left = aggregator._init(key=None)
+        acc_left = aggregator._accumulate_row(acc_left, self._row("exp", 0, -10.0))
+        acc_right = {"exp": None, "exp-b": None}
+        merged = aggregator._merge(acc_left, acc_right)
+        records = merged["exp"]["records"]
+        assert [record["instance_id"] for record in records] == [0]
+
+    def test_merge_replaces_null_left_entry_with_records(self):
+        aggregator = self._aggregator()
+        acc_left = aggregator._init(key=None)
+        acc_left = aggregator._accumulate_row(acc_left, self._row("exp", 0, -10.0))
+        acc_left["exp-b"] = None
+        acc_right = aggregator._init(key=None)
+        acc_right = aggregator._accumulate_row(acc_right, self._row("exp-b", 1, -20.0))
+        merged = aggregator._merge(acc_left, acc_right)
+        records = merged["exp-b"]["records"]
+        assert [record["instance_id"] for record in records] == [1]
+
+    def test_merge_null_on_both_sides_keeps_no_records(self):
+        aggregator = self._aggregator()
+        acc_left = aggregator._init(key=None)
+        acc_left = aggregator._accumulate_row(acc_left, self._row("exp", 0, -10.0))
+        acc_left["exp-b"] = None
+        merged = aggregator._merge(acc_left, {"exp-b": None})
+        assert merged["exp"]["records"][0]["returns"] == -10.0
+        # a null on both sides carries no records; finalize drops it
+        assert merged["exp-b"] is None
+
+    def test_finalize_skips_null_entries(self):
+        aggregator = self._aggregator()
+        acc = aggregator._init(key=None)
+        acc = aggregator._accumulate_row(acc, self._row("exp", 0, -10.0))
+        acc["exp-b"] = None
+        result = aggregator._finalize(acc)
+        assert set(result) == {"exp"}
+
+    def test_finalize_sorts_records_into_parallel_arrays(self):
+        aggregator = self._aggregator()
+        acc = aggregator._init(key=None)
+        # arrival order differs from run order
+        acc = aggregator._accumulate_row(acc, self._row("exp", 2, -30.0, steps=9))
+        acc = aggregator._accumulate_row(acc, self._row("exp", 0, -10.0, steps=200))
+        acc = aggregator._accumulate_row(acc, self._row("exp", 1, -20.0, steps=54))
+        result = aggregator._finalize(acc)["exp"]
+        assert result["instance_ids"] == [0, 1, 2]
+        # position k of each array is run k
+        assert result["returns"] == [-10.0, -20.0, -30.0]
+        assert result["steps"] == [200, 54, 9]
+
+    def test_finalize_drops_path_from_meta(self):
+        aggregator = self._aggregator()
+        acc = aggregator._init(key=None)
+        acc = aggregator._accumulate_row(acc, self._row("exp", 0, -10.0))
+        result = aggregator._finalize(acc)["exp"]
+        assert "path" not in result["meta"]
+        assert result["meta"]["exp_id"] == "exp"
+
+
+class TestRunRows:
+    """Per-run projection of one log record."""
+
+    def _log_row(self, info, instance_id=3):
+        return {
+            "episode": 25,
+            "steps": 100,
+            "returns": -41.0,
+            "info": info,
+            "meta": {
+                "exp_id": "exp",
+                "instance_id": instance_id,
+                "experiment": {
+                    "env_spec": {
+                        "name": "GridWorld-MINES",
+                        "metadata": {"noise_scale": 0.5},
+                    },
+                    "problem_spec": {
+                        "reward_mapper": {"name": "least-lfa"},
+                        "gamma": 0.99,
+                        "delay_config": {
+                            "name": "clipped-poisson",
+                            "args": {"lam": 5},
+                        },
+                    },
+                },
+                "run_config": {
+                    "episodes_per_run": 2500,
+                    "log_episode_frequency": 25,
+                },
+            },
+            "exp_id": "exp",
+            "instance_id": instance_id,
+        }
+
+    def test_projects_run_and_config(self):
+        rows = agg.run_rows(self._log_row(info={}))
+        assert len(rows) == 1
+        row = rows[0]
+        assert row["exp_id"] == "exp"
+        assert row["instance_id"] == 3
+        assert row["episode"] == 25
+        assert row["returns"] == -41.0
+        assert row["steps"] == 100
+        assert row["policy_eval_mean"] is None
+        assert row["method"] == "LEAST"
+        assert row["env_name"] == "GridWorld-MINES"
+        assert row["gamma"] == 0.99
+        assert row["delay_config"] == {
+            "name": "clipped-poisson",
+            "args": {"lam": 5},
+        }
+        assert row["noise_scale"] == 0.5
+        assert row["episodes_per_run"] == 2500
+        assert row["log_episode_frequency"] == 25
+
+    def test_reads_policy_eval_mean(self):
+        info = {"policy_eval": {"mean": -12.5, "num_episodes": 10}}
+        rows = agg.run_rows(self._log_row(info=info))
+        assert rows[0]["policy_eval_mean"] == -12.5
+
+    def test_empty_info_yields_none_mean(self):
+        assert agg.run_rows(self._log_row(info={}))[0]["policy_eval_mean"] is None
+
+    def test_none_info_yields_none_mean(self):
+        # Ray reads an empty `info` as None for some readers
+        assert agg.run_rows(self._log_row(info=None))[0]["policy_eval_mean"] is None
+
+    def test_missing_policy_eval_yields_none_mean(self):
+        info = {"reward_errors": []}
+        assert agg.run_rows(self._log_row(info=info))[0]["policy_eval_mean"] is None
+
+    def test_delay_config_none_is_kept(self):
+        row = self._log_row(info={})
+        row["meta"]["experiment"]["problem_spec"]["delay_config"] = None
+        assert agg.run_rows(row)[0]["delay_config"] is None
+
+    def test_missing_noise_metadata_yields_none(self):
+        row = self._log_row(info={})
+        del row["meta"]["experiment"]["env_spec"]["metadata"]
+        assert agg.run_rows(row)[0]["noise_scale"] is None

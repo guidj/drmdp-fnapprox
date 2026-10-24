@@ -45,3 +45,65 @@ class TestGridDeadOheIndices:
             action * nstates + state for state in goal_states for action in range(4)
         )
         assert sorted(indices) == expected
+
+
+class TestDefaultDelayConfig:
+    def test_uniform_ranges(self):
+        configs = controlexps.default_delay_config()
+        assert [
+            (config["args"]["min_delay"], config["args"]["max_delay"])
+            for config in configs
+        ] == [(2, 4), (8, 10), (14, 16)]
+
+    def test_configs_are_uniform(self):
+        for config in controlexps.default_delay_config():
+            assert config["name"] == "uniform"
+
+    def test_bounds_are_integers(self):
+        # the delay wrapper samples with random.randint, which requires
+        # integer bounds
+        for config in controlexps.default_delay_config():
+            assert isinstance(config["args"]["min_delay"], int)
+            assert isinstance(config["args"]["max_delay"], int)
+
+    def test_only_first_range_within_option_budget(self):
+        # option specs are derived for delay configs whose minimum delay
+        # is within MAX_OPTIONS_DELAY; only [3, 5] qualifies
+        within_budget = [
+            controlexps._delay_min(config) <= controlexps.MAX_OPTIONS_DELAY
+            for config in controlexps.default_delay_config()
+        ]
+        assert within_budget == [True, False, False]
+
+
+class TestGaussianIllustrationNoiseSpecs:
+    def test_relative_noise_with_unit_magnitude(self):
+        specs = controlexps.gaussian_illustration_experiment_specs()
+        for exp in specs:
+            noise = exp["args"]["reward_noise"]
+            assert noise["name"] == "relative-gaussian"
+            # unit = modal per-step reward magnitude, 1 for all envs
+            assert noise["args"]["reward_range"] == 1.0
+            # variance = magnitude^2 * unit^2; metadata records the
+            # magnitude factor
+            assert noise["args"]["scale"] == exp["metadata"]["noise_scale"] ** 2
+
+    def test_noise_magnitudes_cover_the_sweep(self):
+        specs = controlexps.gaussian_illustration_experiment_specs()
+        magnitudes = sorted({exp["metadata"]["noise_scale"] for exp in specs})
+        assert magnitudes == [0.0, 0.25, 0.5, 1.0, 2.0]
+        variances = sorted(
+            {exp["args"]["reward_noise"]["args"]["scale"] for exp in specs}
+        )
+        assert variances == [0.0, 0.0625, 0.25, 1.0, 4.0]
+
+
+class TestIllustrationNoiseSpecs:
+    def test_zero_noise_relative_config_with_unit_magnitude(self):
+        specs = controlexps.illustration_experiment_specs()
+        for exp in specs:
+            noise = exp["args"]["reward_noise"]
+            assert noise["name"] == "relative-gaussian"
+            assert noise["args"]["scale"] == 0.0
+            assert noise["args"]["reward_range"] == 1.0
+            assert exp["metadata"]["noise_scale"] == 0.0

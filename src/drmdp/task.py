@@ -26,6 +26,10 @@ _logger = logging.getLogger(__name__)
 # estimation events of a run on the same state-action samples
 REWARD_ERROR_SAMPLING_SEED = 0
 
+# episodes per greedy-policy evaluation; logged alongside the eval mean
+# so the evaluation protocol is self-documenting in the logs
+POLICY_EVAL_EPISODES = 10
+
 REWARD_SHAPING_BUILDERS: Mapping[str, type] = {
     "mountain-car-height": wrappers.MountainCarHeightBonus,
     "acrobot-tip-height": wrappers.AcrobotTipHeightBonus,
@@ -34,6 +38,7 @@ REWARD_SHAPING_BUILDERS: Mapping[str, type] = {
 
 REWARD_NOISE_BUILDERS: Mapping[str, type] = {
     "gaussian": wrappers.ConstantGaussianNoiseReward,
+    "relative-gaussian": wrappers.RewardRangeGaussianNoiseReward,
 }
 
 DELAYS: Sequence[type[rewdelay.RewardDelay]] = (
@@ -94,13 +99,27 @@ def policy_control(exp_instance: core.ExperimentInstance):
             for episode, snapshot in enumerate(results):
                 if episode % exp_instance.run_config.log_episode_frequency == 0:
                     eval_returns.append(
-                        evaluate_policy(proxied_env.proxy, algorithm.policy, rew_delay)
+                        evaluate_policy(
+                            proxied_env.proxy,
+                            algorithm.policy,
+                            rew_delay,
+                            num_episodes=POLICY_EVAL_EPISODES,
+                        )
                     )
+                    # the logged `returns` stays the cumulative mean of
+                    # the evaluation means; the per-checkpoint mean is
+                    # additive, for analyses that need the isolated
+                    # evaluation at this checkpoint
+                    info = dict(reward_estimation_info(env))
+                    info["policy_eval"] = {
+                        "mean": eval_returns[-1],
+                        "num_episodes": POLICY_EVAL_EPISODES,
+                    }
                     exp_logger.log(
                         episode=episode,
                         steps=snapshot.steps,
                         returns=np.mean(eval_returns).item(),
-                        info=reward_estimation_info(env),
+                        info=info,
                     )
                     if exp_instance.export_model:
                         export_model_snapshot(

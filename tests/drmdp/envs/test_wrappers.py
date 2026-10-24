@@ -388,3 +388,88 @@ class TestConstantGaussianNoiseReward:
             rewards.append(rew)
         assert not all(r == rewards[0] for r in rewards)
         noisy.close()
+
+
+class TestRewardRangeGaussianNoiseReward:
+    def test_variance_is_range_squared(self):
+        wrapper = wrappers.RewardRangeGaussianNoiseReward.__new__(
+            wrappers.RewardRangeGaussianNoiseReward
+        )
+        wrapper.reward_range = 4.0
+        assert wrapper._variance(np.array([0.0]), 0) == 16.0
+
+    def test_noise_std_scales_with_range(self):
+        # the empirical std over many seeded steps approximates
+        # sqrt(scale) * reward_range for each range
+        stds = {}
+        for reward_range in (1.0, 4.0):
+            env = BoxEnv(dim=1, term_steps=2_000)
+            noisy = wrappers.RewardRangeGaussianNoiseReward(
+                env, reward_range=reward_range, scale=1.0, seed=42
+            )
+            noisy.reset()
+            samples = []
+            for _ in range(1_000):
+                _, rew, term, trunc, _ = noisy.step(0)
+                if term or trunc:
+                    break
+                samples.append(rew - 1.0)
+            stds[reward_range] = np.std(samples)
+        assert abs(stds[4.0] - 4.0) < 0.8
+        assert abs(stds[1.0] - 1.0) < 0.3
+        # the std ratio tracks the range ratio
+        assert 3.0 < stds[4.0] / stds[1.0] < 5.0
+
+    def test_scale_zero_gives_original(self):
+        env = BoxEnv(dim=1, term_steps=100)
+        noisy = wrappers.RewardRangeGaussianNoiseReward(
+            env, reward_range=100.0, scale=0.0, seed=42
+        )
+        noisy.reset()
+        _, rew, _, _, _ = noisy.step(0)
+        assert rew == pytest.approx(1.0)
+
+    def test_noise_is_clipped(self):
+        env = BoxEnv(dim=1, term_steps=600)
+        scale, reward_range = 1.0, 4.0
+        noisy = wrappers.RewardRangeGaussianNoiseReward(
+            env, reward_range=reward_range, scale=scale, seed=0
+        )
+        noisy.reset()
+        bound = 1.96 * np.sqrt(scale * reward_range**2)
+        for _ in range(500):
+            _, rew, term, trunc, _ = noisy.step(0)
+            if term or trunc:
+                break
+            noise = rew - 1.0
+            assert noise >= -bound - 1e-10
+            assert noise <= bound + 1e-10
+
+    def test_terminal_step_has_no_noise(self):
+        env = BoxEnv(dim=1, term_steps=1)
+        noisy = wrappers.RewardRangeGaussianNoiseReward(
+            env, reward_range=100.0, scale=5.0, seed=42
+        )
+        noisy.reset()
+        _, rew, term, _, _ = noisy.step(0)
+        assert term is True
+        assert rew == pytest.approx(1.0)
+
+    def test_same_seed_reproduces_noise(self):
+        noisy_a = wrappers.RewardRangeGaussianNoiseReward(
+            BoxEnv(dim=1, term_steps=100), reward_range=2.0, scale=1.0, seed=7
+        )
+        noisy_b = wrappers.RewardRangeGaussianNoiseReward(
+            BoxEnv(dim=1, term_steps=100), reward_range=2.0, scale=1.0, seed=7
+        )
+        noisy_a.reset()
+        noisy_b.reset()
+        rewards_a, rewards_b = [], []
+        for _ in range(50):
+            _, rew_a, term_a, _, _ = noisy_a.step(0)
+            _, rew_b, term_b, _, _ = noisy_b.step(0)
+            rewards_a.append(rew_a)
+            rewards_b.append(rew_b)
+            if term_a or term_b:
+                break
+        assert rewards_a == rewards_b
