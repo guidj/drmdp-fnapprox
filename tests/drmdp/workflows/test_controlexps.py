@@ -53,7 +53,7 @@ class TestDefaultDelayConfig:
         assert [
             (config["args"]["min_delay"], config["args"]["max_delay"])
             for config in configs
-        ] == [(2, 4), (8, 10), (14, 16)]
+        ] == [(2, 4), (6, 8), (10, 12)]
 
     def test_configs_are_uniform(self):
         for config in controlexps.default_delay_config():
@@ -68,7 +68,7 @@ class TestDefaultDelayConfig:
 
     def test_only_first_range_within_option_budget(self):
         # option specs are derived for delay configs whose minimum delay
-        # is within MAX_OPTIONS_DELAY; only [3, 5] qualifies
+        # is within MAX_OPTIONS_DELAY; only [2, 4] qualifies
         within_budget = [
             controlexps._delay_min(config) <= controlexps.MAX_OPTIONS_DELAY
             for config in controlexps.default_delay_config()
