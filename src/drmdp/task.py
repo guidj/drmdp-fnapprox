@@ -28,7 +28,7 @@ REWARD_ERROR_SAMPLING_SEED = 0
 
 # episodes per greedy-policy evaluation; logged alongside the eval mean
 # so the evaluation protocol is self-documenting in the logs
-POLICY_EVAL_EPISODES = 10
+POLICY_EVAL_EPISODES = 50
 
 REWARD_SHAPING_BUILDERS: Mapping[str, type] = {
     "mountain-car-height": wrappers.MountainCarHeightBonus,
