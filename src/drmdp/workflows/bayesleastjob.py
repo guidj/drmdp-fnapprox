@@ -170,6 +170,82 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
                     "args": {"initial_lr": 0.01},
                 },
             },
+            {
+                "policy_type": "markovian",
+                "reward_mapper": {
+                    "name": "bayes-least-lfa",
+                    "args": {
+                        "init_attempt_estimation_episode": init_attempt_estimation_episodes,
+                        "mode": mode,
+                        "feats_spec": feats_spec,
+                        "use_bias": False,
+                    },
+                },
+                "delay_config": {"name": "fixed", "args": {"delay": 2}},
+                "epsilon": 0.2,
+                "gamma": 0.995,
+                "learning_rate_config": {
+                    "name": "constant",
+                    "args": {"initial_lr": 0.01},
+                },
+            },
+            {
+                "policy_type": "markovian",
+                "reward_mapper": {
+                    "name": "bayes-least-lfa",
+                    "args": {
+                        "init_attempt_estimation_episode": init_attempt_estimation_episodes,
+                        "mode": mode,
+                        "feats_spec": feats_spec,
+                        "use_bias": False,
+                    },
+                },
+                "delay_config": {"name": "fixed", "args": {"delay": 4}},
+                "epsilon": 0.2,
+                "gamma": 0.995,
+                "learning_rate_config": {
+                    "name": "constant",
+                    "args": {"initial_lr": 0.01},
+                },
+            },
+            {
+                "policy_type": "markovian",
+                "reward_mapper": {
+                    "name": "bayes-least-lfa",
+                    "args": {
+                        "init_attempt_estimation_episode": init_attempt_estimation_episodes,
+                        "mode": mode,
+                        "feats_spec": feats_spec,
+                        "use_bias": False,
+                    },
+                },
+                "delay_config": {"name": "fixed", "args": {"delay": 6}},
+                "epsilon": 0.2,
+                "gamma": 0.995,
+                "learning_rate_config": {
+                    "name": "constant",
+                    "args": {"initial_lr": 0.01},
+                },
+            },
+            {
+                "policy_type": "markovian",
+                "reward_mapper": {
+                    "name": "bayes-least-lfa",
+                    "args": {
+                        "init_attempt_estimation_episode": init_attempt_estimation_episodes,
+                        "mode": mode,
+                        "feats_spec": feats_spec,
+                        "use_bias": False,
+                    },
+                },
+                "delay_config": {"name": "fixed", "args": {"delay": 8}},
+                "epsilon": 0.2,
+                "gamma": 0.995,
+                "learning_rate_config": {
+                    "name": "constant",
+                    "args": {"initial_lr": 0.01},
+                },
+            },
         )
 
     return (
@@ -194,6 +270,14 @@ COMMON_PROBLEM_SPECS = (
         "delay_config": None,
         "epsilon": 0.2,
         "gamma": 0.99,
+        "learning_rate_config": {"name": "constant", "args": {"initial_lr": 0.01}},
+    },
+    {
+        "policy_type": "markovian",
+        "reward_mapper": {"name": "identity", "args": None},
+        "delay_config": None,
+        "epsilon": 0.2,
+        "gamma": 0.995,
         "learning_rate_config": {"name": "constant", "args": {"initial_lr": 0.01}},
     },
 )
