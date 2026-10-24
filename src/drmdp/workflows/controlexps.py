@@ -638,8 +638,9 @@ def gaussian_illustration_experiment_specs(
     al., 2019: std factors {0.1, 0.3, 1.0, 3.0, 10.0}); the full
     post-shaping range is rejected as the unit because GridWorld's is
     dominated by the -100 cliff penalty (std 25-200 against modal
-    rewards of -1). BLADE-TD uses ``sample_weights=True`` to sample
-    from the posterior.
+    rewards of -1). BLADE-TD consumes the posterior mean: the sweep
+    compares reward estimators, so the posterior weight draw is switched
+    off and its reward estimate is fixed, as LEAST's.
     """
     mc_est_feats: Sequence[Sequence[Mapping[str, Any]]] = [
         [{"name": "tile-observation-action-ft", "args": {"tiling_dim": 3}}]
@@ -699,7 +700,6 @@ def gaussian_illustration_experiment_specs(
                 + bayes_least_specs(
                     init_attempt_estimation_episodes=(10,),
                     feats_specs=mc_est_feats,
-                    sample_weights=True,
                 )
             ),
             "epochs": 10,
@@ -738,7 +738,6 @@ def gaussian_illustration_experiment_specs(
                 + bayes_least_specs(
                     init_attempt_estimation_episodes=(10,),
                     feats_specs=acrobot_est_feats,
-                    sample_weights=True,
                 )
             ),
             "epochs": 10,
@@ -773,7 +772,6 @@ def gaussian_illustration_experiment_specs(
                 + bayes_least_specs(
                     init_attempt_estimation_episodes=(10,),
                     feats_specs=gw_est_feats,
-                    sample_weights=True,
                 )
             ),
             "epochs": 5,
