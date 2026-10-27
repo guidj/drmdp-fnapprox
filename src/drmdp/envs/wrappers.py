@@ -387,7 +387,7 @@ class GridWorldDistanceShaping(PotentialShapingWrapper):
     def _potential(self, obs: np.ndarray) -> float:
         cell = (int(obs[0]), int(obs[1]))
         relative = self.distances[cell] / self.max_distance
-        return -self.max_distance * relative**self.exponent
+        return float(-self.max_distance * relative**self.exponent)
 
 
 class AdditiveShapingWrapper(gym.Wrapper):
