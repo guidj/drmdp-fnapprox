@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from drmdp import algorithms, core, envs, rewdelay, task, transform
+from drmdp.envs import wrappers
 from drmdp.workflows import controlexps
 
 
@@ -72,6 +73,45 @@ class TestCreateEnv:
         _obs, _ = result.env.reset(seed=0)
         _, rew1, _, _, _ = result.env.step(1)
         assert rew1 == pytest.approx(-0.5)
+        result.env.close()
+        result.proxy.close()
+
+    def test_reward_shaping_pbrs_is_registered(self):
+        result = task.create_env(
+            "MountainCar-v0",
+            {
+                "max_episode_steps": 200,
+                "reward_shaping": {
+                    "name": "mountain-car-height-pbrs",
+                    "args": {"scale": 1.0},
+                },
+            },
+        )
+        assert isinstance(result.env, wrappers.MountainCarHeightShaping)
+        _obs, _ = result.env.reset(seed=0)
+        _, rew, _, _, _ = result.env.step(0)
+        assert rew != -1.0
+        result.env.close()
+        result.proxy.close()
+
+    def test_pbrs_shaping_receives_learner_discount(self):
+        args = {
+            "max_episode_steps": 200,
+            "reward_shaping": {"name": "mountain-car-height-pbrs", "args": {}},
+        }
+        result = task.create_env("MountainCar-v0", args, gamma=0.99)
+        assert result.env.gamma == pytest.approx(0.99)
+        assert result.proxy.gamma == pytest.approx(0.99)
+        result.env.close()
+        result.proxy.close()
+
+    def test_additive_shaping_ignores_learner_discount(self):
+        args = {
+            "max_episode_steps": 200,
+            "reward_shaping": {"name": "mountain-car-height", "args": {"scale": 1.0}},
+        }
+        result = task.create_env("MountainCar-v0", args, gamma=0.99)
+        assert isinstance(result.env, wrappers.MountainCarHeightBonus)
         result.env.close()
         result.proxy.close()
 

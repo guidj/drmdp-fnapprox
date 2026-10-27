@@ -28,11 +28,13 @@ REWARD_ERROR_SAMPLING_SEED = 0
 
 # episodes per greedy-policy evaluation; logged alongside the eval mean
 # so the evaluation protocol is self-documenting in the logs
-POLICY_EVAL_EPISODES = 50
+POLICY_EVAL_EPISODES = 25
 
 REWARD_SHAPING_BUILDERS: Mapping[str, type] = {
     "mountain-car-height": wrappers.MountainCarHeightBonus,
+    "mountain-car-height-pbrs": wrappers.MountainCarHeightShaping,
     "acrobot-tip-height": wrappers.AcrobotTipHeightBonus,
+    "acrobot-tip-height-pbrs": wrappers.AcrobotTipHeightShaping,
     "action-cost": wrappers.ActionCostShapingWrapper,
 }
 
@@ -61,7 +63,9 @@ def policy_control(exp_instance: core.ExperimentInstance):
     # init env and agent
     env_spec = exp_instance.experiment.env_spec
     problem_spec = exp_instance.experiment.problem_spec
-    proxied_env = create_env(env_spec.name, args=env_spec.args)
+    proxied_env = create_env(
+        env_spec.name, args=env_spec.args, gamma=problem_spec.gamma
+    )
     env, monitor = monitor_wrapper(proxied_env.env)
     rew_delay = reward_delay_distribution(problem_spec.delay_config)
     env = delay_wrapper(env, rew_delay)
@@ -175,9 +179,15 @@ def evaluate_policy(
     return float(np.mean(returns))
 
 
-def create_env(name: str, args: Mapping[str, Any] | None) -> core.ProxiedEnv:
+def create_env(
+    name: str, args: Mapping[str, Any] | None, gamma: float | None = None
+) -> core.ProxiedEnv:
     """
     Creates an env and a proxy.
+
+    ``gamma`` is the learner discount.  Potential-based shaping needs it
+    to keep the potential difference consistent with the discounted
+    return; other shaping classes ignore it.
     """
     env_args = dict(args) if args else {}
     shaping_config = env_args.pop("reward_shaping", None)
@@ -188,10 +198,13 @@ def create_env(name: str, args: Mapping[str, Any] | None) -> core.ProxiedEnv:
 
     if shaping_config:
         shaping_name = shaping_config["name"]
-        shaping_args = shaping_config.get("args", {}) or {}
+        shaping_args = dict(shaping_config.get("args", {}) or {})
         if shaping_name not in REWARD_SHAPING_BUILDERS:
             raise ValueError(f"Unknown reward shaping: {shaping_name}")
         shaping_cls = REWARD_SHAPING_BUILDERS[shaping_name]
+        takes_discount = issubclass(shaping_cls, wrappers.PotentialShapingWrapper)
+        if takes_discount and gamma is not None and "gamma" not in shaping_args:
+            shaping_args["gamma"] = gamma
         env = shaping_cls(env, **shaping_args)
         proxy = shaping_cls(proxy, **shaping_args)
 

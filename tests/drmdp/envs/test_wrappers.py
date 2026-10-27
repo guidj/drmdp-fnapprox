@@ -1,3 +1,5 @@
+from collections.abc import Sequence
+
 import gymnasium as gym
 import numpy as np
 import pytest
@@ -166,9 +168,52 @@ class TestPotentialShapingWrapper:
         prev_pot = np.sin(3.0 * obs[0])
         obs_next, rew, _, _, _ = shaped.step(0)
         next_pot = np.sin(3.0 * obs_next[0])
+        # the goal-referenced offset cancels in the difference at gamma=1
         expected = -1.0 + (next_pot - prev_pot)
         assert rew == pytest.approx(expected, abs=1e-6)
         shaped.close()
+
+    def test_discount_weights_successor_potential(self):
+        shaped = ShapedPotentialStub([-1.0, 2.0, 100.0], gamma=0.5)
+        shaped.reset()
+        _, rew, _, _, _ = shaped.step(0)
+        # r + gamma*Phi(s') - Phi(s), with Phi drawn from the observations
+        assert rew == pytest.approx(-1.0 + 0.5 * 2.0 - (-1.0))
+        shaped.close()
+
+    def test_scale_multiplies_shaping_term(self):
+        shaped = ShapedPotentialStub([-1.0, 2.0, 100.0], gamma=1.0, scale=3.0)
+        shaped.reset()
+        _, rew, _, _, _ = shaped.step(0)
+        assert rew == pytest.approx(-1.0 + 3.0 * (2.0 - (-1.0)))
+        shaped.close()
+
+    def test_scale_zero_reproduces_base_reward(self):
+        shaped = ShapedPotentialStub([-1.0, 2.0, 100.0], gamma=1.0, scale=0.0)
+        shaped.reset()
+        _, rew, _, _, _ = shaped.step(0)
+        assert rew == pytest.approx(-1.0)
+        shaped.close()
+
+    def test_terminal_transition_uses_zero_potential(self):
+        # Phi drops to zero at the terminal state, so the terminating step
+        # pays the previous potential, not the terminal observation's value
+        shaped = ShapedPotentialStub([-1.0, 2.0, 100.0], gamma=1.0)
+        shaped.reset()
+        shaped.step(0)
+        _, rew, terminated, _, _ = shaped.step(0)
+        assert terminated
+        assert rew == pytest.approx(-1.0 - 2.0)
+        shaped.close()
+
+
+class TestMountainCarHeightShaping:
+    def test_goal_potential_is_goal_height(self):
+        env = gym.make("MountainCar-v0", max_episode_steps=200)
+        assert wrappers.MountainCarHeightShaping(env).goal_potential == pytest.approx(
+            np.sin(1.5)
+        )
+        env.close()
 
 
 class TestAcrobotTipHeightShaping:
@@ -179,6 +224,13 @@ class TestAcrobotTipHeightShaping:
         _, rew, _, _, _ = shaped.step(0)
         assert rew != -1.0
         shaped.close()
+
+    def test_goal_potential_is_goal_height(self):
+        env = gym.make("Acrobot-v1", max_episode_steps=500)
+        assert wrappers.AcrobotTipHeightShaping(env).goal_potential == pytest.approx(
+            1.0
+        )
+        env.close()
 
 
 class TestAdditiveShapingWrapper:
@@ -473,3 +525,41 @@ class TestRewardRangeGaussianNoiseReward:
             if term_a or term_b:
                 break
         assert rewards_a == rewards_b
+
+
+class PotentialStubEnv(gym.Env):
+    """Deterministic env whose observation is the planned potential.
+
+    The observation at reset is ``potentials[0]`` and after the n-th step
+    ``potentials[n]``, so a wrapper reading ``obs[0]`` as its potential
+    sees a chosen sequence.
+    """
+
+    def __init__(self, potentials: Sequence[float], term_steps: int):
+        self.potentials = tuple(potentials)
+        self.term_steps = term_steps
+        self.observation_space = spaces.Box(low=-1e6, high=1e6, shape=(1,))
+        self.action_space = spaces.Discrete(1)
+        self.step_count = 0
+
+    def step(self, action):
+        del action
+        self.step_count += 1
+        obs = np.array([self.potentials[self.step_count]])
+        terminated = self.step_count >= self.term_steps
+        return obs, -1.0, terminated, False, {}
+
+    def reset(self, seed=None, options=None):
+        del seed, options
+        self.step_count = 0
+        return np.array([self.potentials[0]]), {}
+
+
+class ShapedPotentialStub(wrappers.PotentialShapingWrapper):
+    """Potential-based shaper that reads the potential from the observation."""
+
+    def __init__(self, potentials: Sequence[float], term_steps: int = 2, **kwargs):
+        super().__init__(PotentialStubEnv(potentials, term_steps), **kwargs)
+
+    def _potential(self, obs: np.ndarray) -> float:
+        return float(obs[0])

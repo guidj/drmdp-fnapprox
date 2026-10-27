@@ -272,40 +272,57 @@ class TilesObsWrapper(gym.ObservationWrapper):
 class PotentialShapingWrapper(gym.Wrapper):
     """Potential-based reward shaping: r' = r + gamma * Phi(s') - Phi(s).
 
-    Preserves the optimal policy (Ng, Harada & Russell 1999).
-    Subclasses implement ``_potential(obs)`` for each environment.
+    Preserves the optimal policy for any potential (Ng, Harada &
+    Russell 1999) and shifts the action values by the state-only term
+    ``-Phi(s)``.  Subclasses implement ``_potential(obs)`` and set
+    ``goal_potential`` to the potential at the goal, so that Phi
+    vanishes on terminating transitions and the telescoping sum over
+    an episode cancels exactly.
+
+    ``scale`` multiplies the potential.  A scaled potential is still a
+    potential, so the invariance result applies to every scale; the
+    scale only sets how far the action values move and how much the
+    per-step reward varies around the base reward.
     """
 
-    def __init__(self, env: gym.Env, gamma: float = 1.0):
+    goal_potential: float = 0.0
+
+    def __init__(self, env: gym.Env, gamma: float = 1.0, scale: float = 1.0):
         super().__init__(env)
         self.gamma = gamma
+        self.scale = scale
         self._prev_potential: float = 0.0
 
     def _potential(self, obs: np.ndarray) -> float:
         raise NotImplementedError
 
+    def _shaped(self, potential: float) -> float:
+        return self.scale * (potential - self.goal_potential)
+
     def reset(self, **kwargs):
         obs, info = super().reset(**kwargs)
-        self._prev_potential = self._potential(obs)
+        self._prev_potential = self._shaped(self._potential(obs))
         return obs, info
 
     def step(self, action):
         obs, reward, term, trunc, info = super().step(action)
-        if not term:
-            potential = self._potential(obs)
-            shaping = self.gamma * potential - self._prev_potential
-            self._prev_potential = potential
-            reward = reward + shaping
+        potential = 0.0 if term else self._shaped(self._potential(obs))
+        reward = reward + self.gamma * potential - self._prev_potential
+        self._prev_potential = potential
         return obs, reward, term, trunc, info
 
 
 class MountainCarHeightShaping(PotentialShapingWrapper):
-    """Phi(s) = sin(3 * position).
+    """Phi(s) = sin(3 * position) - sin(1.5).
 
-    The MountainCar hill height function, producing rewards
-    proportional to altitude gain.  Reward range stays moderate
-    because sin is bounded to [-1, 1].
+    Hill height of the car measured from the goal height, so the
+    potential is 0 at the goal and negative below it.  The shaped
+    reward rises when the car climbs, which is the direction the
+    additive bonus rewards, but the optimum is unchanged because the
+    potential shift is a function of position only.
     """
+
+    goal_potential = float(np.sin(1.5))
 
     def _potential(self, obs: np.ndarray) -> float:
         position = float(obs[0])
@@ -313,11 +330,14 @@ class MountainCarHeightShaping(PotentialShapingWrapper):
 
 
 class AcrobotTipHeightShaping(PotentialShapingWrapper):
-    """Phi(s) = -(cos(theta1) + cos(theta1 + theta2)).
+    """Phi(s) = -(cos(theta1) + cos(theta1 + theta2)) - 1.
 
-    Negative tip-height of the second link, so the agent is
-    rewarded for swinging the tip upward.  Bounded to [-2, 2].
+    Tip height of the second link measured from the goal height of 1,
+    so the potential is 0 at termination and negative below it.
+    Bounded to [-3, 1].
     """
+
+    goal_potential = 1.0
 
     def _potential(self, obs: np.ndarray) -> float:
         cos_theta1 = float(obs[0])
