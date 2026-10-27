@@ -35,6 +35,7 @@ REWARD_SHAPING_BUILDERS: Mapping[str, type] = {
     "mountain-car-height-pbrs": wrappers.MountainCarHeightShaping,
     "acrobot-tip-height": wrappers.AcrobotTipHeightBonus,
     "acrobot-tip-height-pbrs": wrappers.AcrobotTipHeightShaping,
+    "gridworld-distance-pbrs": wrappers.GridWorldDistanceShaping,
     "action-cost": wrappers.ActionCostShapingWrapper,
 }
 

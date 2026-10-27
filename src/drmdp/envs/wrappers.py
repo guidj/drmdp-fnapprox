@@ -8,6 +8,7 @@ from gymnasium.core import ObsType
 from sklearn import cluster, mixture, model_selection
 
 from drmdp import constants, dataproc, mathutils, tiles
+from drmdp.envs import gridutils
 
 
 class RandomBinaryObsWrapper(gym.ObservationWrapper):
@@ -348,6 +349,47 @@ class AcrobotTipHeightShaping(PotentialShapingWrapper):
         return float(-(cos_theta1 + cos_sum))
 
 
+class GridWorldDistanceShaping(PotentialShapingWrapper):
+    """Phi(s) = -scale * D * (d(s)/D)**exponent, d = geodesic distance.
+
+    ``d(s)`` is the number of moves from the agent's cell to the
+    nearest exit, avoiding cliffs; ``D`` is the largest distance on the
+    grid.  The potential is zero on exit cells, so the goal reference
+    coincides with the terminal convention: a GridWorld exit is a state
+    with ``d = 0``, and no separate terminal value is needed.
+
+    ``exponent = 1`` makes the potential proportional to the
+    undiscounted optimal cost-to-go ``-d``, so the shaped action values
+    are the advantage function of the base task at ``gamma = 1``.  That
+    potential pays a constant ``-1 + scale`` on every step of a shortest
+    path, because each such step reduces ``d`` by exactly one.  Any
+    other exponent keeps the potential monotone in distance while
+    grading the step reward by how far from the exit the step happens.
+
+    ``scale`` multiplies the potential and cannot move the argmax; it
+    sets the amplitude of the per-step variation.
+    """
+
+    def __init__(
+        self,
+        env: gym.Env,
+        gamma: float = 1.0,
+        scale: float = 1.0,
+        exponent: float = 2.0,
+    ):
+        super().__init__(env=env, gamma=gamma, scale=scale)
+        self.exponent = exponent
+        self.distances = _grid_geodesic_distances(env)
+        self.max_distance = float(max(self.distances.values()))
+        if self.max_distance == 0:
+            raise ValueError("grid has no cell at a positive distance from an exit")
+
+    def _potential(self, obs: np.ndarray) -> float:
+        cell = (int(obs[0]), int(obs[1]))
+        relative = self.distances[cell] / self.max_distance
+        return -self.max_distance * relative**self.exponent
+
+
 class AdditiveShapingWrapper(gym.Wrapper):
     """Additive reward bonus: r' = r + scale * bonus(obs).
 
@@ -521,3 +563,39 @@ def wrap(env: gym.Env, wrapper: str | None = None, **kwargs):
         ohe = kwargs.get("ohe", False)
         return FlatGridCoordObsWrapper(env, ohe=ohe)
     raise ValueError(f"Wrapper `{wrapper}` unknown")
+
+
+def _grid_geodesic_distances(env: gym.Env) -> dict[tuple[int, int], int]:
+    """Geodesic distance from every grid cell to its nearest exit.
+
+    Cells no exit reaches (cliffs, and open cells walled off from every
+    exit) take the largest finite distance, so the potential is defined
+    on the whole observation space.
+    """
+    grid_env = env.unwrapped
+    size = getattr(grid_env, "_size", None)
+    cliffs = getattr(grid_env, "_cliffs", None)
+    exits = getattr(grid_env, "_exits", None)
+    if size is None or cliffs is None or exits is None:
+        raise ValueError(
+            f"{type(grid_env).__name__} exposes no grid geometry; "
+            "distance shaping requires a gridworld environment"
+        )
+    grid = np.zeros(shape=size, dtype=np.int8)
+    for position in cliffs:
+        grid[position] = gridutils.CELL_CLIFF
+    for position in exits:
+        grid[position] = gridutils.CELL_GOAL
+    num_cols = size[1]
+    sources = [row * num_cols + col for row, col in exits]
+    flat_distances = gridutils.grid_bfs_distances(grid=grid, sources=sources)
+    finite = flat_distances[flat_distances >= 0]
+    if finite.size == 0:
+        raise ValueError("no grid cell reaches an exit")
+    max_distance = int(finite.max())
+    distances = {}
+    for row in range(size[0]):
+        for col in range(size[1]):
+            distance = int(flat_distances[row * num_cols + col])
+            distances[(row, col)] = max_distance if distance < 0 else distance
+    return distances

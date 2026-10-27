@@ -4,11 +4,14 @@ import gymnasium as gym
 import numpy as np
 import pytest
 from gymnasium import spaces
+from rlplg.environments import gridworld
 from sklearn import cluster, mixture, model_selection
 
 from drmdp import constants, envs
-from drmdp.envs import wrappers
+from drmdp.envs import gympg, wrappers
 from drmdp.workflows import controlexps
+
+DISTANCE_GRID = ["sog", "xxx"]
 
 
 class BoxEnv(gym.Env):
@@ -230,6 +233,83 @@ class TestAcrobotTipHeightShaping:
         assert wrappers.AcrobotTipHeightShaping(env).goal_potential == pytest.approx(
             1.0
         )
+        env.close()
+
+
+class TestGridWorldDistanceShaping:
+    def test_distance_table_holds_geodesic_moves_to_the_exit(self):
+        shaped = wrappers.GridWorldDistanceShaping(_distance_env())
+        assert shaped.max_distance == pytest.approx(2.0)
+        assert shaped.distances[(0, 2)] == 0
+        assert shaped.distances[(0, 1)] == 1
+        assert shaped.distances[(0, 0)] == 2
+        shaped.close()
+
+    def test_cliff_cells_take_the_largest_distance(self):
+        shaped = wrappers.GridWorldDistanceShaping(_distance_env())
+        assert shaped.distances[(1, 0)] == 2
+        shaped.close()
+
+    def test_affine_potential_pays_a_constant_reward_on_a_shortest_path(self):
+        # Phi = -d, so every step that closes the distance by one pays -1 + scale
+        shaped = wrappers.GridWorldDistanceShaping(
+            _distance_env(), gamma=1.0, scale=1.0, exponent=1.0
+        )
+        shaped.reset(seed=0)
+        _, first, _, _, _ = shaped.step(gridworld.RIGHT)
+        _, second, terminated, _, _ = shaped.step(gridworld.RIGHT)
+        assert terminated
+        assert first == pytest.approx(0.0)
+        assert second == pytest.approx(0.0)
+        shaped.close()
+
+    def test_graded_potential_pays_more_further_from_the_exit(self):
+        shaped = wrappers.GridWorldDistanceShaping(
+            _distance_env(), gamma=1.0, scale=1.0, exponent=2.0
+        )
+        shaped.reset(seed=0)
+        _, first, _, _, _ = shaped.step(gridworld.RIGHT)
+        _, second, terminated, _, _ = shaped.step(gridworld.RIGHT)
+        assert terminated
+        # Phi = -2*(d/2)**2: -2 at d=2, -0.5 at d=1, 0 at the exit
+        assert first == pytest.approx(-1.0 - 0.5 + 2.0)
+        assert second == pytest.approx(-1.0 + 0.5)
+        shaped.close()
+
+    def test_discount_weights_the_successor_potential(self):
+        shaped = wrappers.GridWorldDistanceShaping(
+            _distance_env(), gamma=0.9, scale=1.0, exponent=1.0
+        )
+        shaped.reset(seed=0)
+        _, reward, _, _, _ = shaped.step(gridworld.RIGHT)
+        assert reward == pytest.approx(-1.0 + 0.9 * (-1.0) - (-2.0))
+        shaped.close()
+
+    def test_cliff_fall_adds_the_potential_drop_to_the_penalty(self):
+        shaped = wrappers.GridWorldDistanceShaping(
+            _distance_env(), gamma=1.0, scale=1.0, exponent=2.0
+        )
+        shaped.reset(seed=0)
+        shaped.step(gridworld.RIGHT)
+        obs, reward, terminated, _, _ = shaped.step(gridworld.DOWN)
+        assert not terminated
+        np.testing.assert_array_equal(obs, np.array([0, 0]))
+        assert reward == pytest.approx(-100.0 - 2.0 + 0.5)
+        shaped.close()
+
+    def test_scale_zero_reproduces_the_base_reward(self):
+        shaped = wrappers.GridWorldDistanceShaping(
+            _distance_env(), gamma=1.0, scale=0.0, exponent=2.0
+        )
+        shaped.reset(seed=0)
+        _, reward, _, _, _ = shaped.step(gridworld.RIGHT)
+        assert reward == pytest.approx(-1.0)
+        shaped.close()
+
+    def test_requires_grid_geometry(self):
+        env = gym.make("MountainCar-v0", max_episode_steps=10)
+        with pytest.raises(ValueError):
+            wrappers.GridWorldDistanceShaping(env)
         env.close()
 
 
@@ -563,3 +643,11 @@ class ShapedPotentialStub(wrappers.PotentialShapingWrapper):
 
     def _potential(self, obs: np.ndarray) -> float:
         return float(obs[0])
+
+
+def _distance_env() -> gym.Env:
+    """GridWorld with the agent as a position vector and a fixed start."""
+    size, cliffs, exits, start = gridworld.parse_grid_from_text(DISTANCE_GRID)
+    return gympg.GridWorldObsAsVectorWrapper(
+        gridworld.GridWorld(size, cliffs, exits, start)
+    )

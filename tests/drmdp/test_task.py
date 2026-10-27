@@ -105,6 +105,28 @@ class TestCreateEnv:
         result.env.close()
         result.proxy.close()
 
+    def test_gridworld_distance_pbrs_is_registered(self):
+        result = task.create_env(
+            "GridWorld-MINES",
+            {
+                "grid": controlexps.MINES_GW_GRID,
+                "max_episode_steps": 200,
+                "reward_shaping": {
+                    "name": "gridworld-distance-pbrs",
+                    "args": {"scale": 1.0},
+                },
+            },
+            gamma=0.99,
+        )
+        assert isinstance(result.env, wrappers.GridWorldDistanceShaping)
+        assert result.env.gamma == pytest.approx(0.99)
+        assert result.env.exponent == pytest.approx(2.0)
+        _obs, _ = result.env.reset(seed=0)
+        _, rew, _, _, _ = result.env.step(0)
+        assert rew != -1.0
+        result.env.close()
+        result.proxy.close()
+
     def test_additive_shaping_ignores_learner_discount(self):
         args = {
             "max_episode_steps": 200,
