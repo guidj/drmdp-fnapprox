@@ -83,19 +83,21 @@ class TestGaussianIllustrationNoiseSpecs:
             noise = exp["args"]["reward_noise"]
             assert noise["name"] == "relative-gaussian"
             # unit = modal per-step reward magnitude, 1 for all envs
-            assert noise["args"]["reward_range"] == 1.0
-            # variance = magnitude^2 * unit^2; metadata records the
-            # magnitude factor
-            assert noise["args"]["scale"] == exp["metadata"]["noise_scale"] ** 2
+            assert noise["args"]["reference_std"] == 1.0
+            # sigma = std_multiplier * reference_std, and the multiplier
+            # is the sweep value itself
+            assert noise["args"]["std_multiplier"] >= 0.0
 
-    def test_noise_magnitudes_cover_the_sweep(self):
+    def test_std_multipliers_cover_the_sweep(self):
         specs = controlexps.gaussian_illustration_experiment_specs()
-        magnitudes = sorted({exp["metadata"]["noise_scale"] for exp in specs})
-        assert magnitudes == [0.0, 0.25, 0.5, 1.0, 2.0]
-        variances = sorted(
-            {exp["args"]["reward_noise"]["args"]["scale"] for exp in specs}
+        multipliers = sorted(
+            {exp["args"]["reward_noise"]["args"]["std_multiplier"] for exp in specs}
         )
-        assert variances == [0.0, 0.0625, 0.25, 1.0, 4.0]
+        assert multipliers == [0.0, 0.25, 0.5, 1.0, 2.0]
+
+    def test_metadata_carries_no_noise_scale(self):
+        for exp in controlexps.gaussian_illustration_experiment_specs():
+            assert "noise_scale" not in (exp.get("metadata") or {})
 
 
 class TestBladeTdRewardSampling:
@@ -124,6 +126,5 @@ class TestIllustrationNoiseSpecs:
         for exp in specs:
             noise = exp["args"]["reward_noise"]
             assert noise["name"] == "relative-gaussian"
-            assert noise["args"]["scale"] == 0.0
-            assert noise["args"]["reward_range"] == 1.0
-            assert exp["metadata"]["noise_scale"] == 0.0
+            assert noise["args"]["std_multiplier"] == 0.0
+            assert noise["args"]["reference_std"] == 1.0

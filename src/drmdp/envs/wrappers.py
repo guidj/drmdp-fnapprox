@@ -1,5 +1,5 @@
 import copy
-from collections.abc import Hashable, Sequence
+from collections.abc import Hashable, Mapping, Sequence
 from typing import Any
 
 import gymnasium as gym
@@ -466,10 +466,13 @@ class ActionCostShapingWrapper(gym.Wrapper):
 class GaussianRewardNoiseWrapper(gym.Wrapper):
     """Adds clipped Gaussian noise to rewards.
 
-    Noise is sampled from N(0, scale * _variance(obs, action)) and
-    clipped to the 95% energy interval [-clip_std * sigma, clip_std * sigma].
-    Subclasses implement ``_variance(obs, action)`` for state/action-dependent
-    noise magnitude.
+    The noise standard deviation is ``sigma = std_multiplier *
+    _reference_std(obs, action)``, so the multiplier is expressed in units of
+    the reference standard deviation and no square or square root sits between
+    a configured value and the sampled distribution. Samples are clipped to
+    the 95% energy interval [-clip_std * sigma, clip_std * sigma]. Subclasses
+    implement ``_reference_std(obs, action)`` for state/action-dependent noise
+    magnitude.
 
     Noise is NOT applied on terminal steps so that
     terminal-state zero-reward semantics are preserved.
@@ -478,23 +481,26 @@ class GaussianRewardNoiseWrapper(gym.Wrapper):
     def __init__(
         self,
         env: gym.Env,
-        scale: float = 1.0,
+        std_multiplier: float = 1.0,
         clip_std: float = 1.96,
         seed: int | None = None,
     ):
         super().__init__(env)
-        self.scale = scale
+        if std_multiplier < 0:
+            raise ValueError(
+                f"std_multiplier must be non-negative, not {std_multiplier}"
+            )
+        self.std_multiplier = std_multiplier
         self.clip_std = clip_std
         self._rng = np.random.default_rng(seed)
 
-    def _variance(self, obs: np.ndarray, action: int) -> float:
+    def _reference_std(self, obs: np.ndarray, action: int) -> float:
         raise NotImplementedError
 
     def step(self, action):
         obs, reward, term, trunc, info = super().step(action)
         if not term:
-            variance = self._variance(obs, action)
-            sigma = np.sqrt(self.scale * variance)
+            sigma = self.std_multiplier * self._reference_std(obs, action)
             noise = self._rng.normal(0.0, sigma)
             bound = self.clip_std * sigma
             noise = float(np.clip(noise, -bound, bound))
@@ -503,35 +509,74 @@ class GaussianRewardNoiseWrapper(gym.Wrapper):
 
 
 class ConstantGaussianNoiseReward(GaussianRewardNoiseWrapper):
-    """Constant unit variance: effective noise std is sqrt(scale)."""
+    """Unit reference standard deviation: the noise std is std_multiplier."""
 
-    def _variance(self, obs: np.ndarray, action: int) -> float:
+    def _reference_std(self, obs: np.ndarray, action: int) -> float:
         return 1.0
 
 
 class RewardRangeGaussianNoiseReward(GaussianRewardNoiseWrapper):
-    """Noise variance proportional to the reward range.
+    """Noise standard deviation proportional to a reference standard deviation.
 
-    Variance = scale * reward_range^2, where reward_range is the
-    post-shaping per-step reward span of the environment, so scale acts
-    as a relative variance: the noise std is sqrt(scale) * range, and an
-    equal scale produces an equal relative perturbation across
-    environments with different reward magnitudes.
+    ``reference_std`` is the standard deviation of the post-shaping per-step
+    reward distribution of the environment, so the multiplier acts as a
+    relative perturbation: an equal ``std_multiplier`` produces an equal
+    relative perturbation across environments with different reward
+    magnitudes. The parameter is named for a standard deviation, not for the
+    ``(low, high)`` reward range of the ``gym.Env`` interface.
     """
 
     def __init__(
         self,
         env: gym.Env,
-        reward_range: float,
-        scale: float = 1.0,
+        reference_std: float,
+        std_multiplier: float = 1.0,
         clip_std: float = 1.96,
         seed: int | None = None,
     ):
-        super().__init__(env, scale=scale, clip_std=clip_std, seed=seed)
-        self.reward_range = reward_range
+        super().__init__(
+            env, std_multiplier=std_multiplier, clip_std=clip_std, seed=seed
+        )
+        self.reference_std = reference_std
 
-    def _variance(self, obs: np.ndarray, action: int) -> float:
-        return float(self.reward_range**2)
+    def _reference_std(self, obs: np.ndarray, action: int) -> float:
+        return float(self.reference_std)
+
+
+def normalize_noise_args(args: Mapping[str, Any]) -> dict[str, Any]:
+    """Maps legacy variance-multiplier reward-noise args to std multipliers.
+
+    Records and in-flight configs written before the rename hold ``scale``
+    (a multiplier on the reference variance) and ``reward_range`` (a
+    reference standard deviation under a misleading name). Both are decoded
+    to ``std_multiplier`` and ``reference_std``; the mapping is exact because
+    ``sqrt(scale)`` with a variance-multiplier parameterization is the same
+    number. Ambiguous or unknown keys raise instead of being ignored, since a
+    config carrying both shapes would hide which one took effect.
+    """
+    legacy_names = {"scale": "std_multiplier", "reward_range": "reference_std"}
+    known_names = {"std_multiplier", "reference_std", "clip_std", "seed"}
+    normalized: dict[str, Any] = {}
+    for name, value in args.items():
+        if name in legacy_names:
+            new_name = legacy_names[name]
+            if new_name in args:
+                raise TypeError(
+                    f"reward noise args carry both `{name}` and `{new_name}`"
+                )
+            if name == "scale":
+                if value < 0:
+                    raise ValueError(
+                        f"legacy `scale` must be non-negative, not {value}"
+                    )
+                normalized[new_name] = np.sqrt(value)
+            else:
+                normalized[new_name] = value
+            continue
+        if name not in known_names:
+            raise TypeError(f"unknown reward noise arg `{name}`")
+        normalized[name] = value
+    return normalized
 
 
 def wrap(env: gym.Env, wrapper: str | None = None, **kwargs):

@@ -518,7 +518,7 @@ def illustration_experiment_specs(
                 # the one in gaussian_illustration_experiment_specs
                 "reward_noise": {
                     "name": "relative-gaussian",
-                    "args": {"scale": 0.0, "reward_range": 1.0},
+                    "args": {"std_multiplier": 0.0, "reference_std": 1.0},
                 },
             },
             "feats_specs": [
@@ -539,7 +539,7 @@ def illustration_experiment_specs(
                 init_attempt_estimation_episodes=(10,),
                 feats_specs=mc_est_feats,
             ),
-            "metadata": {"noise_scale": 0.0},
+            "metadata": {},
             "epochs": 10,
         },
         {
@@ -554,7 +554,7 @@ def illustration_experiment_specs(
                 # the one in gaussian_illustration_experiment_specs
                 "reward_noise": {
                     "name": "relative-gaussian",
-                    "args": {"scale": 0.0, "reward_range": 1.0},
+                    "args": {"std_multiplier": 0.0, "reference_std": 1.0},
                 },
             },
             "feats_specs": [
@@ -578,7 +578,7 @@ def illustration_experiment_specs(
                 init_attempt_estimation_episodes=(10,),
                 feats_specs=acrobot_est_feats,
             ),
-            "metadata": {"noise_scale": 0.0},
+            "metadata": {},
             "epochs": 10,
         },
         {
@@ -590,7 +590,7 @@ def illustration_experiment_specs(
                 # the one in gaussian_illustration_experiment_specs
                 "reward_noise": {
                     "name": "relative-gaussian",
-                    "args": {"scale": 0.0, "reward_range": 1.0},
+                    "args": {"std_multiplier": 0.0, "reference_std": 1.0},
                 },
             },
             "feats_specs": [
@@ -612,7 +612,7 @@ def illustration_experiment_specs(
                 init_attempt_estimation_episodes=(10,),
                 feats_specs=gw_est_feats,
             ),
-            "metadata": {"noise_scale": 0.0},
+            "metadata": {},
             "epochs": 5,
         },
     ]
@@ -624,23 +624,23 @@ def gaussian_illustration_experiment_specs(
     acrobot_tiling_dim: int = 3,
     acrobot_hash_dim: int = 8192,
     gw_tiling_dim: int = 5,
-    noise_magnitudes: Sequence[float] = (0.0, 0.25, 0.5, 1.0, 2.0),
+    noise_std_multipliers: Sequence[float] = (0.0, 0.25, 0.5, 1.0, 2.0),
 ) -> Sequence[Mapping[str, Any]]:
     """Illustration specs with unit-magnitude Gaussian reward noise.
 
-    Produces one spec per (env, noise_magnitude) combination, sweeping
-    the noise standard deviation as a factor of the environment's unit
-    reward magnitude: the logged magnitude m sets noise std = m * 1.0
-    (unit = modal per-step reward magnitude, 1 for all three
-    environments), so the logged config carries variance m^2 (``scale``)
-    and ``reward_range`` 1.0. The sweep follows the bsuite convention of
-    noise std as a magnitude ladder on unit-scale rewards (Osband et
-    al., 2019: std factors {0.1, 0.3, 1.0, 3.0, 10.0}); the full
-    post-shaping range is rejected as the unit because GridWorld's is
-    dominated by the -100 cliff penalty (std 25-200 against modal
-    rewards of -1). BLADE-TD consumes the posterior mean: the sweep
-    compares reward estimators, so the posterior weight draw is switched
-    off and its reward estimate is fixed, as LEAST's.
+    Produces one spec per (env, standard-deviation multiplier) combination.
+    The sweep value m sets the noise standard deviation directly:
+    ``sigma = std_multiplier * reference_std`` with ``reference_std`` 1.0 (the
+    modal per-step reward magnitude, 1 for all three environments), so the
+    sweep value, the config value, and the sampled standard deviation are the
+    same number m and no variance/square-root pair sits between them. The
+    sweep follows the bsuite convention of noise std as a magnitude ladder on
+    unit-scale rewards (Osband et al., 2019: std factors {0.1, 0.3, 1.0, 3.0,
+    10.0}); the full post-shaping range is rejected as the unit because
+    GridWorld's is dominated by the -100 cliff penalty (std 25-200 against
+    modal rewards of -1). BLADE-TD consumes the posterior mean: the sweep
+    compares reward estimators, so the posterior weight draw is switched off
+    and its reward estimate is fixed, as LEAST's.
     """
     mc_est_feats: Sequence[Sequence[Mapping[str, Any]]] = [
         [{"name": "tile-observation-action-ft", "args": {"tiling_dim": 3}}]
@@ -681,7 +681,7 @@ def gaussian_illustration_experiment_specs(
             # unit = modal per-step reward magnitude (base -1); the
             # full post-shaping range [-2, 0] (base -1 plus the
             # sin(3*position) bonus) is not the noise unit
-            "reward_range": 1.0,
+            "reference_std": 1.0,
             "feats_specs": [
                 [
                     {
@@ -716,7 +716,7 @@ def gaussian_illustration_experiment_specs(
             # unit = modal per-step reward magnitude (base -1); the
             # full post-shaping range [-2, 0] (base -1 plus the action
             # cost) is not the noise unit
-            "reward_range": 1.0,
+            "reference_std": 1.0,
             "feats_specs": [
                 [
                     {
@@ -752,7 +752,7 @@ def gaussian_illustration_experiment_specs(
             # full range [-100, 0] is dominated by the -100 cliff and
             # would scale noise std to 25-200 against modal rewards
             # of -1
-            "reward_range": 1.0,
+            "reference_std": 1.0,
             "feats_specs": [
                 [
                     {
@@ -779,14 +779,14 @@ def gaussian_illustration_experiment_specs(
     ]
 
     specs: list[Mapping[str, Any]] = []
-    for noise_magnitude in noise_magnitudes:
+    for noise_std_multiplier in noise_std_multipliers:
         for template in env_templates:
             env_args = dict(template["base_args"])
             env_args["reward_noise"] = {
                 "name": "relative-gaussian",
                 "args": {
-                    "scale": noise_magnitude**2,
-                    "reward_range": template["reward_range"],
+                    "std_multiplier": noise_std_multiplier,
+                    "reference_std": template["reference_std"],
                 },
             }
             specs.append(
@@ -795,7 +795,7 @@ def gaussian_illustration_experiment_specs(
                     "args": env_args,
                     "feats_specs": template["feats_specs"],
                     "problem_specs": template["problem_specs_fn"](),
-                    "metadata": {"noise_scale": noise_magnitude},
+                    "metadata": {},
                     "epochs": template["epochs"],
                 }
             )

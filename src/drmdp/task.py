@@ -215,6 +215,7 @@ def create_env(
         if noise_name not in REWARD_NOISE_BUILDERS:
             raise ValueError(f"Unknown reward noise: {noise_name}")
         noise_cls = REWARD_NOISE_BUILDERS[noise_name]
+        noise_args = wrappers.normalize_noise_args(noise_args)
         env = noise_cls(env, **noise_args)
 
     return core.ProxiedEnv(env=env, proxy=proxy)

@@ -144,7 +144,7 @@ class TestCreateEnv:
                 "max_episode_steps": 200,
                 "reward_noise": {
                     "name": "relative-gaussian",
-                    "args": {"scale": 1.0, "reward_range": 2.0},
+                    "args": {"std_multiplier": 1.0, "reference_std": 2.0},
                 },
             },
         )
@@ -166,11 +166,42 @@ class TestCreateEnv:
             proxy_rewards.append(rew)
             if term:
                 break
-        # noise std is sqrt(1.0) * 2.0 against the base reward of -1
+        # noise std is 1.0 * 2.0 against the base reward of -1
         assert not all(rew == -1.0 for rew in env_rewards)
         assert all(rew == -1.0 for rew in proxy_rewards)
         result.env.close()
         result.proxy.close()
+
+    def test_legacy_reward_noise_args_are_decoded(self):
+        # `scale` was a variance multiplier, so 0.25 decodes to 0.5
+        legacy = task.create_env(
+            "MountainCar-v0",
+            {
+                "max_episode_steps": 200,
+                "reward_noise": {
+                    "name": "relative-gaussian",
+                    "args": {"scale": 0.25, "reward_range": 2.0},
+                },
+            },
+        )
+        direct = task.create_env(
+            "MountainCar-v0",
+            {
+                "max_episode_steps": 200,
+                "reward_noise": {
+                    "name": "relative-gaussian",
+                    "args": {"std_multiplier": 0.5, "reference_std": 2.0},
+                },
+            },
+        )
+        assert isinstance(legacy.env, envs.wrappers.RewardRangeGaussianNoiseReward)
+        assert legacy.env.std_multiplier == pytest.approx(0.5)
+        assert legacy.env.reference_std == pytest.approx(2.0)
+        assert legacy.env.std_multiplier == pytest.approx(direct.env.std_multiplier)
+        legacy.env.close()
+        legacy.proxy.close()
+        direct.env.close()
+        direct.proxy.close()
 
     def test_unknown_shaping_raises(self):
         with pytest.raises(ValueError, match="Unknown reward shaping"):

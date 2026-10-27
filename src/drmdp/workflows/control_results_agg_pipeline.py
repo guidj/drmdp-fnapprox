@@ -9,6 +9,7 @@ import copy
 import dataclasses
 import json
 import logging
+import math
 import os.path
 import re
 from collections.abc import Mapping, Sequence
@@ -412,9 +413,7 @@ def run_rows(row: Mapping[str, Any]) -> list[dict[str, Any]]:
             "env_name": experiment["env_spec"]["name"],
             "gamma": problem_spec["gamma"],
             "delay_config": problem_spec["delay_config"],
-            "noise_scale": (experiment["env_spec"].get("metadata") or {}).get(
-                "noise_scale"
-            ),
+            "noise_scale": _noise_std_multiplier(experiment["env_spec"]),
             "episodes_per_run": meta["run_config"]["episodes_per_run"],
             "log_episode_frequency": meta["run_config"]["log_episode_frequency"],
         }
@@ -473,6 +472,28 @@ def parse_args() -> PipelineArgs:
     known_args, unknown_args = arg_parser.parse_known_args()
     logger.info("Unknown args: %s", unknown_args)
     return PipelineArgs(**vars(known_args))
+
+
+def _noise_std_multiplier(env_spec: Mapping[str, Any]) -> float | None:
+    """Noise standard-deviation multiplier of an experiment spec.
+
+    Reads the `std_multiplier` arg of the reward-noise wrapper, falling back
+    to the retired `scale` (a variance multiplier) and then to the retired
+    metadata key, so that both old and new record directories produce the
+    same column.
+    """
+    noise_args = ((env_spec.get("args") or {}).get("reward_noise") or {}).get(
+        "args"
+    ) or {}
+    if "std_multiplier" in noise_args:
+        return float(noise_args["std_multiplier"])
+    if "scale" in noise_args:
+        return math.sqrt(float(noise_args["scale"]))
+    metadata = env_spec.get("metadata") or {}
+    if "std_multiplier" in metadata:
+        return float(metadata["std_multiplier"])
+    legacy = metadata.get("noise_scale")
+    return None if legacy is None else float(legacy)
 
 
 if __name__ == "__main__":

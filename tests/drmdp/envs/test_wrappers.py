@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 import gymnasium as gym
 import numpy as np
@@ -448,7 +448,7 @@ class TestTilesObsWrapper:
 class TestGaussianRewardNoiseWrapper:
     def test_noise_alters_reward(self):
         env = BoxEnv(dim=1, term_steps=100)
-        noisy = wrappers.ConstantGaussianNoiseReward(env, scale=1.0, seed=42)
+        noisy = wrappers.ConstantGaussianNoiseReward(env, std_multiplier=1.0, seed=42)
         noisy.reset()
         rewards = []
         for _ in range(50):
@@ -458,16 +458,16 @@ class TestGaussianRewardNoiseWrapper:
             rewards.append(rew)
         assert not all(r == rewards[0] for r in rewards)
 
-    def test_scale_zero_gives_original(self):
+    def test_zero_multiplier_gives_original(self):
         env = BoxEnv(dim=1, term_steps=100)
-        noisy = wrappers.ConstantGaussianNoiseReward(env, scale=0.0, seed=42)
+        noisy = wrappers.ConstantGaussianNoiseReward(env, std_multiplier=0.0, seed=42)
         noisy.reset()
         _, rew, _, _, _ = noisy.step(0)
         assert rew == pytest.approx(1.0)
 
     def test_mean_noise_near_zero(self):
         env = BoxEnv(dim=1, term_steps=600)
-        noisy = wrappers.ConstantGaussianNoiseReward(env, scale=1.0, seed=7)
+        noisy = wrappers.ConstantGaussianNoiseReward(env, std_multiplier=1.0, seed=7)
         noisy.reset()
         noise_samples = []
         for _ in range(500):
@@ -480,10 +480,10 @@ class TestGaussianRewardNoiseWrapper:
     def test_noise_is_clipped(self):
         env = BoxEnv(dim=1, term_steps=600)
         noisy = wrappers.ConstantGaussianNoiseReward(
-            env, scale=1.0, clip_std=1.96, seed=0
+            env, std_multiplier=1.0, clip_std=1.96, seed=0
         )
         noisy.reset()
-        sigma = np.sqrt(1.0 * 1.0)
+        sigma = 1.0
         bound = 1.96 * sigma
         for _ in range(500):
             _, rew, term, trunc, _ = noisy.step(0)
@@ -493,9 +493,15 @@ class TestGaussianRewardNoiseWrapper:
             assert noise >= -bound - 1e-10
             assert noise <= bound + 1e-10
 
+    def test_negative_multiplier_raises(self):
+        with pytest.raises(ValueError):
+            wrappers.ConstantGaussianNoiseReward(
+                BoxEnv(dim=1, term_steps=100), std_multiplier=-0.5
+            )
+
     def test_terminal_step_has_no_noise(self):
         env = BoxEnv(dim=1, term_steps=1)
-        noisy = wrappers.ConstantGaussianNoiseReward(env, scale=5.0, seed=42)
+        noisy = wrappers.ConstantGaussianNoiseReward(env, std_multiplier=5.0, seed=42)
         noisy.reset()
         _, rew, term, _, _ = noisy.step(0)
         assert term is True
@@ -503,16 +509,16 @@ class TestGaussianRewardNoiseWrapper:
 
 
 class TestConstantGaussianNoiseReward:
-    def test_variance_is_constant(self):
+    def test_reference_std_is_one(self):
         wrapper = wrappers.ConstantGaussianNoiseReward.__new__(
             wrappers.ConstantGaussianNoiseReward
         )
-        assert wrapper._variance(np.array([0.0]), 0) == 1.0
-        assert wrapper._variance(np.array([1.0, 2.0]), 1) == 1.0
+        assert wrapper._reference_std(np.array([0.0]), 0) == 1.0
+        assert wrapper._reference_std(np.array([1.0, 2.0]), 1) == 1.0
 
     def test_applies_noise_on_real_env(self):
         env = gym.make("MountainCar-v0", max_episode_steps=200)
-        noisy = wrappers.ConstantGaussianNoiseReward(env, scale=1.0, seed=42)
+        noisy = wrappers.ConstantGaussianNoiseReward(env, std_multiplier=1.0, seed=42)
         noisy.reset(seed=0)
         rewards = []
         for _ in range(50):
@@ -523,21 +529,21 @@ class TestConstantGaussianNoiseReward:
 
 
 class TestRewardRangeGaussianNoiseReward:
-    def test_variance_is_range_squared(self):
+    def test_reference_std_is_the_configured_std(self):
         wrapper = wrappers.RewardRangeGaussianNoiseReward.__new__(
             wrappers.RewardRangeGaussianNoiseReward
         )
-        wrapper.reward_range = 4.0
-        assert wrapper._variance(np.array([0.0]), 0) == 16.0
+        wrapper.reference_std = 4.0
+        assert wrapper._reference_std(np.array([0.0]), 0) == 4.0
 
-    def test_noise_std_scales_with_range(self):
+    def test_noise_std_scales_with_reference_std(self):
         # the empirical std over many seeded steps approximates
-        # sqrt(scale) * reward_range for each range
+        # std_multiplier * reference_std for each reference
         stds = {}
-        for reward_range in (1.0, 4.0):
+        for reference_std in (1.0, 4.0):
             env = BoxEnv(dim=1, term_steps=2_000)
             noisy = wrappers.RewardRangeGaussianNoiseReward(
-                env, reward_range=reward_range, scale=1.0, seed=42
+                env, reference_std=reference_std, std_multiplier=1.0, seed=42
             )
             noisy.reset()
             samples = []
@@ -546,16 +552,16 @@ class TestRewardRangeGaussianNoiseReward:
                 if term or trunc:
                     break
                 samples.append(rew - 1.0)
-            stds[reward_range] = np.std(samples)
+            stds[reference_std] = np.std(samples)
         assert abs(stds[4.0] - 4.0) < 0.8
         assert abs(stds[1.0] - 1.0) < 0.3
-        # the std ratio tracks the range ratio
+        # the std ratio tracks the reference ratio
         assert 3.0 < stds[4.0] / stds[1.0] < 5.0
 
-    def test_scale_zero_gives_original(self):
+    def test_zero_multiplier_gives_original(self):
         env = BoxEnv(dim=1, term_steps=100)
         noisy = wrappers.RewardRangeGaussianNoiseReward(
-            env, reward_range=100.0, scale=0.0, seed=42
+            env, reference_std=100.0, std_multiplier=0.0, seed=42
         )
         noisy.reset()
         _, rew, _, _, _ = noisy.step(0)
@@ -563,12 +569,15 @@ class TestRewardRangeGaussianNoiseReward:
 
     def test_noise_is_clipped(self):
         env = BoxEnv(dim=1, term_steps=600)
-        scale, reward_range = 1.0, 4.0
+        std_multiplier, reference_std = 1.0, 4.0
         noisy = wrappers.RewardRangeGaussianNoiseReward(
-            env, reward_range=reward_range, scale=scale, seed=0
+            env,
+            reference_std=reference_std,
+            std_multiplier=std_multiplier,
+            seed=0,
         )
         noisy.reset()
-        bound = 1.96 * np.sqrt(scale * reward_range**2)
+        bound = 1.96 * std_multiplier * reference_std
         for _ in range(500):
             _, rew, term, trunc, _ = noisy.step(0)
             if term or trunc:
@@ -580,7 +589,7 @@ class TestRewardRangeGaussianNoiseReward:
     def test_terminal_step_has_no_noise(self):
         env = BoxEnv(dim=1, term_steps=1)
         noisy = wrappers.RewardRangeGaussianNoiseReward(
-            env, reward_range=100.0, scale=5.0, seed=42
+            env, reference_std=100.0, std_multiplier=5.0, seed=42
         )
         noisy.reset()
         _, rew, term, _, _ = noisy.step(0)
@@ -589,10 +598,16 @@ class TestRewardRangeGaussianNoiseReward:
 
     def test_same_seed_reproduces_noise(self):
         noisy_a = wrappers.RewardRangeGaussianNoiseReward(
-            BoxEnv(dim=1, term_steps=100), reward_range=2.0, scale=1.0, seed=7
+            BoxEnv(dim=1, term_steps=100),
+            reference_std=2.0,
+            std_multiplier=1.0,
+            seed=7,
         )
         noisy_b = wrappers.RewardRangeGaussianNoiseReward(
-            BoxEnv(dim=1, term_steps=100), reward_range=2.0, scale=1.0, seed=7
+            BoxEnv(dim=1, term_steps=100),
+            reference_std=2.0,
+            std_multiplier=1.0,
+            seed=7,
         )
         noisy_a.reset()
         noisy_b.reset()
@@ -605,6 +620,87 @@ class TestRewardRangeGaussianNoiseReward:
             if term_a or term_b:
                 break
         assert rewards_a == rewards_b
+
+
+class TestStdMultiplier:
+    @pytest.mark.parametrize("std_multiplier", (0.0, 0.25, 0.5, 1.0))
+    @pytest.mark.parametrize("reference_std", (1.0, 2.0))
+    def test_noise_std_is_multiplier_times_reference(
+        self, std_multiplier: float, reference_std: float
+    ):
+        expected = std_multiplier * reference_std
+        env = BoxEnv(dim=1, term_steps=20_000)
+        noisy = wrappers.RewardRangeGaussianNoiseReward(
+            env,
+            reference_std=reference_std,
+            std_multiplier=std_multiplier,
+            clip_std=10.0,
+            seed=0,
+        )
+        noisy.reset()
+        samples = []
+        for _ in range(10_000):
+            _, rew, term, trunc, _ = noisy.step(0)
+            if term or trunc:
+                break
+            samples.append(rew - 1.0)
+        assert np.std(samples) == pytest.approx(expected, abs=0.08 + 0.08 * expected)
+
+    def test_zero_multiplier_leaves_every_reward_unchanged(self):
+        env = BoxEnv(dim=1, term_steps=500)
+        noisy = wrappers.RewardRangeGaussianNoiseReward(
+            env, reference_std=3.0, std_multiplier=0.0, seed=11
+        )
+        noisy.reset()
+        for _ in range(100):
+            _, rew, term, trunc, _ = noisy.step(0)
+            if term or trunc:
+                break
+            assert rew == pytest.approx(1.0)
+
+
+class TestNormalizeNoiseArgs:
+    def test_legacy_variance_multiplier_becomes_std_multiplier(self):
+        normalized = wrappers.normalize_noise_args({"scale": 0.25, "reward_range": 1.0})
+        assert normalized == {"std_multiplier": 0.5, "reference_std": 1.0}
+
+    def test_std_multiplier_args_pass_through(self):
+        args = {
+            "std_multiplier": 0.5,
+            "reference_std": 2.0,
+            "clip_std": 1.96,
+            "seed": 3,
+        }
+        assert wrappers.normalize_noise_args(args) == args
+
+    def test_both_shapes_raise(self):
+        with pytest.raises(TypeError):
+            wrappers.normalize_noise_args({"scale": 1.0, "std_multiplier": 1.0})
+
+    def test_both_reference_shapes_raise(self):
+        with pytest.raises(TypeError):
+            wrappers.normalize_noise_args({"reward_range": 1.0, "reference_std": 1.0})
+
+    def test_unknown_arg_raises(self):
+        with pytest.raises(TypeError):
+            wrappers.normalize_noise_args({"noise_magnitude": 1.0})
+
+    def test_negative_legacy_scale_raises(self):
+        with pytest.raises(ValueError):
+            wrappers.normalize_noise_args({"scale": -1.0})
+
+    @pytest.mark.parametrize("multiplier", (0.0, 0.25, 0.5, 1.0, 2.0))
+    def test_legacy_config_samples_as_the_multiplier(self, multiplier: float):
+        legacy = wrappers.normalize_noise_args(
+            {"scale": multiplier**2, "reward_range": 2.0}
+        )
+        direct = {"std_multiplier": multiplier, "reference_std": 2.0}
+        assert _noise_samples(legacy, seed=0) == _noise_samples(direct, seed=0)
+
+    def test_both_shapes_sample_identically_for_one_config(self):
+        legacy = wrappers.normalize_noise_args({"scale": 0.0625, "reward_range": 1.0})
+        direct = {"std_multiplier": 0.25, "reference_std": 1.0}
+        assert _noise_samples(legacy, seed=5) == _noise_samples(direct, seed=5)
 
 
 class PotentialStubEnv(gym.Env):
@@ -651,3 +747,18 @@ def _distance_env() -> gym.Env:
     return gympg.GridWorldObsAsVectorWrapper(
         gridworld.GridWorld(size, cliffs, exits, start)
     )
+
+
+def _noise_samples(args: Mapping[str, float], seed: int) -> list[float]:
+    """Reward offsets of a `relative-gaussian` wrapper built from `args`."""
+    noisy = wrappers.RewardRangeGaussianNoiseReward(
+        BoxEnv(dim=1, term_steps=100), seed=seed, **args
+    )
+    noisy.reset()
+    samples = []
+    for _ in range(50):
+        _, rew, term, trunc, _ = noisy.step(0)
+        if term or trunc:
+            break
+        samples.append(rew - 1.0)
+    return samples
