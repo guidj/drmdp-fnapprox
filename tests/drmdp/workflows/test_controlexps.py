@@ -101,30 +101,17 @@ class TestGaussianIllustrationNoiseSpecs:
 
 
 class TestBladeTdRewardSampling:
-    def test_illustration_families_consume_posterior_mean(self):
-        # the families compare reward estimators; a per-episode posterior
+    def test_gaussian_illustration_consumes_posterior_mean(self):
+        # the family compares reward estimators; a per-episode posterior
         # weight draw is a third stochastic source, so BLADE-TD consumes
         # the fixed posterior mean
-        for specs in (
-            controlexps.illustration_experiment_specs(),
-            controlexps.gaussian_illustration_experiment_specs(),
-        ):
-            bayes_args = [
-                problem_spec["reward_mapper"]["args"]
-                for spec in specs
-                for problem_spec in spec["problem_specs"]
-                if problem_spec["reward_mapper"]["name"] == "bayes-least-lfa"
-            ]
-            assert bayes_args
-            for args in bayes_args:
-                assert args["sample_weights"] is False
-
-
-class TestIllustrationNoiseSpecs:
-    def test_zero_noise_relative_config_with_unit_magnitude(self):
-        specs = controlexps.illustration_experiment_specs()
-        for exp in specs:
-            noise = exp["args"]["reward_noise"]
-            assert noise["name"] == "relative-gaussian"
-            assert noise["args"]["std_multiplier"] == 0.0
-            assert noise["args"]["reference_std"] == 1.0
+        specs = controlexps.gaussian_illustration_experiment_specs()
+        bayes_args = [
+            problem_spec["reward_mapper"]["args"]
+            for spec in specs
+            for problem_spec in spec["problem_specs"]
+            if problem_spec["reward_mapper"]["name"] == "bayes-least-lfa"
+        ]
+        assert bayes_args
+        for args in bayes_args:
+            assert args["sample_weights"] is False

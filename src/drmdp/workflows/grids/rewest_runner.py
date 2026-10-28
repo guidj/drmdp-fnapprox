@@ -83,29 +83,7 @@ def run_reward_estimation(
         {"name": "tile-observation-action-ft", "args": {"tiling_dim": tiling_dim}}
     ]
 
-    mapping_spec: dict[str, Any]
-    if method == "identity":
-        mapping_spec = {"name": method, "args": None}
-    elif method == "impute-missing":
-        mapping_spec = {"name": method, "args": {**method_args}}
-    else:
-        rewest_feats_spec = [
-            {"name": "flat-grid-observation-action-ft", "args": {}},
-            {
-                "name": "drop-observation-dims-ft",
-                "args": {"axis_dims": {0: dead_ohe_indices}},
-            },
-        ]
-        mapping_spec = {
-            "name": method,
-            "args": {
-                **method_args,
-                "transition_feats_spec": {
-                    "name": "current-features",
-                    "args": {"current_spec": rewest_feats_spec},
-                },
-            },
-        }
+    mapping_spec: Mapping[str, Any] = mapping_spec_for(grid_spec, method, method_args)
 
     env = envs.make(env_name=env_name, **env_args)
     proxy_env = envs.make(env_name=env_name, **env_args)
@@ -206,6 +184,43 @@ def run_reward_estimation(
         "return_variance": float(np.var(episode_returns_arr)),
         "coverage_pct": coverage_pct,
         "factors_coverage_pct": factors_coverage_pct,
+    }
+
+
+def mapping_spec_for(
+    grid_spec: Mapping[str, Any],
+    method: str,
+    method_args: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    """
+    Mapping spec for `task.reward_mapper` on one GridWorld run.
+
+    Estimator methods get a `transition_feats_spec` over the grid's live
+    state-action cells: the flat grid encoding with the dead-cell one-hot
+    dimensions dropped, so the estimator's model dimension matches the
+    cells that can be visited. `identity` and `impute-missing` take no
+    transition features.
+    """
+    if method == "identity":
+        return {"name": method, "args": None}
+    if method == "impute-missing":
+        return {"name": method, "args": {**method_args}}
+    rewest_feats_spec = [
+        {"name": "flat-grid-observation-action-ft", "args": {}},
+        {
+            "name": "drop-observation-dims-ft",
+            "args": {"axis_dims": {0: grid_spec["dead_ohe"]}},
+        },
+    ]
+    return {
+        "name": method,
+        "args": {
+            **method_args,
+            "transition_feats_spec": {
+                "name": "current-features",
+                "args": {"current_spec": rewest_feats_spec},
+            },
+        },
     }
 
 

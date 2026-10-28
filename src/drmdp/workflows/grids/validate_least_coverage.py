@@ -38,7 +38,6 @@ METHOD_CONFIGS: dict[str, dict[str, Any]] = {
         "intercept": False,
         "impute_value": 0,
         "estimation_buffer_mult": 25,
-        "use_next_state": False,
         "check_factors": True,
     },
     "bayes-least-lfa": {
@@ -47,7 +46,6 @@ METHOD_CONFIGS: dict[str, dict[str, Any]] = {
         "intercept": False,
         "impute_value": 0,
         "estimation_buffer_mult": 25,
-        "use_next_state": False,
     },
     "impute-missing": {
         "impute_value": 0,
