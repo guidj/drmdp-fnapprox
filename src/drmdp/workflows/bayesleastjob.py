@@ -25,8 +25,11 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
                     "args": {
                         "init_attempt_estimation_episode": init_attempt_estimation_episodes,
                         "mode": mode,
-                        "feats_spec": feats_spec,
-                        "use_bias": False,
+                        "transition_feats_spec": {
+                            "name": "current-features",
+                            "args": {"current_spec": feats_spec},
+                        },
+                        "intercept": False,
                     },
                 },
                 "delay_config": {"name": "fixed", "args": {"delay": 2}},
@@ -44,8 +47,11 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
                     "args": {
                         "init_attempt_estimation_episode": init_attempt_estimation_episodes,
                         "mode": mode,
-                        "feats_spec": feats_spec,
-                        "use_bias": False,
+                        "transition_feats_spec": {
+                            "name": "current-features",
+                            "args": {"current_spec": feats_spec},
+                        },
+                        "intercept": False,
                     },
                 },
                 "delay_config": {"name": "fixed", "args": {"delay": 4}},
@@ -63,8 +69,11 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
                     "args": {
                         "init_attempt_estimation_episode": init_attempt_estimation_episodes,
                         "mode": mode,
-                        "feats_spec": feats_spec,
-                        "use_bias": False,
+                        "transition_feats_spec": {
+                            "name": "current-features",
+                            "args": {"current_spec": feats_spec},
+                        },
+                        "intercept": False,
                     },
                 },
                 "delay_config": {"name": "fixed", "args": {"delay": 6}},
@@ -82,8 +91,11 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
                     "args": {
                         "init_attempt_estimation_episode": init_attempt_estimation_episodes,
                         "mode": mode,
-                        "feats_spec": feats_spec,
-                        "use_bias": False,
+                        "transition_feats_spec": {
+                            "name": "current-features",
+                            "args": {"current_spec": feats_spec},
+                        },
+                        "intercept": False,
                     },
                 },
                 "delay_config": {"name": "fixed", "args": {"delay": 8}},
@@ -101,8 +113,11 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
                     "args": {
                         "init_attempt_estimation_episode": init_attempt_estimation_episodes,
                         "mode": mode,
-                        "feats_spec": feats_spec,
-                        "use_bias": False,
+                        "transition_feats_spec": {
+                            "name": "current-features",
+                            "args": {"current_spec": feats_spec},
+                        },
+                        "intercept": False,
                     },
                 },
                 "delay_config": {"name": "fixed", "args": {"delay": 2}},
@@ -120,8 +135,11 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
                     "args": {
                         "init_attempt_estimation_episode": init_attempt_estimation_episodes,
                         "mode": mode,
-                        "feats_spec": feats_spec,
-                        "use_bias": False,
+                        "transition_feats_spec": {
+                            "name": "current-features",
+                            "args": {"current_spec": feats_spec},
+                        },
+                        "intercept": False,
                     },
                 },
                 "delay_config": {"name": "fixed", "args": {"delay": 4}},
@@ -139,8 +157,11 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
                     "args": {
                         "init_attempt_estimation_episode": init_attempt_estimation_episodes,
                         "mode": mode,
-                        "feats_spec": feats_spec,
-                        "use_bias": False,
+                        "transition_feats_spec": {
+                            "name": "current-features",
+                            "args": {"current_spec": feats_spec},
+                        },
+                        "intercept": False,
                     },
                 },
                 "delay_config": {"name": "fixed", "args": {"delay": 6}},
@@ -158,8 +179,11 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
                     "args": {
                         "init_attempt_estimation_episode": init_attempt_estimation_episodes,
                         "mode": mode,
-                        "feats_spec": feats_spec,
-                        "use_bias": False,
+                        "transition_feats_spec": {
+                            "name": "current-features",
+                            "args": {"current_spec": feats_spec},
+                        },
+                        "intercept": False,
                     },
                 },
                 "delay_config": {"name": "fixed", "args": {"delay": 8}},
@@ -177,8 +201,11 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
                     "args": {
                         "init_attempt_estimation_episode": init_attempt_estimation_episodes,
                         "mode": mode,
-                        "feats_spec": feats_spec,
-                        "use_bias": False,
+                        "transition_feats_spec": {
+                            "name": "current-features",
+                            "args": {"current_spec": feats_spec},
+                        },
+                        "intercept": False,
                     },
                 },
                 "delay_config": {"name": "fixed", "args": {"delay": 2}},
@@ -196,8 +223,11 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
                     "args": {
                         "init_attempt_estimation_episode": init_attempt_estimation_episodes,
                         "mode": mode,
-                        "feats_spec": feats_spec,
-                        "use_bias": False,
+                        "transition_feats_spec": {
+                            "name": "current-features",
+                            "args": {"current_spec": feats_spec},
+                        },
+                        "intercept": False,
                     },
                 },
                 "delay_config": {"name": "fixed", "args": {"delay": 4}},
@@ -215,8 +245,11 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
                     "args": {
                         "init_attempt_estimation_episode": init_attempt_estimation_episodes,
                         "mode": mode,
-                        "feats_spec": feats_spec,
-                        "use_bias": False,
+                        "transition_feats_spec": {
+                            "name": "current-features",
+                            "args": {"current_spec": feats_spec},
+                        },
+                        "intercept": False,
                     },
                 },
                 "delay_config": {"name": "fixed", "args": {"delay": 6}},
@@ -234,8 +267,11 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
                     "args": {
                         "init_attempt_estimation_episode": init_attempt_estimation_episodes,
                         "mode": mode,
-                        "feats_spec": feats_spec,
-                        "use_bias": False,
+                        "transition_feats_spec": {
+                            "name": "current-features",
+                            "args": {"current_spec": feats_spec},
+                        },
+                        "intercept": False,
                     },
                 },
                 "delay_config": {"name": "fixed", "args": {"delay": 8}},

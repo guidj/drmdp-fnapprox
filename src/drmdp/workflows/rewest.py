@@ -67,7 +67,7 @@ class JobSpec:
     rewest_args: Mapping[str, Any]
     reward_delay: int
     num_episodes: int
-    use_bias: bool
+    intercept: bool
     epochs: int
     turn: int
 
@@ -157,7 +157,10 @@ def discrete_least_specs(
                 "name": "discrete-least-lfa",
                 "args": {
                     "attempt_estimation_episode": aee,
-                    "feats_spec": feat_spec,
+                    "transition_feats_spec": {
+                        "name": "current-features",
+                        "args": {"current_spec": feat_spec},
+                    },
                     "estimation_buffer_mult": est_buffer_mult,
                 },
             }
@@ -182,7 +185,10 @@ def least_specs(
                 "name": "least-lfa",
                 "args": {
                     "attempt_estimation_episode": aee,
-                    "feats_spec": feat_spec,
+                    "transition_feats_spec": {
+                        "name": "current-features",
+                        "args": {"current_spec": feat_spec},
+                    },
                     "estimation_buffer_mult": est_buffer_mult,
                 },
             }
@@ -208,7 +214,10 @@ def bayes_least_specs(
                 "args": {
                     "init_attempt_estimation_episode": iaee,
                     "mode": "exponential",
-                    "feats_spec": feat_spec,
+                    "transition_feats_spec": {
+                        "name": "current-features",
+                        "args": {"current_spec": feat_spec},
+                    },
                     "estimation_buffer_mult": est_buffer_mult,
                 },
             }
@@ -234,7 +243,10 @@ def cvlps_specs(
                 "name": "cvlps",
                 "args": {
                     "attempt_estimation_episode": aee,
-                    "feats_spec": feat_spec,
+                    "transition_feats_spec": {
+                        "name": "current-features",
+                        "args": {"current_spec": feat_spec},
+                    },
                     "constraints_buffer_limit": constraints_buffer_limit,
                     "estimation_buffer_mult": est_buffer_mult,
                 },
@@ -262,7 +274,10 @@ def recurring_cvlps(
                 "args": {
                     "init_attempt_estimation_episode": iaee,
                     "mode": "exponential",
-                    "feats_spec": feat_spec,
+                    "transition_feats_spec": {
+                        "name": "current-features",
+                        "args": {"current_spec": feat_spec},
+                    },
                     "constraints_buffer_limit": constraints_buffer_limit,
                     "estimation_buffer_mult": est_buffer_mult,
                 },
@@ -505,7 +520,7 @@ def run_reward_estimation_study(specs, turns: int, num_episodes: int, output_pat
                 reward_delay=reward_delay,
                 rewest_method=rewest_spec["name"],
                 rewest_args=rewest_spec["args"],
-                use_bias=False,
+                intercept=False,
                 epochs=spec["epochs"],
                 turn=turn,
             )

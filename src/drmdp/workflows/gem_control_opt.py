@@ -121,7 +121,10 @@ def feats_spec_control(job_spec: JobSpec, task_id: str):
         records.append(
             {
                 "env_name": job_spec.env_name,
-                "feats_spec": job_spec.feats_spec,
+                "transition_feats_spec": {
+                    "name": "current-features",
+                    "args": {"current_spec": job_spec.feats_spec},
+                },
                 "policy": job_spec.policy_type,
                 "turn": job_spec.turn,
                 "episode": episode,

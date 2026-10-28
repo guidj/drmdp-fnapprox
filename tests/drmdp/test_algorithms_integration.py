@@ -184,17 +184,20 @@ class TestPolicyControlEndToEnd:
                     "name": "least-lfa",
                     "args": {
                         "attempt_estimation_episode": 3,
-                        "use_bias": False,
                         "impute_value": 0,
                         "estimation_buffer_mult": 25,
-                        "use_next_state": False,
                         "check_factors": True,
-                        "feats_spec": [
-                            {
-                                "name": "tile-observation-action-ft",
-                                "args": {"tiling_dim": 2},
-                            }
-                        ],
+                        "transition_feats_spec": {
+                            "name": "current-features",
+                            "args": {
+                                "current_spec": [
+                                    {
+                                        "name": "tile-observation-action-ft",
+                                        "args": {"tiling_dim": 2},
+                                    }
+                                ]
+                            },
+                        },
                     },
                 },
                 delay_config={"name": "fixed", "args": {"delay": 3}},

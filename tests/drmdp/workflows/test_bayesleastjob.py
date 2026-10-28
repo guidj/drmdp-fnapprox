@@ -26,5 +26,6 @@ class TestBayesLeastSpecs:
         feats = {"name": "custom-ft", "args": {"dim": 7}}
         result = bayesleastjob.bayes_least_specs(feats_spec=feats)
         for spec in result:
-            mapper_feats = spec["reward_mapper"]["args"]["feats_spec"]
-            assert mapper_feats == feats
+            mapper_feats = spec["reward_mapper"]["args"]["transition_feats_spec"]
+            assert mapper_feats["name"] == "current-features"
+            assert mapper_feats["args"]["current_spec"] == feats

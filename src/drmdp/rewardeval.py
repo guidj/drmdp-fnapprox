@@ -9,15 +9,13 @@ have a single probability-1 entry). Continuous environments are sampled
 with a random policy on the clean proxy env: `num_samples` steps per
 call, resetting at episode ends.
 
-Feature computation mirrors the generative reward wrappers, so the
-error is measured in the estimator's own representation: `ft_op` on
-(obs, action), next-state concatenation when the estimator uses it,
-and a bias column when the estimator fits one.
+Feature computation reuses the estimator's own transition-feature
+function, so the error is measured in the representation the estimator
+fits and no second feature implementation can drift from it.
 
 True rewards come from the proxy env: shaped and un-noised, matching
 the target the estimator infers from the delayed, noisy training
-rewards. For a shaped discrete env the transition-table rewards would
-need shaping applied; no such env is in the experiment families.
+rewards.
 """
 
 from collections.abc import Callable, Mapping
@@ -26,16 +24,15 @@ from typing import Any
 import gymnasium as gym
 import numpy as np
 
-from drmdp import metrics, transform
+from drmdp import metrics, rewardfeat
 
 DEFAULT_NUM_SAMPLES = 10_000
 
 
 def true_reward_error_fn(
     proxy_env: gym.Env,
-    ft_op: transform.FTOp,
-    use_bias: bool = False,
-    use_next_state: bool = False,
+    feats_fn: rewardfeat.TransitionFeatureFn,
+    intercept: bool = False,
     num_samples: int = DEFAULT_NUM_SAMPLES,
     seed: int | None = None,
 ) -> Callable[[np.ndarray], Mapping[str, Any]]:
@@ -52,10 +49,8 @@ def true_reward_error_fn(
     Args:
         proxy_env: clean env (un-noised rewards) used as the source of
             true rewards and of random-policy samples.
-        ft_op: the estimator's feature operator.
-        use_bias: append a bias column, as the estimator does.
-        use_next_state: concatenate next-state features, as the estimator
-            does.
+        feats_fn: the estimator's transition-feature function.
+        intercept: append the intercept column the estimator fits.
         num_samples: random-policy steps per call on continuous envs.
         seed: seeds the sampler's action draws and first reset, for
             reproducible measurements; unseeded by default.
@@ -70,19 +65,15 @@ def true_reward_error_fn(
             if not discrete_cache:
                 discrete_cache = (
                     discrete_state_action_rewards(
-                        proxy_env=proxy_env,
-                        ft_op=ft_op,
-                        use_bias=use_bias,
-                        use_next_state=use_next_state,
+                        proxy_env=proxy_env, feats_fn=feats_fn, intercept=intercept
                     ),
                 )
             features, true_rewards = discrete_cache[0]
         else:
             features, true_rewards = random_policy_rewards(
                 proxy_env=proxy_env,
-                ft_op=ft_op,
-                use_bias=use_bias,
-                use_next_state=use_next_state,
+                feats_fn=feats_fn,
+                intercept=intercept,
                 num_samples=num_samples,
                 seed=seed,
             )
@@ -97,9 +88,8 @@ def true_reward_error_fn(
 
 def discrete_state_action_rewards(
     proxy_env: gym.Env,
-    ft_op: transform.FTOp,
-    use_bias: bool = False,
-    use_next_state: bool = False,
+    feats_fn: rewardfeat.TransitionFeatureFn,
+    intercept: bool = False,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Features and true rewards for every state-action pair of a discrete env.
@@ -110,6 +100,10 @@ def discrete_state_action_rewards(
     env's transition table, which is start-independent — cliff falls
     target the start given at construction — so one table serves every
     episode.
+
+    The transition table carries no `info`, so a feature that reads an
+    env event from `info` cannot be scored through enumeration; such a
+    feature raises at evaluation time rather than being scored zero.
     """
     transition = proxy_env.get_wrapper_attr("transition")
     states_mapping: Mapping[tuple[int, int], int] = proxy_env.get_wrapper_attr(
@@ -118,23 +112,24 @@ def discrete_state_action_rewards(
     position_by_id = {
         state_id: position for position, state_id in states_mapping.items()
     }
-    num_actions = proxy_env.action_space.n
+    action_space: gym.spaces.Discrete = proxy_env.action_space  # type: ignore[assignment]
+    num_actions = int(action_space.n)
     features: list[np.ndarray] = []
     true_rewards: list[float] = []
     for state_id in sorted(transition):
         obs = np.array(position_by_id[state_id], dtype=np.int64)
         for action in range(num_actions):
             entries = transition[state_id][action]
-            _, next_state_id, _, _ = max(entries, key=lambda entry: entry[0])
+            _, next_state_id, _, terminated = max(entries, key=lambda entry: entry[0])
             next_obs = np.array(position_by_id[next_state_id], dtype=np.int64)
             features.append(
                 step_features(
-                    ft_op=ft_op,
+                    feats_fn=feats_fn,
                     obs=obs,
                     action=action,
                     next_obs=next_obs,
-                    use_bias=use_bias,
-                    use_next_state=use_next_state,
+                    terminated=bool(terminated),
+                    intercept=intercept,
                 )
             )
             # expected reward over the transition's outcomes;
@@ -147,9 +142,8 @@ def discrete_state_action_rewards(
 
 def random_policy_rewards(
     proxy_env: gym.Env,
-    ft_op: transform.FTOp,
-    use_bias: bool = False,
-    use_next_state: bool = False,
+    feats_fn: rewardfeat.TransitionFeatureFn,
+    intercept: bool = False,
     num_samples: int = DEFAULT_NUM_SAMPLES,
     seed: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -168,15 +162,17 @@ def random_policy_rewards(
     true_rewards: list[float] = []
     for _ in range(num_samples):
         action = proxy_env.action_space.sample()
-        next_obs, reward, term, trunc, _ = proxy_env.step(action)
+        next_obs, reward, term, trunc, info = proxy_env.step(action)
         features.append(
             step_features(
-                ft_op=ft_op,
+                feats_fn=feats_fn,
                 obs=obs,
                 action=action,
                 next_obs=next_obs,
-                use_bias=use_bias,
-                use_next_state=use_next_state,
+                terminated=term,
+                truncated=trunc,
+                info=info,
+                intercept=intercept,
             )
         )
         true_rewards.append(float(reward))
@@ -187,31 +183,33 @@ def random_policy_rewards(
 
 
 def step_features(
-    ft_op: transform.FTOp,
+    feats_fn: rewardfeat.TransitionFeatureFn,
     obs: np.ndarray,
     action: int,
     next_obs: np.ndarray,
-    use_bias: bool = False,
-    use_next_state: bool = False,
+    terminated: bool = False,
+    truncated: bool = False,
+    info: Mapping[str, Any] | None = None,
+    intercept: bool = False,
 ) -> np.ndarray:
     """
-    Estimator features for one step, mirroring the reward wrappers.
+    Estimator features for one step, computed by the estimator's own hook.
 
-    `use_next_state` concatenates next-state features (computed with
-    action 0, as the wrappers do); `use_bias` appends the constant
-    column the estimator fits.
+    `intercept` appends the intercept column the estimator fits, so the
+    scoring basis matches the fitted one.
     """
-    step_feats = np.asarray(
-        ft_op(transform.Example(obs, action)).observation, dtype=np.float64
+    transition = rewardfeat.Transition(
+        observation=obs,
+        action=action,
+        next_observation=next_obs,
+        terminated=terminated,
+        truncated=truncated,
+        info=info if info is not None else {},
     )
-    if use_next_state:
-        next_feats = np.asarray(
-            ft_op(transform.Example(next_obs, 0)).observation, dtype=np.float64
-        )
-        step_feats = np.concatenate([step_feats, next_feats])
-    if use_bias:
-        step_feats = np.concatenate([step_feats, np.array([1.0])])
-    return step_feats
+    features = np.asarray(feats_fn(transition), dtype=np.float64)
+    if intercept:
+        features = np.concatenate([features, np.array([1.0])])
+    return features
 
 
 def supports_discrete_enumeration(env: gym.Env) -> bool:

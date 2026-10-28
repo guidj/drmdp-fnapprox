@@ -182,7 +182,7 @@ class JobSpec:
     gamma: float
     estimation_episode: int
     num_episodes: int
-    use_bias: bool
+    intercept: bool
     epochs: int
     run_id: int
 
@@ -199,7 +199,7 @@ class RewardModelArtifact:
     reward_delay: int
     gamma: float
     weights: np.ndarray
-    use_bias: bool
+    intercept: bool
     ft_op_spec: list[Mapping[str, Any]]
     # Bayesian-specific fields
     mv_normal_mean: np.ndarray | None = None
@@ -219,7 +219,10 @@ def least_lfa_specs(
                 "name": "least-lfa",
                 "args": {
                     "attempt_estimation_episode": aee,
-                    "feats_spec": feat_spec,
+                    "transition_feats_spec": {
+                        "name": "current-features",
+                        "args": {"current_spec": feat_spec},
+                    },
                     "estimation_buffer_mult": 25,
                 },
             }
@@ -242,7 +245,10 @@ def bayes_least_lfa_specs(
                 "args": {
                     "init_attempt_estimation_episode": iaee,
                     "mode": "exponential",
-                    "feats_spec": feat_spec,
+                    "transition_feats_spec": {
+                        "name": "current-features",
+                        "args": {"current_spec": feat_spec},
+                    },
                     "estimation_buffer_mult": 25,
                 },
             }
@@ -510,7 +516,7 @@ def create_all_job_specs(
                     estimation_episode=est_episode,
                     rewest_method=rewest_spec["name"],
                     rewest_args=rewest_spec["args"],
-                    use_bias=False,
+                    intercept=False,
                     epochs=spec["epochs"],
                     run_id=run_id,
                 )
@@ -595,7 +601,7 @@ def extract_reward_model_from_wrapper(
             reward_delay=job_spec.reward_delay,
             gamma=job_spec.gamma,
             weights=wrapper.weights.copy(),
-            use_bias=wrapper.use_bias,
+            intercept=wrapper.intercept,
             ft_op_spec=ft_op_spec,
             mv_normal_mean=None,
             mv_normal_cov=None,
@@ -618,7 +624,7 @@ def extract_reward_model_from_wrapper(
             reward_delay=job_spec.reward_delay,
             gamma=job_spec.gamma,
             weights=wrapper.mv_normal_rewards.mean.copy(),
-            use_bias=wrapper.use_bias,
+            intercept=wrapper.intercept,
             ft_op_spec=ft_op_spec,
             mv_normal_mean=wrapper.mv_normal_rewards.mean.copy(),
             mv_normal_cov=wrapper.mv_normal_rewards.cov.copy(),

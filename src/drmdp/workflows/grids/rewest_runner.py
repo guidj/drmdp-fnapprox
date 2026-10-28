@@ -98,7 +98,13 @@ def run_reward_estimation(
         ]
         mapping_spec = {
             "name": method,
-            "args": {**method_args, "feats_spec": rewest_feats_spec},
+            "args": {
+                **method_args,
+                "transition_feats_spec": {
+                    "name": "current-features",
+                    "args": {"current_spec": rewest_feats_spec},
+                },
+            },
         }
 
     env = envs.make(env_name=env_name, **env_args)

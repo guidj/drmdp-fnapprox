@@ -21,7 +21,7 @@ class TestCreateExpInstance:
             },
             reward_delay=3,
             num_episodes=100,
-            use_bias=False,
+            intercept=False,
             epochs=3,
             turn=0,
         )
@@ -37,7 +37,7 @@ class TestCreateExpInstance:
             rewest_args={},
             reward_delay=5,
             num_episodes=100,
-            use_bias=False,
+            intercept=False,
             epochs=1,
             turn=0,
         )
@@ -55,7 +55,7 @@ class TestCreateExpInstance:
             rewest_args={},
             reward_delay=3,
             num_episodes=100,
-            use_bias=False,
+            intercept=False,
             epochs=1,
             turn=7,
         )

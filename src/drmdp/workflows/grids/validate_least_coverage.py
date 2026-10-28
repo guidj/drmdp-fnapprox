@@ -35,7 +35,7 @@ METHOD_CONFIGS: dict[str, dict[str, Any]] = {
     "identity": {},
     "least-lfa": {
         "attempt_estimation_episode": 10,
-        "use_bias": False,
+        "intercept": False,
         "impute_value": 0,
         "estimation_buffer_mult": 25,
         "use_next_state": False,
@@ -44,7 +44,7 @@ METHOD_CONFIGS: dict[str, dict[str, Any]] = {
     "bayes-least-lfa": {
         "init_attempt_estimation_episode": 10,
         "mode": "exponential",
-        "use_bias": False,
+        "intercept": False,
         "impute_value": 0,
         "estimation_buffer_mult": 25,
         "use_next_state": False,

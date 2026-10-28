@@ -15,6 +15,7 @@ from drmdp import (
     logger,
     optsol,
     rewardeval,
+    rewardfeat,
     rewdelay,
     transform,
 )
@@ -345,57 +346,95 @@ def delay_wrapper(env: gym.Env, reward_delay: rewdelay.RewardDelay | None) -> gy
     return env
 
 
+ESTIMATOR_MAPPERS = frozenset(
+    {
+        "discrete-least-lfa",
+        "least-lfa",
+        "bayes-least-lfa",
+        "cvlps",
+        "recurring-cvlps",
+    }
+)
+
+
 def reward_mapper(env: gym.Env, proxy_env: gym.Env, mapping_spec: Mapping[str, Any]):
     """
     Creates a mapper for handling missing rewards.
     """
     name = mapping_spec["name"]
     m_args = dict(**(mapping_spec["args"] or {}))
-    enc_feats_spec = m_args.pop("feats_spec") if "feats_spec" in m_args else []
-    ft_op = create_ft_ops(proxy_env, feats_spec=enc_feats_spec)
 
     if name == "identity":
         return env
     elif name == "impute-missing":
         return rewdelay.ImputeMissingRewardWrapper(env, **m_args)
-    elif name == "discrete-least-lfa":
+    elif name not in ESTIMATOR_MAPPERS:
+        raise ValueError(f"Unknown mapping_method: {mapping_spec}")
+
+    feats_fn = estimator_feats_fn(proxy_env, name, m_args)
+    intercept = bool(m_args.get("intercept", False))
+
+    if name == "discrete-least-lfa":
         return rewdelay.DiscretisedLeastLfaGenerativeRewardWrapper(
             env=env,
-            ft_op=ft_op,
+            feats_fn=feats_fn,
             **m_args,
         )
     elif name == "least-lfa":
         return rewdelay.LeastLfaGenerativeRewardWrapper(
             env=env,
-            ft_op=ft_op,
-            reward_error_fn=true_reward_error_fn(proxy_env, ft_op, m_args),
+            feats_fn=feats_fn,
+            reward_error_fn=true_reward_error_fn(proxy_env, feats_fn, intercept),
             **m_args,
         )
     elif name == "bayes-least-lfa":
         return rewdelay.BayesLeastLfaGenerativeRewardWrapper(
             env=env,
-            ft_op=ft_op,
-            reward_error_fn=true_reward_error_fn(proxy_env, ft_op, m_args),
+            feats_fn=feats_fn,
+            reward_error_fn=true_reward_error_fn(proxy_env, feats_fn, intercept),
             **m_args,
         )
     elif name == "cvlps":
         return rewdelay.ConvexSolverGenerativeRewardWrapper(
             env=env,
-            ft_op=ft_op,
+            feats_fn=feats_fn,
             **m_args,
         )
     elif name == "recurring-cvlps":
         return rewdelay.RecurringConvexSolverGenerativeRewardWrapper(
             env=env,
-            ft_op=ft_op,
+            feats_fn=feats_fn,
             **m_args,
         )
 
     raise ValueError(f"Unknown mapping_method: {mapping_spec}")
 
 
+def estimator_feats_fn(
+    proxy_env: gym.Env, name: str, mapper_args: dict[str, Any]
+) -> rewardfeat.TransitionFeatureFn:
+    """
+    Builds an estimator's transition-feature function from its specification.
+
+    Pops `transition_feats_spec` from the mapper args and rejects the
+    removed `feats_spec` key: an estimator's features come from a
+    transition, never from the control pipeline's operators.
+    """
+    if "feats_spec" in mapper_args:
+        raise ValueError(
+            f"{name}: estimator mappers no longer accept feats_spec; "
+            "use transition_feats_spec"
+        )
+    spec = mapper_args.pop("transition_feats_spec", None)
+    if spec is None:
+        raise ValueError(f"{name}: estimator mappers require transition_feats_spec")
+    return rewardfeat.transition_feature_fn(proxy_env, spec)
+
+
 def true_reward_error_fn(
-    proxy_env: gym.Env, ft_op: transform.FTOp, mapper_args: Mapping[str, Any]
+    proxy_env: gym.Env,
+    feats_fn: rewardfeat.TransitionFeatureFn,
+    intercept: bool = False,
 ) -> Callable[[np.ndarray], Mapping[str, Any]]:
     """
     True-reward error evaluator for an estimator mapper.
@@ -408,9 +447,8 @@ def true_reward_error_fn(
     """
     return rewardeval.true_reward_error_fn(
         proxy_env=proxy_env,
-        ft_op=ft_op,
-        use_bias=mapper_args.get("use_bias", False),
-        use_next_state=mapper_args.get("use_next_state", False),
+        feats_fn=feats_fn,
+        intercept=intercept,
         seed=REWARD_ERROR_SAMPLING_SEED,
     )
 

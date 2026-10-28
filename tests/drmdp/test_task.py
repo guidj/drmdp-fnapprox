@@ -257,17 +257,20 @@ class TestRewardMapper:
                 "name": "least-lfa",
                 "args": {
                     "attempt_estimation_episode": 10,
-                    "use_bias": False,
                     "impute_value": 0,
                     "estimation_buffer_mult": 25,
-                    "use_next_state": False,
                     "check_factors": False,
-                    "feats_spec": [
-                        {
-                            "name": "tile-observation-action-ft",
-                            "args": {"tiling_dim": 2},
-                        }
-                    ],
+                    "transition_feats_spec": {
+                        "name": "current-features",
+                        "args": {
+                            "current_spec": [
+                                {
+                                    "name": "tile-observation-action-ft",
+                                    "args": {"tiling_dim": 2},
+                                }
+                            ]
+                        },
+                    },
                 },
             },
         )
@@ -290,15 +293,19 @@ class TestRewardMapper:
                 "name": "bayes-least-lfa",
                 "args": {
                     "init_attempt_estimation_episode": 10,
-                    "use_bias": False,
                     "impute_value": 0,
                     "estimation_buffer_mult": 25,
-                    "feats_spec": [
-                        {
-                            "name": "tile-observation-action-ft",
-                            "args": {"tiling_dim": 2},
-                        }
-                    ],
+                    "transition_feats_spec": {
+                        "name": "current-features",
+                        "args": {
+                            "current_spec": [
+                                {
+                                    "name": "tile-observation-action-ft",
+                                    "args": {"tiling_dim": 2},
+                                }
+                            ]
+                        },
+                    },
                 },
             },
         )
