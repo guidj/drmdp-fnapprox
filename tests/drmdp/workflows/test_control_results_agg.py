@@ -30,6 +30,44 @@ class TestConvertMetadataToMapping:
         assert "/c/d" in result
 
 
+class TestNormalizeMetadata:
+    """Empty env-spec metadata maps to None so Arrow writes a null field."""
+
+    def _entry(self, metadata):
+        return {
+            "experiment": {
+                "env_spec": {"name": "MountainCar-v0", "metadata": metadata}
+            },
+            "run_config": {"episodes_per_run": 100},
+        }
+
+    def test_empty_metadata_becomes_none(self):
+        result = agg._normalize_metadata({"/run": self._entry({})})
+        assert result["/run"]["experiment"]["env_spec"]["metadata"] is None
+
+    def test_none_metadata_stays_none(self):
+        result = agg._normalize_metadata({"/run": self._entry(None)})
+        assert result["/run"]["experiment"]["env_spec"]["metadata"] is None
+
+    def test_populated_metadata_is_preserved(self):
+        result = agg._normalize_metadata({"/run": self._entry({"size": [10, 10]})})
+        assert result["/run"]["experiment"]["env_spec"]["metadata"] == {
+            "size": [10, 10]
+        }
+
+    def test_missing_metadata_key_is_untouched(self):
+        entry = self._entry(None)
+        del entry["experiment"]["env_spec"]["metadata"]
+        result = agg._normalize_metadata({"/run": entry})
+        assert "metadata" not in result["/run"]["experiment"]["env_spec"]
+
+    def test_empty_dict_fields_outside_env_spec_are_untouched(self):
+        entry = self._entry({})
+        entry["run_config"] = {}
+        result = agg._normalize_metadata({"/run": entry})
+        assert result["/run"]["run_config"] == {}
+
+
 class TestChunks:
     def test_even_chunks(self):
         result = list(agg.chunks([1, 2, 3, 4], 2))

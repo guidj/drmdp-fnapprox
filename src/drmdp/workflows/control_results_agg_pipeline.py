@@ -199,12 +199,31 @@ def parse_experiment_logs(paths: Sequence[str]) -> ray.data.Dataset:
     return ds_logs
 
 
+def _normalize_metadata(metadata: Mapping[str, Any]) -> Mapping[str, Any]:
+    """
+    Experiment-params entries with empty env-spec metadata mapped to None.
+
+    An empty dict reaches Arrow as a fieldless struct, which pyarrow cannot
+    write to Parquet; `EnvSpec.metadata` allows None and its readers fall
+    back to an empty mapping.
+    """
+    normalized = {}
+    for path, entry in metadata.items():
+        env_spec = entry["experiment"]["env_spec"]
+        if isinstance(env_spec.get("metadata"), Mapping) and not env_spec["metadata"]:
+            entry = copy.deepcopy(entry)
+            entry["experiment"]["env_spec"]["metadata"] = None
+        normalized[path] = entry
+    return normalized
+
+
 def join_logs_and_metadata(
     ds_logs: ray.data.Dataset, metadata: Mapping[str, Any]
 ) -> ray.data.Dataset:
     """
     Parses logs for an experiment.
     """
+    metadata = _normalize_metadata(metadata)
 
     def get_exp_id(df: pd.DataFrame) -> pd.Series:
         return df["meta"].apply(lambda meta: meta["exp_id"])  # type: ignore

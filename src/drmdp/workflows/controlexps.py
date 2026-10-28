@@ -539,7 +539,7 @@ def illustration_experiment_specs(
                 init_attempt_estimation_episodes=(10,),
                 feats_specs=mc_est_feats,
             ),
-            "metadata": {},
+            "metadata": None,
             "epochs": 10,
         },
         {
@@ -578,7 +578,7 @@ def illustration_experiment_specs(
                 init_attempt_estimation_episodes=(10,),
                 feats_specs=acrobot_est_feats,
             ),
-            "metadata": {},
+            "metadata": None,
             "epochs": 10,
         },
         {
@@ -612,7 +612,7 @@ def illustration_experiment_specs(
                 init_attempt_estimation_episodes=(10,),
                 feats_specs=gw_est_feats,
             ),
-            "metadata": {},
+            "metadata": None,
             "epochs": 5,
         },
     ]
@@ -795,7 +795,7 @@ def gaussian_illustration_experiment_specs(
                     "args": env_args,
                     "feats_specs": template["feats_specs"],
                     "problem_specs": template["problem_specs_fn"](),
-                    "metadata": {},
+                    "metadata": None,
                     "epochs": template["epochs"],
                 }
             )
