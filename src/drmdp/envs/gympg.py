@@ -125,8 +125,17 @@ class GridWorldObsAsVectorWrapper(gym.ObservationWrapper):
         )
 
     def discrete_transition_model(self) -> models.DiscreteTransitionModel | None:
-        """Exposes the table only for implementations with matching rewards."""
-        if type(self._grid_env) not in (gridworld.GridWorld, RandomStartGridWorld):
+        """Exposes the table only when transition rewards match runtime rewards.
+
+        Subclasses that override ``step`` may alter rewards without updating
+        the transition table, so the model is only safe when ``step`` is the
+        inherited base-class implementation.
+        """
+        if not hasattr(self._grid_env, "transition"):
+            return None
+        # A subclass that overrides step() can change rewards without
+        # updating the table; reject unless step is inherited.
+        if type(self._grid_env).step is not gridworld.GridWorld.step:
             return None
         return models.DiscreteTransitionModel(
             observations={
