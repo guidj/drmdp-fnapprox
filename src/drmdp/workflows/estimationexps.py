@@ -24,7 +24,7 @@ LEARNING_RATE_SPEC = {
     "args": {"initial_lr": 0.01},
 }
 ATTEMPT_ESTIMATION_EPISODE = 10
-ESTIMATION_BUFFER_MULT = 25
+ESTIMATION_BUFFER_MULT = 100
 
 # estimation-episode caps: one-shot LEAST stops at its first estimation
 # event, so the cap matters for the encodings that defer or update
