@@ -3,13 +3,14 @@
 import json
 import os
 import tempfile
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from typing import Any
 
 import numpy as np
 
 from drmdp import algorithms, core, envs, logger, rewdelay, task, transform
 from drmdp.workflows import controlexps
+from tests.drmdp.testhelpers import assert_training_snapshots
 
 
 class TestOptionsSemigradientSARSA:
@@ -41,7 +42,7 @@ class TestOptionsSemigradientSARSA:
         assert isinstance(algo, algorithms.OptionsSemigradientSARSAFnApprox)
 
         snapshots = list(algo.train(env=env, num_episodes=5, monitor=mon))
-        _assert_training_snapshots(snapshots, expected_count=5)
+        assert_training_snapshots(snapshots, expected_count=5)
         assert mon.step > 0
         env.close()
 
@@ -71,7 +72,7 @@ class TestOptionsSemigradientSARSA:
             base_seed=0,
         )
         snapshots = list(algo.train(env=env, num_episodes=5, monitor=mon))
-        _assert_training_snapshots(snapshots, expected_count=5)
+        assert_training_snapshots(snapshots, expected_count=5)
         assert mon.step > 0
         env.close()
 
@@ -101,7 +102,7 @@ class TestDropMissingSemigradientSARSA:
         assert isinstance(algo, algorithms.DropMissingSemigradientSARSAFnApprox)
 
         snapshots = list(algo.train(env=env, num_episodes=10, monitor=mon))
-        _assert_training_snapshots(snapshots, expected_count=10)
+        assert_training_snapshots(snapshots, expected_count=10)
         assert mon.step > 0
         env.close()
 
@@ -127,7 +128,7 @@ class TestDropMissingSemigradientSARSA:
             base_seed=42,
         )
         snapshots = list(algo.train(env=env, num_episodes=5, monitor=mon))
-        _assert_training_snapshots(snapshots, expected_count=5)
+        assert_training_snapshots(snapshots, expected_count=5)
         initial_weights = snapshots[0].weights
         final_weights = snapshots[-1].weights
         assert not np.array_equal(initial_weights, final_weights)
@@ -184,17 +185,20 @@ class TestPolicyControlEndToEnd:
                     "name": "least-lfa",
                     "args": {
                         "attempt_estimation_episode": 3,
-                        "use_bias": False,
                         "impute_value": 0,
                         "estimation_buffer_mult": 25,
-                        "use_next_state": False,
                         "check_factors": True,
-                        "feats_spec": [
-                            {
-                                "name": "tile-observation-action-ft",
-                                "args": {"tiling_dim": 2},
-                            }
-                        ],
+                        "transition_feats_spec": {
+                            "name": "current-features",
+                            "args": {
+                                "current_spec": [
+                                    {
+                                        "name": "tile-observation-action-ft",
+                                        "args": {"tiling_dim": 2},
+                                    }
+                                ]
+                            },
+                        },
                     },
                 },
                 delay_config={"name": "fixed", "args": {"delay": 3}},
@@ -241,24 +245,6 @@ class TestPolicyControlEndToEnd:
             unshaped_returns = _read_log_entries(unshaped_dir)[0]["returns"]
             shaped_returns = _read_log_entries(shaped_dir)[0]["returns"]
             assert unshaped_returns != shaped_returns
-
-
-def _assert_training_snapshots(
-    snapshots: Sequence[algorithms.PolicyControlSnapshot],
-    expected_count: int,
-):
-    """Verify invariant properties that every training run must satisfy."""
-    assert len(snapshots) == expected_count
-    for snapshot in snapshots:
-        assert isinstance(snapshot, algorithms.PolicyControlSnapshot)
-        assert snapshot.steps > 0
-        assert isinstance(snapshot.weights, np.ndarray)
-        assert np.isfinite(snapshot.returns)
-
-    shapes = [snap.weights.shape for snap in snapshots]
-    assert len(set(shapes)) == 1, f"Inconsistent weight shapes: {set(shapes)}"
-
-    assert not np.all(snapshots[-1].weights == 0)
 
 
 def _make_experiment_instance(

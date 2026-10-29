@@ -1,11 +1,10 @@
-import dataclasses
-
 import gymnasium as gym
 import numpy as np
 import pytest
 from gymnasium import spaces
 
 from drmdp import optsol, rewdelay, transform
+from tests.drmdp.hookhelpers import FTOpHook
 
 
 class TestDelayedRewardWrapper:
@@ -85,7 +84,7 @@ class TestDelayedRewardWrapper:
         assert wrapped.rewards == [1]
 
         # Seg 1, Step 2
-        # sement info has been reset
+        # segment info has been reset
         # for the next step
         wrapped.step(0)
         assert wrapped.segment == 1
@@ -414,9 +413,8 @@ class TestLeastLfaGenerativeRewardWrapper:
         delayed = rewdelay.DelayedRewardWrapper(env, rewdelay.FixedDelay(delay=delay))
         wrapper = rewdelay.LeastLfaGenerativeRewardWrapper(
             delayed,
-            ft_op=ft_op,
+            feats_fn=FTOpHook(ft_op),
             attempt_estimation_episode=1,
-            use_bias=False,
             check_factors=False,
         )
         return wrapper
@@ -437,10 +435,10 @@ class TestLeastLfaGenerativeRewardWrapper:
         env = DummyEnv()
         ft_op = DummyFTOp(env)
         wrapped = rewdelay.LeastLfaGenerativeRewardWrapper(
-            env, ft_op=ft_op, attempt_estimation_episode=5
+            env, feats_fn=FTOpHook(ft_op), attempt_estimation_episode=5
         )
 
-        assert wrapped
+        assert isinstance(wrapped, rewdelay.LeastLfaGenerativeRewardWrapper)
         assert wrapped.mdim == 4
         assert wrapped.weights is None
         assert wrapped.est_buffer.size() == 0
@@ -449,9 +447,8 @@ class TestLeastLfaGenerativeRewardWrapper:
         env = DummyEnv()
         wrapped = rewdelay.LeastLfaGenerativeRewardWrapper(
             rewdelay.DelayedRewardWrapper(env, rewdelay.FixedDelay(delay=2)),
-            ft_op=DummyFTOp(env),
+            feats_fn=FTOpHook(DummyFTOp(env)),
             attempt_estimation_episode=2,
-            use_bias=False,
         )
 
         obs, info = wrapped.reset()
@@ -484,32 +481,21 @@ class TestLeastLfaGenerativeRewardWrapper:
         assert wrapped.weights is not None
         np.testing.assert_equal(wrapped.est_buffer.buffer, buffer)
 
-    def test_least_lfa_generative_reward_wrapper_invalid_spaces(self):
-        env = DummyEnv()
-
-        # Test invalid observation space
-        with pytest.raises(TypeError):
-            ft_op = DummyFTOp(env)
-            ft_op._output_space = dataclasses.replace(
-                ft_op._output_space, observation_space=spaces.Discrete(5)
-            )
-            rewdelay.LeastLfaGenerativeRewardWrapper(
-                env,
-                ft_op=ft_op,
-                attempt_estimation_episode=5,
-            )
-
-        # Test invalid action space
-        with pytest.raises(TypeError):
-            ft_op = DummyFTOp(env)
-            ft_op._output_space = dataclasses.replace(
-                ft_op._output_space, action_space=spaces.Box(low=-1, high=1, shape=(1,))
-            )
-            rewdelay.LeastLfaGenerativeRewardWrapper(
-                env,
-                ft_op=ft_op,
-                attempt_estimation_episode=5,
-            )
+    def test_intercept_extends_the_fitted_weights(self):
+        """A constant column is appended to the design, so weights gain one entry."""
+        env = DummyEnv(term_steps=2)
+        delayed = rewdelay.DelayedRewardWrapper(env, rewdelay.FixedDelay(delay=2))
+        wrapper = rewdelay.LeastLfaGenerativeRewardWrapper(
+            delayed,
+            feats_fn=FTOpHook(DummyFTOp(env)),
+            intercept=True,
+            attempt_estimation_episode=1,
+            check_factors=False,
+        )
+        drive_episodes(wrapper, num_episodes=3, steps_per_episode=4)
+        assert wrapper.weights is not None
+        assert wrapper.weights.shape == (wrapper.mdim + 1,)
+        assert wrapper.estimation_meta["intercept"] is True
 
     def test_least_lfa_generative_reward_wrapper_with_next_state(self):
         """Test that use_next_state=True doubles mdim and concatenates features."""
@@ -549,13 +535,10 @@ class TestLeastLfaGenerativeRewardWrapper:
         env = DummyEnv()
         ft_op = StateDependentFTOp(env)
 
-        # Create wrapper with use_next_state=True
         wrapped = rewdelay.LeastLfaGenerativeRewardWrapper(
             rewdelay.DelayedRewardWrapper(env, rewdelay.FixedDelay(delay=2)),
-            ft_op=ft_op,
+            feats_fn=FTOpHook(ft_op, successor=True),
             attempt_estimation_episode=2,
-            use_bias=False,
-            use_next_state=True,
         )
 
         # Verify mdim is doubled (2 * 2 = 4)
@@ -614,7 +597,7 @@ class TestLeastLfaGenerativeRewardWrapper:
         ft_op = DummyFTOp(env)
         wrapped = rewdelay.LeastLfaGenerativeRewardWrapper(
             delay_env,
-            ft_op=ft_op,
+            feats_fn=FTOpHook(ft_op),
             impute_value=0.0,
             attempt_estimation_episode=100,
         )
@@ -642,7 +625,7 @@ class TestLeastLfaGenerativeRewardWrapper:
         ft_op = DummyFTOp(env)
         wrapped = rewdelay.LeastLfaGenerativeRewardWrapper(
             delay_env,
-            ft_op=ft_op,
+            feats_fn=FTOpHook(ft_op),
             impute_value=0.0,
             attempt_estimation_episode=100,
         )
@@ -745,7 +728,7 @@ class TestLeastLfaGenerativeRewardWrapper:
         seen_weights = []
         wrapper = rewdelay.LeastLfaGenerativeRewardWrapper(
             delayed,
-            ft_op=DummyFTOp(env),
+            feats_fn=FTOpHook(DummyFTOp(env)),
             attempt_estimation_episode=2,
             check_factors=False,
             reward_error_fn=stub_reward_error_fn(seen_weights),
@@ -770,7 +753,7 @@ class TestLeastLfaGenerativeRewardWrapper:
         delayed = rewdelay.DelayedRewardWrapper(env, rewdelay.FixedDelay(delay=2))
         wrapper = rewdelay.LeastLfaGenerativeRewardWrapper(
             delayed,
-            ft_op=DummyFTOp(env),
+            feats_fn=FTOpHook(DummyFTOp(env)),
             attempt_estimation_episode=2,
             check_factors=False,
         )
@@ -793,7 +776,7 @@ class TestLeastLfaGenerativeRewardWrapper:
 
         wrapper = rewdelay.LeastLfaGenerativeRewardWrapper(
             delayed,
-            ft_op=DummyFTOp(env),
+            feats_fn=FTOpHook(DummyFTOp(env)),
             attempt_estimation_episode=2,
             check_factors=False,
             reward_error_fn=failing_error_fn,
@@ -804,18 +787,17 @@ class TestLeastLfaGenerativeRewardWrapper:
         assert wrapper.estimation_meta["reward_errors"] == []
 
 
-class TestDiscretisedLeastLfaGenerativeRewardWrapper:
-    """Tests per-step reward prediction in DiscretisedLeastLfaGenerativeRewardWrapper."""
+class TestLeastLfaDiscreteFeatures:
+    """Tests per-step reward prediction with discrete feature inputs."""
 
     def _make_wrapper(self, term_steps, delay, num_features=4):
         env = DummyEnv(term_steps=term_steps)
         ft_op = DiscreteDummyFTOp(env, num_features=num_features)
         delayed = rewdelay.DelayedRewardWrapper(env, rewdelay.FixedDelay(delay=delay))
-        wrapper = rewdelay.DiscretisedLeastLfaGenerativeRewardWrapper(
+        wrapper = rewdelay.LeastLfaGenerativeRewardWrapper(
             delayed,
-            ft_op=ft_op,
+            feats_fn=FTOpHook(ft_op),
             attempt_estimation_episode=1,
-            use_bias=False,
             check_factors=False,
         )
         return wrapper
@@ -867,6 +849,101 @@ class TestDiscretisedLeastLfaGenerativeRewardWrapper:
             assert abs(reward) <= np.max(np.abs(wrapper.weights)) + 1e-6
 
 
+class TestEstimationAttemptRecords:
+    """Steps, wall-time, and deferral records of estimation attempts."""
+
+    class _DeadColumnFeatures:
+        """Two features, the second always zero: coverage caps below width."""
+
+        @property
+        def feature_dim(self) -> int:
+            return 2
+
+        def __call__(self, transition) -> np.ndarray:
+            del transition
+            return np.array([1.0, 0.0])
+
+    class _ConstantErrorFn:
+        """A fixed error report, so the record's metadata is the test target."""
+
+        def __call__(self, weights: np.ndarray):
+            del weights
+            return {"rmse": 0.5, "num_samples": 10}
+
+    def _run(self, check_factors: bool, episodes: int = 3):
+        env = DummyEnv(term_steps=2)
+        delayed = rewdelay.DelayedRewardWrapper(
+            env, reward_delay=rewdelay.FixedDelay(delay=2)
+        )
+        wrapper = rewdelay.LeastLfaGenerativeRewardWrapper(
+            delayed,
+            feats_fn=self._DeadColumnFeatures(),
+            attempt_estimation_episode=1,
+            check_factors=check_factors,
+            reward_error_fn=self._ConstantErrorFn(),
+        )
+        wrapper.reset()
+        for _ in range(episodes):
+            done = False
+            while not done:
+                _, _, term, trunc, _ = wrapper.step(0)
+                done = term or trunc
+            wrapper.reset()
+        return wrapper
+
+    def test_event_records_steps_and_elapsed_time(self):
+        wrapper = self._run(check_factors=False)
+        # fires at the second episode's end: the buffer holds its second
+        # window there, after four environment steps
+        events = wrapper.estimation_meta["reward_errors"]
+        assert len(events) == 1
+        assert events[0]["update_index"] == 1
+        assert events[0]["episode"] == 2
+        assert events[0]["steps"] == 4
+        assert events[0]["elapsed_s"] >= 0.0
+        assert events[0]["rmse"] == 0.5
+        assert wrapper.weights is not None
+
+    def test_gate_deferral_records_the_buffer_state(self):
+        wrapper = self._run(check_factors=True)
+        # the second column never activates, so the coverage gate defers
+        # every scheduled attempt and never solves
+        assert wrapper.weights is None
+        assert wrapper.estimation_meta["reward_errors"] == []
+        deferred = wrapper.estimation_meta["deferred_attempts"]
+        assert len(deferred) == 2
+        first = deferred[0]
+        assert first["episode"] == 2
+        assert first["steps"] == 4
+        assert first["buffer_rows"] == 2
+        assert first["nonzero_columns"] == 1
+        assert first["matrix_columns"] == 2
+
+    def test_bayes_gate_deferral_keeps_the_posterior_unset(self):
+        env = DummyEnv(term_steps=2)
+        delayed = rewdelay.DelayedRewardWrapper(
+            env, reward_delay=rewdelay.FixedDelay(delay=2)
+        )
+        wrapper = rewdelay.BayesLeastLfaGenerativeRewardWrapper(
+            delayed,
+            feats_fn=self._DeadColumnFeatures(),
+            init_attempt_estimation_episode=1,
+            check_factors=True,
+        )
+        wrapper.reset()
+        for _ in range(3):
+            done = False
+            while not done:
+                _, _, term, trunc, _ = wrapper.step(0)
+                done = term or trunc
+            wrapper.reset()
+        assert wrapper.mv_normal_rewards is None
+        deferred = wrapper.estimation_meta["deferred_attempts"]
+        assert len(deferred) == 2
+        assert deferred[0]["nonzero_columns"] == 1
+        assert deferred[0]["matrix_columns"] == 2
+
+
 class TestBayesLeastLfaGenerativeRewardWrapper:
     """Tests for BayesLeastLfaGenerativeRewardWrapper — episode-boundary buffering, segment accumulation for posterior updates, and sampled-weights control."""
 
@@ -875,7 +952,6 @@ class TestBayesLeastLfaGenerativeRewardWrapper:
         term_steps,
         delay,
         sample_weights=False,
-        use_bias=False,
         schedule_rho=rewdelay.WindowedTaskSchedule.DEFAULT_RHO,
     ):
         base = DummyEnv(term_steps=term_steps)
@@ -883,12 +959,11 @@ class TestBayesLeastLfaGenerativeRewardWrapper:
         ft_op = DummyFTOp(base)
         wrapper = rewdelay.BayesLeastLfaGenerativeRewardWrapper(
             env=delayed,
-            ft_op=ft_op,
+            feats_fn=FTOpHook(ft_op),
             init_attempt_estimation_episode=1,
             check_factors=False,
             schedule_rho=schedule_rho,
             sample_weights=sample_weights,
-            use_bias=use_bias,
         )
         return wrapper
 
@@ -917,7 +992,7 @@ class TestBayesLeastLfaGenerativeRewardWrapper:
             delayed = rewdelay.DelayedRewardWrapper(env, rewdelay.FixedDelay(delay=2))
             wrapper = rewdelay.BayesLeastLfaGenerativeRewardWrapper(
                 delayed,
-                ft_op=DummyFTOp(env),
+                feats_fn=FTOpHook(DummyFTOp(env)),
                 init_attempt_estimation_episode=10,
                 check_factors=False,
                 schedule_rho=rho,
@@ -951,7 +1026,7 @@ class TestBayesLeastLfaGenerativeRewardWrapper:
         ft_op = DummyFTOp(env)
         wrapped = rewdelay.BayesLeastLfaGenerativeRewardWrapper(
             delay_env,
-            ft_op=ft_op,
+            feats_fn=FTOpHook(ft_op),
             impute_value=0.0,
             init_attempt_estimation_episode=100,
         )
@@ -994,7 +1069,7 @@ class TestBayesLeastLfaGenerativeRewardWrapper:
         wrapper = self._make_wrapper(term_steps=8, delay=2, sample_weights=False)
         self._force_estimate(wrapper)
         feats = np.array([0.5, -0.5, 0.5, -0.5])
-        feats_with_est = wrapper._get_estimation_inputs(feats)
+        feats_with_est = feats
         rewards = [wrapper._get_estimated_reward(feats_with_est) for _ in range(20)]
         assert all(r == rewards[0] for r in rewards)
         # and the value is the posterior mean's dot product
@@ -1008,7 +1083,7 @@ class TestBayesLeastLfaGenerativeRewardWrapper:
         wrapper = self._make_wrapper(term_steps=8, delay=2, sample_weights=True)
         self._force_estimate(wrapper)
         feats = np.array([0.5, -0.5, 0.5, -0.5])
-        feats_with_est = wrapper._get_estimation_inputs(feats)
+        feats_with_est = feats
         within_episode = [
             wrapper._get_estimated_reward(feats_with_est) for _ in range(50)
         ]
@@ -1030,7 +1105,7 @@ class TestBayesLeastLfaGenerativeRewardWrapper:
         wrapper = self._make_wrapper(term_steps=8, delay=2, sample_weights=True)
         self._force_estimate(wrapper)
         feats = np.array([0.5, 0.5, 0.5, 0.5])
-        feats_with_est = wrapper._get_estimation_inputs(feats)
+        feats_with_est = feats
         first = wrapper._get_estimated_reward(feats_with_est)
 
         posterior = wrapper.mv_normal_rewards
@@ -1052,7 +1127,7 @@ class TestBayesLeastLfaGenerativeRewardWrapper:
         wrapper = self._make_wrapper(term_steps=8, delay=2, sample_weights=True)
         self._force_estimate(wrapper)
         feats = np.array([0.5, -0.5, 0.5, -0.5])
-        feats_with_est = wrapper._get_estimation_inputs(feats)
+        feats_with_est = feats
         held = wrapper._get_estimated_reward(feats_with_est)
         posterior = wrapper.mv_normal_rewards
 
@@ -1073,23 +1148,6 @@ class TestBayesLeastLfaGenerativeRewardWrapper:
         assert wrapper.estimate_rewards() is False
         assert wrapper.mv_normal_rewards is posterior
         assert wrapper._get_estimated_reward(feats_with_est) == held
-
-    def test_bias_mode_sampled_rewards_dimension_consistent(self):
-        # with use_bias=True the posterior gains a bias dimension and the
-        # estimation inputs append 1.0: sampled weights must match that
-        # dimension and remain held within the episode
-        wrapper = self._make_wrapper(
-            term_steps=8, delay=2, sample_weights=True, use_bias=True
-        )
-        self._force_estimate(wrapper)
-        assert wrapper.mv_normal_rewards.mean.shape[0] == wrapper.mdim + 1
-        feats = np.array([0.5, -0.5, 0.5, -0.5])
-        feats_with_bias = wrapper._get_estimation_inputs(feats)
-        assert feats_with_bias.shape[0] == wrapper.mdim + 1
-        first = wrapper._get_estimated_reward(feats_with_bias)
-        second = wrapper._get_estimated_reward(feats_with_bias)
-        assert isinstance(first, float)
-        assert first == second
 
     def test_step_rewards_stable_within_episode(self):
         # within an episode, equal features (constant DummyFTOp output)
@@ -1117,7 +1175,7 @@ class TestBayesLeastLfaGenerativeRewardWrapper:
         seen_weights = []
         wrapper = rewdelay.BayesLeastLfaGenerativeRewardWrapper(
             delayed,
-            ft_op=DummyFTOp(env),
+            feats_fn=FTOpHook(DummyFTOp(env)),
             init_attempt_estimation_episode=2,
             check_factors=False,
             reward_error_fn=stub_reward_error_fn(seen_weights),
@@ -1144,7 +1202,7 @@ class TestBayesLeastLfaGenerativeRewardWrapper:
         delayed = rewdelay.DelayedRewardWrapper(env, rewdelay.FixedDelay(delay=2))
         wrapper = rewdelay.BayesLeastLfaGenerativeRewardWrapper(
             delayed,
-            ft_op=DummyFTOp(env),
+            feats_fn=FTOpHook(DummyFTOp(env)),
             init_attempt_estimation_episode=2,
             check_factors=False,
         )
@@ -1163,7 +1221,7 @@ class TestBayesLeastLfaGenerativeRewardWrapper:
         seen_weights = []
         wrapper = rewdelay.BayesLeastLfaGenerativeRewardWrapper(
             delayed,
-            ft_op=DummyFTOp(env),
+            feats_fn=FTOpHook(DummyFTOp(env)),
             init_attempt_estimation_episode=2,
             check_factors=False,
             sample_weights=True,
@@ -1183,7 +1241,7 @@ class TestConvexSolverGenerativeRewardWrapper:
         env = DummyEnv()
         ft_op = DummyFTOp(env)
         wrapped = rewdelay.ConvexSolverGenerativeRewardWrapper(
-            env, ft_op=ft_op, attempt_estimation_episode=5
+            env, feats_fn=FTOpHook(ft_op), attempt_estimation_episode=5
         )
 
         assert wrapped.mdim == 4
@@ -1195,7 +1253,7 @@ class TestConvexSolverGenerativeRewardWrapper:
         ft_op = DummyFTOp(env)
         delay_wrapper = rewdelay.DelayedRewardWrapper(env, rewdelay.FixedDelay(delay=2))
         wrapped = rewdelay.ConvexSolverGenerativeRewardWrapper(
-            delay_wrapper, ft_op=ft_op, attempt_estimation_episode=2, use_bias=False
+            delay_wrapper, feats_fn=FTOpHook(ft_op), attempt_estimation_episode=2
         )
 
         obs, info = wrapped.reset()
@@ -1227,33 +1285,6 @@ class TestConvexSolverGenerativeRewardWrapper:
         wrapped.estimate_rewards()
         assert wrapped.weights is not None
         np.testing.assert_equal(wrapped.est_buffer.buffer, buffer)
-
-    def test_convex_solver_generative_reward_wrapper_invalid_spaces(self):
-        env = DummyEnv()
-
-        # Test invalid observation space
-        with pytest.raises(TypeError):
-            ft_op = DummyFTOp(env)
-            ft_op._output_space = dataclasses.replace(
-                ft_op._output_space, observation_space=spaces.Discrete(5)
-            )
-            rewdelay.ConvexSolverGenerativeRewardWrapper(
-                env,
-                ft_op=ft_op,
-                attempt_estimation_episode=5,
-            )
-
-        # Test invalid action space
-        with pytest.raises(TypeError):
-            ft_op = DummyFTOp(env)
-            ft_op._output_space = dataclasses.replace(
-                ft_op._output_space, action_space=spaces.Box(low=-1, high=1, shape=(1,))
-            )
-            rewdelay.ConvexSolverGenerativeRewardWrapper(
-                env,
-                ft_op=ft_op,
-                attempt_estimation_episode=5,
-            )
 
 
 class TestWindowedTaskSchedule:

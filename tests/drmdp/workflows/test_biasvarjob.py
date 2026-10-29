@@ -24,7 +24,10 @@ class TestLeastLfaSpecs:
             attempt_estimation_episodes=(10,),
             feat_specs=feats,
         )
-        assert result[0]["args"]["feats_spec"] == feats[0]
+        assert (
+            result[0]["args"]["transition_feats_spec"]["args"]["current_spec"]
+            == feats[0]
+        )
 
 
 class TestBayesLeastLfaSpecs:
@@ -124,7 +127,7 @@ class TestCreateExpInstance:
             gamma=0.99,
             estimation_episode=10,
             num_episodes=100,
-            use_bias=False,
+            intercept=False,
             epochs=3,
             run_id=0,
         )
@@ -142,7 +145,7 @@ class TestCreateExpInstance:
             gamma=1.0,
             estimation_episode=10,
             num_episodes=100,
-            use_bias=False,
+            intercept=False,
             epochs=1,
             run_id=0,
         )
@@ -162,7 +165,7 @@ class TestCreateExpInstance:
             gamma=1.0,
             estimation_episode=10,
             num_episodes=100,
-            use_bias=False,
+            intercept=False,
             epochs=1,
             run_id=42,
         )
@@ -180,7 +183,7 @@ class TestCreateExpInstance:
             gamma=0.95,
             estimation_episode=10,
             num_episodes=100,
-            use_bias=False,
+            intercept=False,
             epochs=1,
             run_id=0,
         )

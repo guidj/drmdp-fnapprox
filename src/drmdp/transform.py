@@ -667,6 +667,20 @@ class Pipeline(FTOp):
             output_space=input_space,
         )
 
+    @classmethod
+    def from_specs(
+        cls,
+        input_space: ExampleSpace,
+        specs: Sequence[Mapping[str, Any]],
+    ) -> "Pipeline":
+        """Builds operators from spaces without requiring an environment."""
+        pipeline = cls(input_space=input_space)
+        for spec in specs:
+            pipeline = pipeline.map(
+                transform_op(spec["name"], **(spec.get("args") or {}))
+            )
+        return pipeline
+
     def map(self, ftop_cls: Callable[[ExampleSpace], FTOp]) -> "Pipeline":
         """
         Chain ops.
@@ -711,13 +725,7 @@ def transform_pipeline(env: gym.Env, specs: Sequence[Mapping[str, Any]]) -> Pipe
     input_space = ExampleSpace(
         observation_space=env.observation_space, action_space=env.action_space
     )
-    pipe = Pipeline(input_space=input_space)
-    for spec in specs:
-        name = spec["name"]
-        kwargs = spec["args"] or {}
-        next_ft_op = transform_op(name, **kwargs)
-        pipe = pipe.map(next_ft_op)
-    return pipe
+    return Pipeline.from_specs(input_space=input_space, specs=specs)
 
 
 def transform_op(name: str, **kwargs) -> Callable[[ExampleSpace], FTOp]:

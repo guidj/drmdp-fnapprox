@@ -120,4 +120,6 @@ out
 # can override explicitly
 pg/
 runs/
-agents
+agents/
+output/
+pip/

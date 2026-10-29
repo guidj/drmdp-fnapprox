@@ -39,12 +39,12 @@ class JobSpec:
 
 
 def run_feats_spec_control_study(
-    envs,
+    envs: Sequence[str],
     feats_specs: Sequence[Sequence[Mapping[str, Any]]],
     turns: int,
     num_episodes: int,
     output_path: str,
-):
+) -> None:
     baseline_spec = [{"name": "action-segment-observation-ft", "args": None}]
     # pair speccs with policies
     configs = list(
@@ -66,7 +66,7 @@ def run_feats_spec_control_study(
 
 
 @ray.remote
-def run_fn(job_spec: JobSpec):
+def run_fn(job_spec: JobSpec) -> str:
     task_id = str(uuid.uuid4())
     logger.info("Starting task %s: %s", task_id, job_spec)
     try:
@@ -78,7 +78,7 @@ def run_fn(job_spec: JobSpec):
     return task_id
 
 
-def feats_spec_control(job_spec: JobSpec, task_id: str):
+def feats_spec_control(job_spec: JobSpec, task_id: str) -> None:
     env = gem.make(job_spec.env_name, reward_fn="pos-enf", max_episode_steps=MAX_STEPS)
     proxy_env = gem.make(
         job_spec.env_name, reward_fn="pos-enf", max_episode_steps=MAX_STEPS
@@ -121,7 +121,10 @@ def feats_spec_control(job_spec: JobSpec, task_id: str):
         records.append(
             {
                 "env_name": job_spec.env_name,
-                "feats_spec": job_spec.feats_spec,
+                "transition_feats_spec": {
+                    "name": "current-features",
+                    "args": {"current_spec": job_spec.feats_spec},
+                },
                 "policy": job_spec.policy_type,
                 "turn": job_spec.turn,
                 "episode": episode,
@@ -143,7 +146,6 @@ def write_records(output_path: str, records):
 
 def main():
     args = parse_args()
-    os.path.join(args.output_path)
     run_feats_spec_control_study(
         [
             "Finite-CC-PermExDc-v0",

@@ -3,7 +3,7 @@ from drmdp.workflows import controlexps
 
 class TestGridDeadOheIndices:
     def test_mines_gw_grid(self):
-        indices = controlexps._grid_dead_ohe_indices(controlexps.MINES_GW_GRID)
+        indices = controlexps.grid_dead_ohe_indices(controlexps.MINES_GW_GRID)
         nrows = len(controlexps.MINES_GW_GRID)
         ncols = len(controlexps.MINES_GW_GRID[0])
         nstates = nrows * ncols
@@ -26,7 +26,7 @@ class TestGridDeadOheIndices:
 
     def test_simple_grid(self):
         grid = ["sox", "xog"]
-        indices = controlexps._grid_dead_ohe_indices(grid)
+        indices = controlexps.grid_dead_ohe_indices(grid)
         nstates = 2 * 3
         cliff_states = [2, 3]
         goal_states = [5]
@@ -38,7 +38,7 @@ class TestGridDeadOheIndices:
 
     def test_no_cliffs(self):
         grid = ["sog"]
-        indices = controlexps._grid_dead_ohe_indices(grid)
+        indices = controlexps.grid_dead_ohe_indices(grid)
         nstates = 1 * 3
         goal_states = [2]
         expected = sorted(
@@ -53,7 +53,7 @@ class TestDefaultDelayConfig:
         assert [
             (config["args"]["min_delay"], config["args"]["max_delay"])
             for config in configs
-        ] == [(2, 4), (8, 10), (14, 16)]
+        ] == [(2, 4), (6, 8), (10, 12)]
 
     def test_configs_are_uniform(self):
         for config in controlexps.default_delay_config():
@@ -68,7 +68,7 @@ class TestDefaultDelayConfig:
 
     def test_only_first_range_within_option_budget(self):
         # option specs are derived for delay configs whose minimum delay
-        # is within MAX_OPTIONS_DELAY; only [3, 5] qualifies
+        # is within MAX_OPTIONS_DELAY; only [2, 4] qualifies
         within_budget = [
             controlexps._delay_min(config) <= controlexps.MAX_OPTIONS_DELAY
             for config in controlexps.default_delay_config()
@@ -83,27 +83,35 @@ class TestGaussianIllustrationNoiseSpecs:
             noise = exp["args"]["reward_noise"]
             assert noise["name"] == "relative-gaussian"
             # unit = modal per-step reward magnitude, 1 for all envs
-            assert noise["args"]["reward_range"] == 1.0
-            # variance = magnitude^2 * unit^2; metadata records the
-            # magnitude factor
-            assert noise["args"]["scale"] == exp["metadata"]["noise_scale"] ** 2
+            assert noise["args"]["reference_std"] == 1.0
+            # sigma = std_multiplier * reference_std, and the multiplier
+            # is the sweep value itself
+            assert noise["args"]["std_multiplier"] >= 0.0
 
-    def test_noise_magnitudes_cover_the_sweep(self):
+    def test_std_multipliers_cover_the_sweep(self):
         specs = controlexps.gaussian_illustration_experiment_specs()
-        magnitudes = sorted({exp["metadata"]["noise_scale"] for exp in specs})
-        assert magnitudes == [0.0, 0.25, 0.5, 1.0, 2.0]
-        variances = sorted(
-            {exp["args"]["reward_noise"]["args"]["scale"] for exp in specs}
+        multipliers = sorted(
+            {exp["args"]["reward_noise"]["args"]["std_multiplier"] for exp in specs}
         )
-        assert variances == [0.0, 0.0625, 0.25, 1.0, 4.0]
+        assert multipliers == [0.0, 0.25, 0.5, 1.0, 2.0]
+
+    def test_metadata_carries_no_noise_scale(self):
+        for exp in controlexps.gaussian_illustration_experiment_specs():
+            assert "noise_scale" not in (exp.get("metadata") or {})
 
 
-class TestIllustrationNoiseSpecs:
-    def test_zero_noise_relative_config_with_unit_magnitude(self):
-        specs = controlexps.illustration_experiment_specs()
-        for exp in specs:
-            noise = exp["args"]["reward_noise"]
-            assert noise["name"] == "relative-gaussian"
-            assert noise["args"]["scale"] == 0.0
-            assert noise["args"]["reward_range"] == 1.0
-            assert exp["metadata"]["noise_scale"] == 0.0
+class TestBladeTdRewardSampling:
+    def test_gaussian_illustration_consumes_posterior_mean(self):
+        # the family compares reward estimators; a per-episode posterior
+        # weight draw is a third stochastic source, so BLADE-TD consumes
+        # the fixed posterior mean
+        specs = controlexps.gaussian_illustration_experiment_specs()
+        bayes_args = [
+            problem_spec["reward_mapper"]["args"]
+            for spec in specs
+            for problem_spec in spec["problem_specs"]
+            if problem_spec["reward_mapper"]["name"] == "bayes-least-lfa"
+        ]
+        assert bayes_args
+        for args in bayes_args:
+            assert args["sample_weights"] is False

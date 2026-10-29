@@ -9,6 +9,7 @@ import copy
 import dataclasses
 import json
 import logging
+import math
 import os.path
 import re
 from collections.abc import Mapping, Sequence
@@ -36,7 +37,7 @@ class PipelineArgs:
     output_dir: str
 
 
-class StepSnapshotAggretator(ray.data.aggregate.AggregateFn):
+class StepSnapshotAggregator(ray.data.aggregate.AggregateFn):
     """
     Aggregates returns.
     """
@@ -44,7 +45,7 @@ class StepSnapshotAggretator(ray.data.aggregate.AggregateFn):
     AggType = Mapping[str, dict[str, Any]]
     Row = Mapping[str, Any]
 
-    def __init__(self, name: str = "StepSnapshotAggretator()"):
+    def __init__(self, name: str = "StepSnapshotAggregator()"):
         super().__init__(
             init=self._init,
             merge=self._merge,
@@ -156,7 +157,7 @@ def parse_experiment_metadata(paths: Sequence[str]) -> Mapping[str, Any]:
     metadata_files = [os.path.join(path, "experiment-params.json") for path in paths]
     results = {}
     read_remote = ray.remote(parse_experiments_metadata_files)
-    refs = [read_remote.remote(seq) for seq in chunks(metadata_files, n=100)]
+    refs = [read_remote.remote(seq) for seq in chunks(metadata_files, chunk_size=100)]
     while True:
         completed_refs, refs = ray.wait(refs)
         for completed_ref in completed_refs:
@@ -198,12 +199,31 @@ def parse_experiment_logs(paths: Sequence[str]) -> ray.data.Dataset:
     return ds_logs
 
 
+def _normalize_metadata(metadata: Mapping[str, Any]) -> Mapping[str, Any]:
+    """
+    Experiment-params entries with empty env-spec metadata mapped to None.
+
+    An empty dict reaches Arrow as a fieldless struct, which pyarrow cannot
+    write to Parquet; `EnvSpec.metadata` allows None and its readers fall
+    back to an empty mapping.
+    """
+    normalized = {}
+    for path, entry in metadata.items():
+        env_spec = entry["experiment"]["env_spec"]
+        if isinstance(env_spec.get("metadata"), Mapping) and not env_spec["metadata"]:
+            entry = copy.deepcopy(entry)
+            entry["experiment"]["env_spec"]["metadata"] = None
+        normalized[path] = entry
+    return normalized
+
+
 def join_logs_and_metadata(
     ds_logs: ray.data.Dataset, metadata: Mapping[str, Any]
 ) -> ray.data.Dataset:
     """
     Parses logs for an experiment.
     """
+    metadata = _normalize_metadata(metadata)
 
     def get_exp_id(df: pd.DataFrame) -> pd.Series:
         return df["meta"].apply(lambda meta: meta["exp_id"])  # type: ignore
@@ -296,12 +316,21 @@ def pipeline(ds_logs: ray.data.Dataset) -> Mapping[str, ray.data.Dataset]:
         .aggregate(EstimationEventDedup())
         .flat_map(lambda row: [row["estimation_event_dedup"]])
     )
+    # Deferred attempts share the log-attachment pattern; one row per
+    # (run, episode), the episode on which the attempt was scheduled.
+    ds_deferrals = (
+        ds_logs.filter(has_deferred_attempts)
+        .flat_map(deferred_attempt_rows)
+        .groupby(["exp_id", "instance_id", "episode"])
+        .aggregate(EstimationEventDedup(name="deferred_attempt_dedup"))
+        .flat_map(lambda row: [row["deferred_attempt_dedup"]])
+    )
     # Per-run rows are projected from the joined stream before `ds_logs`
     # is rebound to the episode-grouped view, which drops per-run rows
     ds_runs = ds_logs.flat_map(run_rows)
     ds_logs = (
         ds_logs.groupby("episode")
-        .aggregate(StepSnapshotAggretator(name="step_snapshot_agg"))
+        .aggregate(StepSnapshotAggregator(name="step_snapshot_agg"))
         .flat_map(step_snapshot_rows)
     )
     ds_metrics = calculate_metrics(ds_logs)
@@ -309,6 +338,7 @@ def pipeline(ds_logs: ray.data.Dataset) -> Mapping[str, ray.data.Dataset]:
         "logs": ds_logs,
         "metrics": ds_metrics,
         "estimations": ds_estimations,
+        "deferrals": ds_deferrals,
         "runs": ds_runs,
     }
 
@@ -334,6 +364,13 @@ def has_estimation_events(row: Mapping[str, Any]) -> bool:
     return len(reward_error_events(row)) > 0
 
 
+def has_deferred_attempts(row: Mapping[str, Any]) -> bool:
+    """
+    Whether a log record carries deferred-attempt records.
+    """
+    return len(deferred_attempt_events(row)) > 0
+
+
 def reward_error_events(row: Mapping[str, Any]) -> Sequence[Any]:
     """
     Estimation events attached to a log record.
@@ -350,6 +387,29 @@ def reward_error_events(row: Mapping[str, Any]) -> Sequence[Any]:
     return list(events)
 
 
+def deferred_attempt_events(row: Mapping[str, Any]) -> Sequence[Any]:
+    """
+    Deferred-attempt records attached to a log record.
+
+    One record per scheduled estimation attempt that a gate deferred;
+    the list is attached to every log entry of the run, like the
+    estimation events.
+    """
+    info = row.get("info")
+    if not info:
+        return ()
+    attempts = info.get("deferred_attempts")
+    if attempts is None:
+        return ()
+    return list(attempts)
+
+
+def _mapper_args(row: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Reward-mapper args of the run a log record belongs to."""
+    problem_spec = row["meta"]["experiment"]["problem_spec"]
+    return dict(problem_spec["reward_mapper"].get("args") or {})
+
+
 def estimation_event_rows(row: Mapping[str, Any]) -> list[dict[str, Any]]:
     """
     Per estimation-event rows from one experiment log record.
@@ -364,21 +424,65 @@ def estimation_event_rows(row: Mapping[str, Any]) -> list[dict[str, Any]]:
     meta = row["meta"]
     experiment = meta["experiment"]
     problem_spec = experiment["problem_spec"]
+    mapper_args = _mapper_args(row)
     method = dataproc.MAPPERS_NAMES[problem_spec["reward_mapper"]["name"]]
+    feats_spec = mapper_args.get("transition_feats_spec") or {}
     return [
         {
             "exp_id": row["exp_id"],
             "instance_id": row["instance_id"],
             "episode": event["episode"],
+            "steps": event.get("steps"),
+            "elapsed_s": event.get("elapsed_s"),
             "update_index": event["update_index"],
             "rmse": event["rmse"],
             "num_samples": event["num_samples"],
             "method": method,
+            "check_factors": bool(mapper_args.get("check_factors", False)),
+            "feats_spec": json.dumps(feats_spec, sort_keys=True),
             "env_name": experiment["env_spec"]["name"],
             "gamma": problem_spec["gamma"],
             "delay_config": problem_spec["delay_config"],
         }
         for event in events
+    ]
+
+
+def deferred_attempt_rows(row: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """
+    Per deferred-attempt rows from one experiment log record.
+
+    Each row carries the run identity, the attempt's episode and buffer
+    state, and the experiment configuration, so a run that never
+    estimates states why: the nonzero-column count against the design
+    width.
+    """
+    attempts = deferred_attempt_events(row)
+    if not attempts:
+        return []
+    meta = row["meta"]
+    experiment = meta["experiment"]
+    problem_spec = experiment["problem_spec"]
+    mapper_args = _mapper_args(row)
+    method = dataproc.MAPPERS_NAMES[problem_spec["reward_mapper"]["name"]]
+    feats_spec = mapper_args.get("transition_feats_spec") or {}
+    return [
+        {
+            "exp_id": row["exp_id"],
+            "instance_id": row["instance_id"],
+            "episode": attempt["episode"],
+            "steps": attempt.get("steps"),
+            "buffer_rows": attempt["buffer_rows"],
+            "nonzero_columns": attempt["nonzero_columns"],
+            "matrix_columns": attempt["matrix_columns"],
+            "method": method,
+            "check_factors": bool(mapper_args.get("check_factors", False)),
+            "feats_spec": json.dumps(feats_spec, sort_keys=True),
+            "env_name": experiment["env_spec"]["name"],
+            "gamma": problem_spec["gamma"],
+            "delay_config": problem_spec["delay_config"],
+        }
+        for attempt in attempts
     ]
 
 
@@ -412,9 +516,7 @@ def run_rows(row: Mapping[str, Any]) -> list[dict[str, Any]]:
             "env_name": experiment["env_spec"]["name"],
             "gamma": problem_spec["gamma"],
             "delay_config": problem_spec["delay_config"],
-            "noise_scale": (experiment["env_spec"].get("metadata") or {}).get(
-                "noise_scale"
-            ),
+            "noise_scale": _noise_std_multiplier(experiment["env_spec"]),
             "episodes_per_run": meta["run_config"]["episodes_per_run"],
             "log_episode_frequency": meta["run_config"]["log_episode_frequency"],
         }
@@ -425,7 +527,7 @@ def step_snapshot_rows(row: Mapping[str, Any]) -> list[dict[str, Any]]:
     """
     One row per experiment of an episode's snapshot aggregation.
 
-    A null-valued entry (see StepSnapshotAggretator._merge on null
+    A null-valued entry (see StepSnapshotAggregator._merge on null
     struct fields) is an experiment that logged no run at the episode;
     it produces no row.
     """
@@ -457,10 +559,10 @@ def calculate_metrics(ds: ray.data.Dataset) -> ray.data.Dataset:
     return ds.map(apply)
 
 
-def chunks(seq: Sequence[Any], n):
-    """Yield successive n-sized chunks from seq."""
-    for i in range(0, len(seq), n):
-        yield seq[i : i + n]
+def chunks(seq: Sequence[Any], chunk_size: int):
+    """Yield successive chunk_size-sized chunks from seq."""
+    for idx in range(0, len(seq), chunk_size):
+        yield seq[idx : idx + chunk_size]
 
 
 def parse_args() -> PipelineArgs:
@@ -473,6 +575,28 @@ def parse_args() -> PipelineArgs:
     known_args, unknown_args = arg_parser.parse_known_args()
     logger.info("Unknown args: %s", unknown_args)
     return PipelineArgs(**vars(known_args))
+
+
+def _noise_std_multiplier(env_spec: Mapping[str, Any]) -> float | None:
+    """Noise standard-deviation multiplier of an experiment spec.
+
+    Reads the `std_multiplier` arg of the reward-noise wrapper, falling back
+    to the retired `scale` (a variance multiplier) and then to the retired
+    metadata key, so that both old and new record directories produce the
+    same column.
+    """
+    noise_args = ((env_spec.get("args") or {}).get("reward_noise") or {}).get(
+        "args"
+    ) or {}
+    if "std_multiplier" in noise_args:
+        return float(noise_args["std_multiplier"])
+    if "scale" in noise_args:
+        return math.sqrt(float(noise_args["scale"]))
+    metadata = env_spec.get("metadata") or {}
+    if "std_multiplier" in metadata:
+        return float(metadata["std_multiplier"])
+    legacy = metadata.get("noise_scale")
+    return None if legacy is None else float(legacy)
 
 
 if __name__ == "__main__":

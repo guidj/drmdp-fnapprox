@@ -1,5 +1,6 @@
 import argparse
 import dataclasses
+import itertools
 import logging
 import random
 from collections.abc import Mapping, Sequence
@@ -8,7 +9,7 @@ from typing import Any
 import ray
 
 from drmdp import constants, core, task
-from drmdp.workflows import raytasks
+from drmdp.workflows import raytasks, specutils
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +18,7 @@ MAX_STEPS = 200
 
 def bayes_least_specs(feats_spec: Mapping[str, Any]):
     def specs(mode: str, init_attempt_estimation_episodes: int):
-        return (
+        return tuple(
             {
                 "policy_type": "markovian",
                 "reward_mapper": {
@@ -25,151 +26,22 @@ def bayes_least_specs(feats_spec: Mapping[str, Any]):
                     "args": {
                         "init_attempt_estimation_episode": init_attempt_estimation_episodes,
                         "mode": mode,
-                        "feats_spec": feats_spec,
-                        "use_bias": False,
+                        "transition_feats_spec": {
+                            "name": "current-features",
+                            "args": {"current_spec": feats_spec},
+                        },
+                        "intercept": False,
                     },
                 },
-                "delay_config": {"name": "fixed", "args": {"delay": 2}},
+                "delay_config": {"name": "fixed", "args": {"delay": delay}},
                 "epsilon": 0.2,
-                "gamma": 1.0,
+                "gamma": gamma,
                 "learning_rate_config": {
                     "name": "constant",
                     "args": {"initial_lr": 0.01},
                 },
-            },
-            {
-                "policy_type": "markovian",
-                "reward_mapper": {
-                    "name": "bayes-least-lfa",
-                    "args": {
-                        "init_attempt_estimation_episode": init_attempt_estimation_episodes,
-                        "mode": mode,
-                        "feats_spec": feats_spec,
-                        "use_bias": False,
-                    },
-                },
-                "delay_config": {"name": "fixed", "args": {"delay": 4}},
-                "epsilon": 0.2,
-                "gamma": 1.0,
-                "learning_rate_config": {
-                    "name": "constant",
-                    "args": {"initial_lr": 0.01},
-                },
-            },
-            {
-                "policy_type": "markovian",
-                "reward_mapper": {
-                    "name": "bayes-least-lfa",
-                    "args": {
-                        "init_attempt_estimation_episode": init_attempt_estimation_episodes,
-                        "mode": mode,
-                        "feats_spec": feats_spec,
-                        "use_bias": False,
-                    },
-                },
-                "delay_config": {"name": "fixed", "args": {"delay": 6}},
-                "epsilon": 0.2,
-                "gamma": 1.0,
-                "learning_rate_config": {
-                    "name": "constant",
-                    "args": {"initial_lr": 0.01},
-                },
-            },
-            {
-                "policy_type": "markovian",
-                "reward_mapper": {
-                    "name": "bayes-least-lfa",
-                    "args": {
-                        "init_attempt_estimation_episode": init_attempt_estimation_episodes,
-                        "mode": mode,
-                        "feats_spec": feats_spec,
-                        "use_bias": False,
-                    },
-                },
-                "delay_config": {"name": "fixed", "args": {"delay": 8}},
-                "epsilon": 0.2,
-                "gamma": 1.0,
-                "learning_rate_config": {
-                    "name": "constant",
-                    "args": {"initial_lr": 0.01},
-                },
-            },
-            {
-                "policy_type": "markovian",
-                "reward_mapper": {
-                    "name": "bayes-least-lfa",
-                    "args": {
-                        "init_attempt_estimation_episode": init_attempt_estimation_episodes,
-                        "mode": mode,
-                        "feats_spec": feats_spec,
-                        "use_bias": False,
-                    },
-                },
-                "delay_config": {"name": "fixed", "args": {"delay": 2}},
-                "epsilon": 0.2,
-                "gamma": 0.99,
-                "learning_rate_config": {
-                    "name": "constant",
-                    "args": {"initial_lr": 0.01},
-                },
-            },
-            {
-                "policy_type": "markovian",
-                "reward_mapper": {
-                    "name": "bayes-least-lfa",
-                    "args": {
-                        "init_attempt_estimation_episode": init_attempt_estimation_episodes,
-                        "mode": mode,
-                        "feats_spec": feats_spec,
-                        "use_bias": False,
-                    },
-                },
-                "delay_config": {"name": "fixed", "args": {"delay": 4}},
-                "epsilon": 0.2,
-                "gamma": 0.99,
-                "learning_rate_config": {
-                    "name": "constant",
-                    "args": {"initial_lr": 0.01},
-                },
-            },
-            {
-                "policy_type": "markovian",
-                "reward_mapper": {
-                    "name": "bayes-least-lfa",
-                    "args": {
-                        "init_attempt_estimation_episode": init_attempt_estimation_episodes,
-                        "mode": mode,
-                        "feats_spec": feats_spec,
-                        "use_bias": False,
-                    },
-                },
-                "delay_config": {"name": "fixed", "args": {"delay": 6}},
-                "epsilon": 0.2,
-                "gamma": 0.99,
-                "learning_rate_config": {
-                    "name": "constant",
-                    "args": {"initial_lr": 0.01},
-                },
-            },
-            {
-                "policy_type": "markovian",
-                "reward_mapper": {
-                    "name": "bayes-least-lfa",
-                    "args": {
-                        "init_attempt_estimation_episode": init_attempt_estimation_episodes,
-                        "mode": mode,
-                        "feats_spec": feats_spec,
-                        "use_bias": False,
-                    },
-                },
-                "delay_config": {"name": "fixed", "args": {"delay": 8}},
-                "epsilon": 0.2,
-                "gamma": 0.99,
-                "learning_rate_config": {
-                    "name": "constant",
-                    "args": {"initial_lr": 0.01},
-                },
-            },
+            }
+            for gamma, delay in itertools.product((1.0, 0.99, 0.995), (2, 4, 6, 8))
         )
 
     return (
@@ -194,6 +66,14 @@ COMMON_PROBLEM_SPECS = (
         "delay_config": None,
         "epsilon": 0.2,
         "gamma": 0.99,
+        "learning_rate_config": {"name": "constant", "args": {"initial_lr": 0.01}},
+    },
+    {
+        "policy_type": "markovian",
+        "reward_mapper": {"name": "identity", "args": None},
+        "delay_config": None,
+        "epsilon": 0.2,
+        "gamma": 0.995,
         "learning_rate_config": {"name": "constant", "args": {"initial_lr": 0.01}},
     },
 )
@@ -366,7 +246,7 @@ def create_tasks(
     """
     Runs numerical experiments on policy evaluation.
     """
-    experiments = tuple(parse_experiments(specs=SPECS))
+    experiments = tuple(specutils.parse_experiment_specs(specs=SPECS))
     experiment_instances = tuple(
         task.generate_experiments_instances(
             experiments=experiments,
@@ -396,31 +276,6 @@ def create_tasks(
         result_ref = run_experiments.remote(batch)
         results_refs.append((batch, result_ref))
     return results_refs
-
-
-def parse_experiments(
-    specs: Sequence[Mapping[str, Any]],
-) -> Sequence[core.Experiment]:
-    """
-    Convert experiments from Dict into typed datastructures.
-    """
-    experiment_specs: list[core.Experiment] = []
-    for spec in specs:
-        for feat_tfx_spec in spec["feats_specs"]:
-            for problem_spec in spec["problem_specs"]:
-                experiment_specs.append(
-                    core.Experiment(
-                        env_spec=core.EnvSpec(
-                            name=spec["name"],
-                            args=spec["args"],
-                            feats_spec=feat_tfx_spec,
-                            metadata=spec.get("metadata"),
-                        ),
-                        problem_spec=core.ProblemSpec(**problem_spec),
-                        epochs=spec["epochs"],
-                    )
-                )
-    return experiment_specs
 
 
 @ray.remote

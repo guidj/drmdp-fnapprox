@@ -15,6 +15,7 @@ from drmdp import (
     logger,
     optsol,
     rewardeval,
+    rewardfeat,
     rewdelay,
     transform,
 )
@@ -28,11 +29,14 @@ REWARD_ERROR_SAMPLING_SEED = 0
 
 # episodes per greedy-policy evaluation; logged alongside the eval mean
 # so the evaluation protocol is self-documenting in the logs
-POLICY_EVAL_EPISODES = 10
+POLICY_EVAL_EPISODES = 25
 
 REWARD_SHAPING_BUILDERS: Mapping[str, type] = {
     "mountain-car-height": wrappers.MountainCarHeightBonus,
+    "mountain-car-height-pbrs": wrappers.MountainCarHeightShaping,
     "acrobot-tip-height": wrappers.AcrobotTipHeightBonus,
+    "acrobot-tip-height-pbrs": wrappers.AcrobotTipHeightShaping,
+    "gridworld-distance-pbrs": wrappers.GridWorldDistanceShaping,
     "action-cost": wrappers.ActionCostShapingWrapper,
 }
 
@@ -61,7 +65,9 @@ def policy_control(exp_instance: core.ExperimentInstance):
     # init env and agent
     env_spec = exp_instance.experiment.env_spec
     problem_spec = exp_instance.experiment.problem_spec
-    proxied_env = create_env(env_spec.name, args=env_spec.args)
+    proxied_env = create_env(
+        env_spec.name, args=env_spec.args, gamma=problem_spec.gamma
+    )
     env, monitor = monitor_wrapper(proxied_env.env)
     rew_delay = reward_delay_distribution(problem_spec.delay_config)
     env = delay_wrapper(env, rew_delay)
@@ -175,9 +181,15 @@ def evaluate_policy(
     return float(np.mean(returns))
 
 
-def create_env(name: str, args: Mapping[str, Any] | None) -> core.ProxiedEnv:
+def create_env(
+    name: str, args: Mapping[str, Any] | None, gamma: float | None = None
+) -> core.ProxiedEnv:
     """
     Creates an env and a proxy.
+
+    ``gamma`` is the learner discount.  Potential-based shaping needs it
+    to keep the potential difference consistent with the discounted
+    return; other shaping classes ignore it.
     """
     env_args = dict(args) if args else {}
     shaping_config = env_args.pop("reward_shaping", None)
@@ -188,10 +200,13 @@ def create_env(name: str, args: Mapping[str, Any] | None) -> core.ProxiedEnv:
 
     if shaping_config:
         shaping_name = shaping_config["name"]
-        shaping_args = shaping_config.get("args", {}) or {}
+        shaping_args = dict(shaping_config.get("args", {}) or {})
         if shaping_name not in REWARD_SHAPING_BUILDERS:
             raise ValueError(f"Unknown reward shaping: {shaping_name}")
         shaping_cls = REWARD_SHAPING_BUILDERS[shaping_name]
+        takes_discount = issubclass(shaping_cls, wrappers.PotentialShapingWrapper)
+        if takes_discount and gamma is not None and "gamma" not in shaping_args:
+            shaping_args["gamma"] = gamma
         env = shaping_cls(env, **shaping_args)
         proxy = shaping_cls(proxy, **shaping_args)
 
@@ -201,6 +216,7 @@ def create_env(name: str, args: Mapping[str, Any] | None) -> core.ProxiedEnv:
         if noise_name not in REWARD_NOISE_BUILDERS:
             raise ValueError(f"Unknown reward noise: {noise_name}")
         noise_cls = REWARD_NOISE_BUILDERS[noise_name]
+        noise_args = wrappers.normalize_noise_args(noise_args)
         env = noise_cls(env, **noise_args)
 
     return core.ProxiedEnv(env=env, proxy=proxy)
@@ -330,57 +346,190 @@ def delay_wrapper(env: gym.Env, reward_delay: rewdelay.RewardDelay | None) -> gy
     return env
 
 
+ESTIMATOR_MAPPERS = frozenset(
+    {
+        "discrete-least-lfa",
+        "least-lfa",
+        "bayes-least-lfa",
+        "cvlps",
+        "recurring-cvlps",
+    }
+)
+
+ONE_SHOT_REWARD_MAPPERS = frozenset(
+    {
+        "least-lfa",
+        "discrete-least-lfa",
+        "cvlps",
+    }
+)
+
+
+def estimation_only(exp_instance: core.ExperimentInstance):
+    """
+    Entry point running reward estimation without control.
+
+    The env stack matches `policy_control`: shaping and noise on the
+    training env, aggregate window sums from `DelayedRewardWrapper`,
+    and the reward mapper with its true-reward evaluator built from the
+    clean proxy. The action source is a seeded uniform-random policy;
+    no value function is learned, so the occupancy is exploration
+    alone. One-shot estimators stop at their first estimation event:
+    the freeze ends information collection, and the remaining episodes
+    would add no measurement.
+    """
+    env_spec = exp_instance.experiment.env_spec
+    problem_spec = exp_instance.experiment.problem_spec
+    proxied_env = create_env(
+        env_spec.name, args=env_spec.args, gamma=problem_spec.gamma
+    )
+    env, monitor = monitor_wrapper(proxied_env.env)
+    rew_delay = reward_delay_distribution(problem_spec.delay_config)
+    env = delay_wrapper(env, rew_delay)
+    env = reward_mapper(
+        env,
+        proxy_env=proxied_env.proxy,
+        mapping_spec=problem_spec.reward_mapper,
+    )
+
+    num_episodes = exp_instance.run_config.episodes_per_run
+    log_frequency = max(exp_instance.run_config.log_episode_frequency, 1)
+    seeder = core.Seeder(
+        exp_instance.instance_id if exp_instance.run_config.use_seed else None
+    )
+    num_actions = int(env.action_space.n)
+
+    def log_episode(episode: int, returns: Sequence[float]) -> None:
+        exp_logger.log(
+            episode=episode,
+            steps=run_steps,
+            returns=float(np.mean(returns)),
+            info=dict(reward_estimation_info(env)),
+        )
+
+    returns: list[float] = []
+    run_steps = 0
+    last_logged_episode = -1
+    with logger.ExperimentLogger(
+        log_dir=exp_instance.run_config.output_dir, experiment_instance=exp_instance
+    ) as exp_logger:
+        episode = 0
+        for episode in range(num_episodes):
+            seed = seeder.get_seed(episode=episode)
+            env.reset(seed=seed)
+            rng = np.random.default_rng(seed)
+            while True:
+                action = int(rng.integers(num_actions))
+                _, _, term, trunc, _ = env.step(action)
+                run_steps += 1
+                if term or trunc:
+                    break
+            returns.append(monitor.rewards)
+            # a one-shot estimator that fired during this episode's
+            # attempt is logged immediately: the run stops at the freeze
+            if episode % log_frequency == 0 or _one_shot_estimated(
+                env, problem_spec.reward_mapper["name"]
+            ):
+                log_episode(episode, returns)
+                last_logged_episode = episode
+            if _one_shot_estimated(env, problem_spec.reward_mapper["name"]):
+                break
+        # the trailing episodes' events ride the final log entry
+        if last_logged_episode < episode:
+            log_episode(episode, returns)
+    env.close()
+
+
+def _one_shot_estimated(env: gym.Env, mapper_name: str) -> bool:
+    """
+    Whether a one-shot estimator has frozen weights.
+
+    """
+    if mapper_name not in ONE_SHOT_REWARD_MAPPERS:
+        return False
+    if not env.has_wrapper_attr("weights"):
+        return False
+    return env.get_wrapper_attr("weights") is not None
+
+
 def reward_mapper(env: gym.Env, proxy_env: gym.Env, mapping_spec: Mapping[str, Any]):
     """
     Creates a mapper for handling missing rewards.
     """
     name = mapping_spec["name"]
     m_args = dict(**(mapping_spec["args"] or {}))
-    enc_feats_spec = m_args.pop("feats_spec") if "feats_spec" in m_args else []
-    ft_op = create_ft_ops(proxy_env, feats_spec=enc_feats_spec)
 
     if name == "identity":
         return env
     elif name == "impute-missing":
         return rewdelay.ImputeMissingRewardWrapper(env, **m_args)
-    elif name == "discrete-least-lfa":
-        return rewdelay.DiscretisedLeastLfaGenerativeRewardWrapper(
+    elif name not in ESTIMATOR_MAPPERS:
+        raise ValueError(f"Unknown mapping_method: {mapping_spec}")
+
+    feats_fn = estimator_feats_fn(proxy_env, name, m_args)
+    intercept = bool(m_args.get("intercept", False))
+
+    if name == "discrete-least-lfa":
+        return rewdelay.LeastLfaGenerativeRewardWrapper(
             env=env,
-            ft_op=ft_op,
+            feats_fn=feats_fn,
             **m_args,
         )
     elif name == "least-lfa":
         return rewdelay.LeastLfaGenerativeRewardWrapper(
             env=env,
-            ft_op=ft_op,
-            reward_error_fn=true_reward_error_fn(proxy_env, ft_op, m_args),
+            feats_fn=feats_fn,
+            reward_error_fn=true_reward_error_fn(proxy_env, feats_fn, intercept),
             **m_args,
         )
     elif name == "bayes-least-lfa":
         return rewdelay.BayesLeastLfaGenerativeRewardWrapper(
             env=env,
-            ft_op=ft_op,
-            reward_error_fn=true_reward_error_fn(proxy_env, ft_op, m_args),
+            feats_fn=feats_fn,
+            reward_error_fn=true_reward_error_fn(proxy_env, feats_fn, intercept),
             **m_args,
         )
     elif name == "cvlps":
         return rewdelay.ConvexSolverGenerativeRewardWrapper(
             env=env,
-            ft_op=ft_op,
+            feats_fn=feats_fn,
             **m_args,
         )
     elif name == "recurring-cvlps":
         return rewdelay.RecurringConvexSolverGenerativeRewardWrapper(
             env=env,
-            ft_op=ft_op,
+            feats_fn=feats_fn,
             **m_args,
         )
 
     raise ValueError(f"Unknown mapping_method: {mapping_spec}")
 
 
+def estimator_feats_fn(
+    proxy_env: gym.Env, name: str, mapper_args: dict[str, Any]
+) -> rewardfeat.TransitionFeatureFn:
+    """
+    Builds an estimator's transition-feature function from its specification.
+
+    Pops `transition_feats_spec` from the mapper args and rejects the
+    removed `feats_spec` key: an estimator's features come from a
+    transition, never from the control pipeline's operators.
+    """
+    if "feats_spec" in mapper_args:
+        raise ValueError(
+            f"{name}: estimator mappers no longer accept feats_spec; "
+            "use transition_feats_spec"
+        )
+    spec = mapper_args.pop("transition_feats_spec", None)
+    if spec is None:
+        raise ValueError(f"{name}: estimator mappers require transition_feats_spec")
+    return rewardfeat.transition_feature_fn(proxy_env, spec)
+
+
 def true_reward_error_fn(
-    proxy_env: gym.Env, ft_op: transform.FTOp, mapper_args: Mapping[str, Any]
+    proxy_env: gym.Env,
+    feats_fn: rewardfeat.TransitionFeatureFn,
+    intercept: bool = False,
 ) -> Callable[[np.ndarray], Mapping[str, Any]]:
     """
     True-reward error evaluator for an estimator mapper.
@@ -393,9 +542,8 @@ def true_reward_error_fn(
     """
     return rewardeval.true_reward_error_fn(
         proxy_env=proxy_env,
-        ft_op=ft_op,
-        use_bias=mapper_args.get("use_bias", False),
-        use_next_state=mapper_args.get("use_next_state", False),
+        feats_fn=feats_fn,
+        intercept=intercept,
         seed=REWARD_ERROR_SAMPLING_SEED,
     )
 
@@ -404,7 +552,7 @@ def reward_estimation_info(env: gym.Env) -> Mapping[str, Any]:
     """
     Reward-estimation events recorded by the reward mapper so far.
 
-    The full list is attached to each log entry and the aggregation
+    The full lists are attached to each log entry and the aggregation
     pipeline deduplicates by update index, so every event is reported
     once regardless of the log frequency.
     """
@@ -412,9 +560,15 @@ def reward_estimation_info(env: gym.Env) -> Mapping[str, Any]:
         return {}
     estimation_meta = env.get_wrapper_attr("estimation_meta")
     reward_errors = estimation_meta.get("reward_errors", [])
-    if not reward_errors:
+    deferred_attempts = estimation_meta.get("deferred_attempts", [])
+    if not reward_errors and not deferred_attempts:
         return {}
-    return {"reward_errors": [dict(event) for event in reward_errors]}
+    info: dict[str, Any] = {}
+    if reward_errors:
+        info["reward_errors"] = [dict(event) for event in reward_errors]
+    if deferred_attempts:
+        info["deferred_attempts"] = [dict(event) for event in deferred_attempts]
+    return info
 
 
 def observation_encoder(

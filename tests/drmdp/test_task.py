@@ -1,12 +1,12 @@
 """Tests for task.py — env creation, reward mapping, experiment generation."""
 
-from collections.abc import Sequence
-
 import numpy as np
 import pytest
 
-from drmdp import algorithms, core, envs, rewdelay, task, transform
+from drmdp import core, envs, rewdelay, task, transform
+from drmdp.envs import wrappers
 from drmdp.workflows import controlexps
+from tests.drmdp.testhelpers import assert_training_snapshots
 
 
 class TestCreateEnv:
@@ -75,6 +75,67 @@ class TestCreateEnv:
         result.env.close()
         result.proxy.close()
 
+    def test_reward_shaping_pbrs_is_registered(self):
+        result = task.create_env(
+            "MountainCar-v0",
+            {
+                "max_episode_steps": 200,
+                "reward_shaping": {
+                    "name": "mountain-car-height-pbrs",
+                    "args": {"scale": 1.0},
+                },
+            },
+        )
+        assert isinstance(result.env, wrappers.MountainCarHeightShaping)
+        _obs, _ = result.env.reset(seed=0)
+        _, rew, _, _, _ = result.env.step(0)
+        assert rew != -1.0
+        result.env.close()
+        result.proxy.close()
+
+    def test_pbrs_shaping_receives_learner_discount(self):
+        args = {
+            "max_episode_steps": 200,
+            "reward_shaping": {"name": "mountain-car-height-pbrs", "args": {}},
+        }
+        result = task.create_env("MountainCar-v0", args, gamma=0.99)
+        assert result.env.gamma == pytest.approx(0.99)
+        assert result.proxy.gamma == pytest.approx(0.99)
+        result.env.close()
+        result.proxy.close()
+
+    def test_gridworld_distance_pbrs_is_registered(self):
+        result = task.create_env(
+            "GridWorld-MINES",
+            {
+                "grid": controlexps.MINES_GW_GRID,
+                "max_episode_steps": 200,
+                "reward_shaping": {
+                    "name": "gridworld-distance-pbrs",
+                    "args": {"scale": 1.0},
+                },
+            },
+            gamma=0.99,
+        )
+        assert isinstance(result.env, wrappers.GridWorldDistanceShaping)
+        assert result.env.gamma == pytest.approx(0.99)
+        assert result.env.exponent == pytest.approx(2.0)
+        _obs, _ = result.env.reset(seed=0)
+        _, rew, _, _, _ = result.env.step(0)
+        assert rew != -1.0
+        result.env.close()
+        result.proxy.close()
+
+    def test_additive_shaping_ignores_learner_discount(self):
+        args = {
+            "max_episode_steps": 200,
+            "reward_shaping": {"name": "mountain-car-height", "args": {"scale": 1.0}},
+        }
+        result = task.create_env("MountainCar-v0", args, gamma=0.99)
+        assert isinstance(result.env, wrappers.MountainCarHeightBonus)
+        result.env.close()
+        result.proxy.close()
+
     def test_reward_noise_relative_gaussian(self):
         result = task.create_env(
             "MountainCar-v0",
@@ -82,7 +143,7 @@ class TestCreateEnv:
                 "max_episode_steps": 200,
                 "reward_noise": {
                     "name": "relative-gaussian",
-                    "args": {"scale": 1.0, "reward_range": 2.0},
+                    "args": {"std_multiplier": 1.0, "reference_std": 2.0},
                 },
             },
         )
@@ -104,11 +165,42 @@ class TestCreateEnv:
             proxy_rewards.append(rew)
             if term:
                 break
-        # noise std is sqrt(1.0) * 2.0 against the base reward of -1
+        # noise std is 1.0 * 2.0 against the base reward of -1
         assert not all(rew == -1.0 for rew in env_rewards)
         assert all(rew == -1.0 for rew in proxy_rewards)
         result.env.close()
         result.proxy.close()
+
+    def test_legacy_reward_noise_args_are_decoded(self):
+        # `scale` was a variance multiplier, so 0.25 decodes to 0.5
+        legacy = task.create_env(
+            "MountainCar-v0",
+            {
+                "max_episode_steps": 200,
+                "reward_noise": {
+                    "name": "relative-gaussian",
+                    "args": {"scale": 0.25, "reward_range": 2.0},
+                },
+            },
+        )
+        direct = task.create_env(
+            "MountainCar-v0",
+            {
+                "max_episode_steps": 200,
+                "reward_noise": {
+                    "name": "relative-gaussian",
+                    "args": {"std_multiplier": 0.5, "reference_std": 2.0},
+                },
+            },
+        )
+        assert isinstance(legacy.env, envs.wrappers.RewardRangeGaussianNoiseReward)
+        assert legacy.env.std_multiplier == pytest.approx(0.5)
+        assert legacy.env.reference_std == pytest.approx(2.0)
+        assert legacy.env.std_multiplier == pytest.approx(direct.env.std_multiplier)
+        legacy.env.close()
+        legacy.proxy.close()
+        direct.env.close()
+        direct.proxy.close()
 
     def test_unknown_shaping_raises(self):
         with pytest.raises(ValueError, match="Unknown reward shaping"):
@@ -164,17 +256,20 @@ class TestRewardMapper:
                 "name": "least-lfa",
                 "args": {
                     "attempt_estimation_episode": 10,
-                    "use_bias": False,
                     "impute_value": 0,
                     "estimation_buffer_mult": 25,
-                    "use_next_state": False,
                     "check_factors": False,
-                    "feats_spec": [
-                        {
-                            "name": "tile-observation-action-ft",
-                            "args": {"tiling_dim": 2},
-                        }
-                    ],
+                    "transition_feats_spec": {
+                        "name": "current-features",
+                        "args": {
+                            "current_spec": [
+                                {
+                                    "name": "tile-observation-action-ft",
+                                    "args": {"tiling_dim": 2},
+                                }
+                            ]
+                        },
+                    },
                 },
             },
         )
@@ -197,15 +292,19 @@ class TestRewardMapper:
                 "name": "bayes-least-lfa",
                 "args": {
                     "init_attempt_estimation_episode": 10,
-                    "use_bias": False,
                     "impute_value": 0,
                     "estimation_buffer_mult": 25,
-                    "feats_spec": [
-                        {
-                            "name": "tile-observation-action-ft",
-                            "args": {"tiling_dim": 2},
-                        }
-                    ],
+                    "transition_feats_spec": {
+                        "name": "current-features",
+                        "args": {
+                            "current_spec": [
+                                {
+                                    "name": "tile-observation-action-ft",
+                                    "args": {"tiling_dim": 2},
+                                }
+                            ]
+                        },
+                    },
                 },
             },
         )
@@ -360,7 +459,7 @@ class TestCreateAlgorithm:
     def test_markovian_trains_and_updates_weights(self):
         algo, env, mon = self._make_algo("markovian")
         snapshots = list(algo.train(env=env, num_episodes=3, monitor=mon))
-        _assert_training_snapshots(snapshots, expected_count=3)
+        assert_training_snapshots(snapshots, expected_count=3)
         assert mon.step > 0
         env.close()
 
@@ -368,14 +467,14 @@ class TestCreateAlgorithm:
         delay = rewdelay.FixedDelay(delay=3)
         algo, env, mon = self._make_algo("drop-missing", delay_reward=delay)
         snapshots = list(algo.train(env=env, num_episodes=3, monitor=mon))
-        _assert_training_snapshots(snapshots, expected_count=3)
+        assert_training_snapshots(snapshots, expected_count=3)
         assert mon.step > 0
         env.close()
 
     def test_uniform_random_trains(self):
         algo, env, mon = self._make_algo("uniform-random")
         snapshots = list(algo.train(env=env, num_episodes=3, monitor=mon))
-        _assert_training_snapshots(snapshots, expected_count=3)
+        assert_training_snapshots(snapshots, expected_count=3)
         assert mon.step > 0
         env.close()
 
@@ -396,21 +495,3 @@ class TestCreateAlgorithm:
                 policy_type="nonexistent",
             )
         env.close()
-
-
-def _assert_training_snapshots(
-    snapshots: Sequence[algorithms.PolicyControlSnapshot],
-    expected_count: int,
-):
-    """Verify invariant properties that every training run must satisfy."""
-    assert len(snapshots) == expected_count
-    for snapshot in snapshots:
-        assert isinstance(snapshot, algorithms.PolicyControlSnapshot)
-        assert snapshot.steps > 0
-        assert isinstance(snapshot.weights, np.ndarray)
-        assert np.isfinite(snapshot.returns)
-
-    shapes = [snap.weights.shape for snap in snapshots]
-    assert len(set(shapes)) == 1, f"Inconsistent weight shapes: {set(shapes)}"
-
-    assert not np.all(snapshots[-1].weights == 0)

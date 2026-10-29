@@ -32,14 +32,6 @@ _logger = logging.getLogger(__name__)
 MAX_STEPS = 10_000
 REWARD_DELAYS = (2, 4, 6)
 REWARD_EVAL_SAMPLES = 25_000
-MINES_GW_GRID = [
-    "ooooxooooooo",
-    "oooooooooxoo",
-    "oxoooooxoooo",
-    "oooooxoooooo",
-    "ooxooooooxoo",
-    "sxxxxxxxxxxg",
-]
 NUM_TASKS_PER_WRITER = 100
 
 
@@ -67,7 +59,7 @@ class JobSpec:
     rewest_args: Mapping[str, Any]
     reward_delay: int
     num_episodes: int
-    use_bias: bool
+    intercept: bool
     epochs: int
     turn: int
 
@@ -149,15 +141,18 @@ def discrete_least_specs(
     Discretised Least Squares specs.
     """
     specs = []
-    for aee, feat_spec, est_buffer_mult in itertools.product(
+    for attempt_episode, feat_spec, est_buffer_mult in itertools.product(
         attempt_estimation_episodes, feat_specs, estimation_buffer_multiples
     ):
         specs.append(
             {
                 "name": "discrete-least-lfa",
                 "args": {
-                    "attempt_estimation_episode": aee,
-                    "feats_spec": feat_spec,
+                    "attempt_estimation_episode": attempt_episode,
+                    "transition_feats_spec": {
+                        "name": "current-features",
+                        "args": {"current_spec": feat_spec},
+                    },
                     "estimation_buffer_mult": est_buffer_mult,
                 },
             }
@@ -174,15 +169,18 @@ def least_specs(
     Least Squares specs.
     """
     specs = []
-    for aee, feat_spec, est_buffer_mult in itertools.product(
+    for attempt_episode, feat_spec, est_buffer_mult in itertools.product(
         attempt_estimation_episodes, feat_specs, estimation_buffer_multiples
     ):
         specs.append(
             {
                 "name": "least-lfa",
                 "args": {
-                    "attempt_estimation_episode": aee,
-                    "feats_spec": feat_spec,
+                    "attempt_estimation_episode": attempt_episode,
+                    "transition_feats_spec": {
+                        "name": "current-features",
+                        "args": {"current_spec": feat_spec},
+                    },
                     "estimation_buffer_mult": est_buffer_mult,
                 },
             }
@@ -199,16 +197,19 @@ def bayes_least_specs(
     Bayesian linear regression specs.
     """
     specs = []
-    for iaee, feat_spec, est_buffer_mult in itertools.product(
+    for init_attempt_episode, feat_spec, est_buffer_mult in itertools.product(
         init_attempt_estimation_episodes, feat_specs, estimation_buffer_multiples
     ):
         specs.append(
             {
                 "name": "bayes-least-lfa",
                 "args": {
-                    "init_attempt_estimation_episode": iaee,
+                    "init_attempt_estimation_episode": init_attempt_episode,
                     "mode": "exponential",
-                    "feats_spec": feat_spec,
+                    "transition_feats_spec": {
+                        "name": "current-features",
+                        "args": {"current_spec": feat_spec},
+                    },
                     "estimation_buffer_mult": est_buffer_mult,
                 },
             }
@@ -226,15 +227,18 @@ def cvlps_specs(
     Constrained optimisation specs.
     """
     specs = []
-    for aee, feat_spec, est_buffer_mult in itertools.product(
+    for attempt_episode, feat_spec, est_buffer_mult in itertools.product(
         attempt_estimation_episodes, feat_specs, estimation_buffer_multiples
     ):
         specs.append(
             {
                 "name": "cvlps",
                 "args": {
-                    "attempt_estimation_episode": aee,
-                    "feats_spec": feat_spec,
+                    "attempt_estimation_episode": attempt_episode,
+                    "transition_feats_spec": {
+                        "name": "current-features",
+                        "args": {"current_spec": feat_spec},
+                    },
                     "constraints_buffer_limit": constraints_buffer_limit,
                     "estimation_buffer_mult": est_buffer_mult,
                 },
@@ -253,16 +257,19 @@ def recurring_cvlps(
     Recurring convex linear estimation specs.
     """
     specs = []
-    for iaee, feat_spec, est_buffer_mult in itertools.product(
+    for init_attempt_episode, feat_spec, est_buffer_mult in itertools.product(
         init_attempt_estimation_episodes, feat_specs, estimation_buffer_multiples
     ):
         specs.append(
             {
                 "name": "recurring-cvlps",
                 "args": {
-                    "init_attempt_estimation_episode": iaee,
+                    "init_attempt_estimation_episode": init_attempt_episode,
                     "mode": "exponential",
-                    "feats_spec": feat_spec,
+                    "transition_feats_spec": {
+                        "name": "current-features",
+                        "args": {"current_spec": feat_spec},
+                    },
                     "constraints_buffer_limit": constraints_buffer_limit,
                     "estimation_buffer_mult": est_buffer_mult,
                 },
@@ -487,7 +494,12 @@ def experiment_specs() -> Sequence[Mapping[str, Any]]:
     )
 
 
-def run_reward_estimation_study(specs, turns: int, num_episodes: int, output_path: str):
+def run_reward_estimation_study(
+    specs: Sequence[Mapping[str, Any]],
+    turns: int,
+    num_episodes: int,
+    output_path: str,
+) -> None:
     """
     Runs a reward estimation study.
     """
@@ -505,7 +517,7 @@ def run_reward_estimation_study(specs, turns: int, num_episodes: int, output_pat
                 reward_delay=reward_delay,
                 rewest_method=rewest_spec["name"],
                 rewest_args=rewest_spec["args"],
-                use_bias=False,
+                intercept=False,
                 epochs=spec["epochs"],
                 turn=turn,
             )
@@ -754,8 +766,6 @@ def main():
     Entry point for running experiments.
     """
     args = parse_args()
-    os.path.join(args.output_path)
-
     run_reward_estimation_study(
         experiment_specs(),
         turns=args.num_runs,

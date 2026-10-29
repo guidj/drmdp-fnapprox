@@ -6,6 +6,7 @@ from typing import Any
 
 import numpy as np
 
+from drmdp import rewardfeat
 from drmdp.envs import gridutils
 
 EPSILON = 0.1
@@ -25,13 +26,13 @@ MINES_GW_GRID = [
 MAX_OPTIONS_DELAY = 4
 DEFAULT_UNIFORM_DELAY_RANGE = 5
 DEFAULT_IMPUTE_VALUE = 0
-DEFAULT_DISCOUNT_FACTORS = (1.0, 0.99)
+DEFAULT_DISCOUNT_FACTORS = (1.0, 0.99, 0.995, 0.98)
 
 
 def default_delay_config() -> list[dict[str, Any]]:
     """Uniform delay ranges for the control experiment families."""
     delay_configs = []
-    for min_delay, max_delay in ((2, 4), (8, 10), (14, 16)):
+    for min_delay, max_delay in ((2, 4), (6, 8), (10, 12)):
         delay_configs.append(
             {
                 "name": "uniform",
@@ -51,10 +52,9 @@ def _delay_min(delay_config: Mapping[str, Any]) -> int:
 
 def least_specs(
     attempt_estimation_episodes: Sequence[int],
-    feats_specs: Sequence[Sequence[Mapping[str, Any]]],
+    transition_feats_specs: Sequence[Mapping[str, Any]],
     delay_configs: Sequence[Mapping[str, Any]] = default_delay_config(),
     discounts: Sequence[float] = DEFAULT_DISCOUNT_FACTORS,
-    use_next_state: bool = True,
     check_factors: bool = False,
     impute_value: float = DEFAULT_IMPUTE_VALUE,
 ) -> Sequence[Mapping[str, Any]]:
@@ -65,10 +65,10 @@ def least_specs(
     for (
         delay_config,
         gamma,
-        feats_spec,
+        transition_feats_spec,
         attempt_estimation_episode,
     ) in itertools.product(
-        delay_configs, discounts, feats_specs, attempt_estimation_episodes
+        delay_configs, discounts, transition_feats_specs, attempt_estimation_episodes
     ):
         specs.append(
             {
@@ -77,11 +77,10 @@ def least_specs(
                     "name": "least-lfa",
                     "args": {
                         "attempt_estimation_episode": attempt_estimation_episode,
-                        "feats_spec": feats_spec,
-                        "use_bias": False,
+                        "transition_feats_spec": transition_feats_spec,
                         "impute_value": impute_value,
                         "estimation_buffer_mult": 25,
-                        "use_next_state": use_next_state,
+                        "intercept": False,
                         "check_factors": check_factors,
                     },
                 },
@@ -96,7 +95,7 @@ def least_specs(
 
 def bayes_least_specs(
     init_attempt_estimation_episodes: Sequence[int],
-    feats_specs: Sequence[Sequence[Mapping[str, Any]]],
+    transition_feats_specs: Sequence[Mapping[str, Any]],
     delay_configs: Sequence[Mapping[str, Any]] = default_delay_config(),
     discounts: Sequence[float] = DEFAULT_DISCOUNT_FACTORS,
     impute_value: float = DEFAULT_IMPUTE_VALUE,
@@ -109,10 +108,13 @@ def bayes_least_specs(
     for (
         delay_config,
         gamma,
-        feats_spec,
+        transition_feats_spec,
         init_attempt_estimation_episode,
     ) in itertools.product(
-        delay_configs, discounts, feats_specs, init_attempt_estimation_episodes
+        delay_configs,
+        discounts,
+        transition_feats_specs,
+        init_attempt_estimation_episodes,
     ):
         specs.append(
             {
@@ -122,10 +124,10 @@ def bayes_least_specs(
                     "args": {
                         "init_attempt_estimation_episode": init_attempt_estimation_episode,
                         "mode": "exponential",
-                        "feats_spec": feats_spec,
-                        "use_bias": False,
+                        "transition_feats_spec": transition_feats_spec,
                         "impute_value": impute_value,
                         "estimation_buffer_mult": 25,
+                        "intercept": False,
                         "sample_weights": sample_weights,
                     },
                 },
@@ -246,20 +248,26 @@ def electric_motor_experiment_specs() -> Sequence[Mapping[str, Any]]:
             "problem_specs": common_problem_specs(impute_value=0)
             + least_specs(
                 attempt_estimation_episodes=(10,),
-                feats_specs=[
-                    [
-                        {"name": "scale-observation-ft", "args": None},
-                        {"name": "action-segment-observation-ft", "args": None},
-                    ]
+                transition_feats_specs=[
+                    rewardfeat.current_and_successor_features_spec(
+                        current_spec=[
+                            {"name": "scale-observation-ft", "args": None},
+                            {"name": "action-segment-observation-ft", "args": None},
+                        ],
+                        successor_spec=[{"name": "scale-observation-ft", "args": None}],
+                    )
                 ],
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
-                feats_specs=[
-                    [
-                        {"name": "scale-observation-ft", "args": None},
-                        {"name": "action-segment-observation-ft", "args": None},
-                    ]
+                transition_feats_specs=[
+                    rewardfeat.current_and_successor_features_spec(
+                        current_spec=[
+                            {"name": "scale-observation-ft", "args": None},
+                            {"name": "action-segment-observation-ft", "args": None},
+                        ],
+                        successor_spec=[{"name": "scale-observation-ft", "args": None}],
+                    )
                 ],
             ),
             "epochs": 1,
@@ -279,20 +287,26 @@ def electric_motor_experiment_specs() -> Sequence[Mapping[str, Any]]:
             "problem_specs": common_problem_specs(impute_value=0)
             + least_specs(
                 attempt_estimation_episodes=(10,),
-                feats_specs=[
-                    [
-                        {"name": "scale-observation-ft", "args": None},
-                        {"name": "action-segment-observation-ft", "args": None},
-                    ]
+                transition_feats_specs=[
+                    rewardfeat.current_and_successor_features_spec(
+                        current_spec=[
+                            {"name": "scale-observation-ft", "args": None},
+                            {"name": "action-segment-observation-ft", "args": None},
+                        ],
+                        successor_spec=[{"name": "scale-observation-ft", "args": None}],
+                    )
                 ],
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
-                feats_specs=[
-                    [
-                        {"name": "scale-observation-ft", "args": None},
-                        {"name": "action-segment-observation-ft", "args": None},
-                    ]
+                transition_feats_specs=[
+                    rewardfeat.current_and_successor_features_spec(
+                        current_spec=[
+                            {"name": "scale-observation-ft", "args": None},
+                            {"name": "action-segment-observation-ft", "args": None},
+                        ],
+                        successor_spec=[{"name": "scale-observation-ft", "args": None}],
+                    )
                 ],
             ),
             "epochs": 1,
@@ -317,20 +331,26 @@ def electric_motor_experiment_specs() -> Sequence[Mapping[str, Any]]:
             "problem_specs": common_problem_specs(impute_value=2)
             + least_specs(
                 attempt_estimation_episodes=(10,),
-                feats_specs=[
-                    [
-                        {"name": "scale-observation-ft", "args": None},
-                        {"name": "action-segment-observation-ft", "args": None},
-                    ]
+                transition_feats_specs=[
+                    rewardfeat.current_and_successor_features_spec(
+                        current_spec=[
+                            {"name": "scale-observation-ft", "args": None},
+                            {"name": "action-segment-observation-ft", "args": None},
+                        ],
+                        successor_spec=[{"name": "scale-observation-ft", "args": None}],
+                    )
                 ],
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
-                feats_specs=[
-                    [
-                        {"name": "scale-observation-ft", "args": None},
-                        {"name": "action-segment-observation-ft", "args": None},
-                    ]
+                transition_feats_specs=[
+                    rewardfeat.current_and_successor_features_spec(
+                        current_spec=[
+                            {"name": "scale-observation-ft", "args": None},
+                            {"name": "action-segment-observation-ft", "args": None},
+                        ],
+                        successor_spec=[{"name": "scale-observation-ft", "args": None}],
+                    )
                 ],
             ),
             "epochs": 1,
@@ -353,20 +373,26 @@ def electric_motor_experiment_specs() -> Sequence[Mapping[str, Any]]:
             "problem_specs": common_problem_specs(impute_value=24)
             + least_specs(
                 attempt_estimation_episodes=(10,),
-                feats_specs=[
-                    [
-                        {"name": "scale-observation-ft", "args": None},
-                        {"name": "action-segment-observation-ft", "args": None},
-                    ]
+                transition_feats_specs=[
+                    rewardfeat.current_and_successor_features_spec(
+                        current_spec=[
+                            {"name": "scale-observation-ft", "args": None},
+                            {"name": "action-segment-observation-ft", "args": None},
+                        ],
+                        successor_spec=[{"name": "scale-observation-ft", "args": None}],
+                    )
                 ],
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
-                feats_specs=[
-                    [
-                        {"name": "scale-observation-ft", "args": None},
-                        {"name": "action-segment-observation-ft", "args": None},
-                    ]
+                transition_feats_specs=[
+                    rewardfeat.current_and_successor_features_spec(
+                        current_spec=[
+                            {"name": "scale-observation-ft", "args": None},
+                            {"name": "action-segment-observation-ft", "args": None},
+                        ],
+                        successor_spec=[{"name": "scale-observation-ft", "args": None}],
+                    )
                 ],
             ),
             "epochs": 1,
@@ -386,20 +412,26 @@ def electric_motor_experiment_specs() -> Sequence[Mapping[str, Any]]:
             "problem_specs": common_problem_specs(impute_value=0)
             + least_specs(
                 attempt_estimation_episodes=(10,),
-                feats_specs=[
-                    [
-                        {"name": "scale-observation-ft", "args": None},
-                        {"name": "action-segment-observation-ft", "args": None},
-                    ]
+                transition_feats_specs=[
+                    rewardfeat.current_and_successor_features_spec(
+                        current_spec=[
+                            {"name": "scale-observation-ft", "args": None},
+                            {"name": "action-segment-observation-ft", "args": None},
+                        ],
+                        successor_spec=[{"name": "scale-observation-ft", "args": None}],
+                    )
                 ],
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
-                feats_specs=[
-                    [
-                        {"name": "scale-observation-ft", "args": None},
-                        {"name": "action-segment-observation-ft", "args": None},
-                    ]
+                transition_feats_specs=[
+                    rewardfeat.current_and_successor_features_spec(
+                        current_spec=[
+                            {"name": "scale-observation-ft", "args": None},
+                            {"name": "action-segment-observation-ft", "args": None},
+                        ],
+                        successor_spec=[{"name": "scale-observation-ft", "args": None}],
+                    )
                 ],
             ),
             "epochs": 1,
@@ -422,20 +454,26 @@ def electric_motor_experiment_specs() -> Sequence[Mapping[str, Any]]:
             "problem_specs": common_problem_specs(impute_value=1)
             + least_specs(
                 attempt_estimation_episodes=(10,),
-                feats_specs=[
-                    [
-                        {"name": "scale-observation-ft", "args": None},
-                        {"name": "action-segment-observation-ft", "args": None},
-                    ]
+                transition_feats_specs=[
+                    rewardfeat.current_and_successor_features_spec(
+                        current_spec=[
+                            {"name": "scale-observation-ft", "args": None},
+                            {"name": "action-segment-observation-ft", "args": None},
+                        ],
+                        successor_spec=[{"name": "scale-observation-ft", "args": None}],
+                    )
                 ],
             )
             + bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
-                feats_specs=[
-                    [
-                        {"name": "scale-observation-ft", "args": None},
-                        {"name": "action-segment-observation-ft", "args": None},
-                    ]
+                transition_feats_specs=[
+                    rewardfeat.current_and_successor_features_spec(
+                        current_spec=[
+                            {"name": "scale-observation-ft", "args": None},
+                            {"name": "action-segment-observation-ft", "args": None},
+                        ],
+                        successor_spec=[{"name": "scale-observation-ft", "args": None}],
+                    )
                 ],
             ),
             "epochs": 1,
@@ -444,7 +482,7 @@ def electric_motor_experiment_specs() -> Sequence[Mapping[str, Any]]:
     return tuple(specs)
 
 
-def _grid_dead_ohe_indices(grid: Sequence[str], nactions: int = 4) -> list[int]:
+def grid_dead_ohe_indices(grid: Sequence[str], nactions: int = 4) -> list[int]:
     """
     Returns OHE indices of dead state-action columns.
 
@@ -464,207 +502,53 @@ def _grid_dead_ohe_indices(grid: Sequence[str], nactions: int = 4) -> list[int]:
     return gridutils.grid_dead_ohe_indices(grid_arr, exits=exits, nactions=nactions)
 
 
-def illustration_experiment_specs(
-    mc_tiling_dim: int = 4,
-    acrobot_tiling_dim: int = 3,
-    acrobot_hash_dim: int = 8192,
-    gw_tiling_dim: int = 5,
-) -> Sequence[Mapping[str, Any]]:
-    """
-    Illustration experiment specs for Mountain Car, Acrobot, and GridWorld.
-
-    Reward shaping creates non-constant rewards so estimation
-    quality matters.  Control and estimation encodings are
-    independent — control uses the canonical tile coding,
-    estimation uses count-based encodings matched to the
-    reward function's structure.
-    """
-    mc_est_feats: Sequence[Sequence[Mapping[str, Any]]] = [
-        [{"name": "tile-observation-action-ft", "args": {"tiling_dim": 3}}]
-    ]
-    acrobot_est_feats: Sequence[Sequence[Mapping[str, Any]]] = [
-        [
-            {
-                "name": "drop-observation-dims-ft",
-                "args": {"axis_dims": {0: [1, 2, 3, 4, 5]}},
-            },
-            {
-                "name": "tile-observation-action-ft",
-                "args": {"tiling_dim": 1, "num_tilings": 1},
-            },
-        ]
-    ]
-    gw_dead_ohe = _grid_dead_ohe_indices(MINES_GW_GRID)
-    gw_est_feats: Sequence[Sequence[Mapping[str, Any]]] = [
-        [
-            {"name": "flat-grid-observation-action-ft", "args": {}},
-            {
-                "name": "drop-observation-dims-ft",
-                "args": {"axis_dims": {0: gw_dead_ohe}},
-            },
-        ]
-    ]
-
-    specs: list[Mapping[str, Any]] = [
-        {
-            "name": "MountainCar-v0",
-            "args": {
-                "max_episode_steps": 2500,
-                "reward_shaping": {
-                    "name": "mountain-car-height",
-                    "args": {"scale": 1.0},
-                },
-                # zero-noise relative config; the unit magnitude is
-                # the one in gaussian_illustration_experiment_specs
-                "reward_noise": {
-                    "name": "relative-gaussian",
-                    "args": {"scale": 0.0, "reward_range": 1.0},
-                },
-            },
-            "feats_specs": [
-                [
-                    {
-                        "name": "tile-observation-action-ft",
-                        "args": {"tiling_dim": mc_tiling_dim},
-                    }
-                ]
-            ],
-            "problem_specs": common_problem_specs(include_options=False)
-            + least_specs(
-                attempt_estimation_episodes=(10,),
-                check_factors=True,
-                feats_specs=mc_est_feats,
-            )
-            + bayes_least_specs(
-                init_attempt_estimation_episodes=(10,),
-                feats_specs=mc_est_feats,
-            ),
-            "metadata": {"noise_scale": 0.0},
-            "epochs": 10,
-        },
-        {
-            "name": "Acrobot-v1",
-            "args": {
-                "max_episode_steps": 500,
-                "reward_shaping": {
-                    "name": "action-cost",
-                    "args": {"action_costs": [0.0, 0.5, 1.0]},
-                },
-                # zero-noise relative config; the unit magnitude is
-                # the one in gaussian_illustration_experiment_specs
-                "reward_noise": {
-                    "name": "relative-gaussian",
-                    "args": {"scale": 0.0, "reward_range": 1.0},
-                },
-            },
-            "feats_specs": [
-                [
-                    {
-                        "name": "tile-observation-action-ft",
-                        "args": {
-                            "tiling_dim": acrobot_tiling_dim,
-                            "hash_dim": acrobot_hash_dim,
-                        },
-                    }
-                ]
-            ],
-            "problem_specs": common_problem_specs(include_options=False)
-            + least_specs(
-                attempt_estimation_episodes=(10,),
-                check_factors=True,
-                feats_specs=acrobot_est_feats,
-            )
-            + bayes_least_specs(
-                init_attempt_estimation_episodes=(10,),
-                feats_specs=acrobot_est_feats,
-            ),
-            "metadata": {"noise_scale": 0.0},
-            "epochs": 10,
-        },
-        {
-            "name": "GridWorld-MINES",
-            "args": {
-                "grid": MINES_GW_GRID,
-                "max_episode_steps": 200,
-                # zero-noise relative config; the unit magnitude is
-                # the one in gaussian_illustration_experiment_specs
-                "reward_noise": {
-                    "name": "relative-gaussian",
-                    "args": {"scale": 0.0, "reward_range": 1.0},
-                },
-            },
-            "feats_specs": [
-                [
-                    {
-                        "name": "tile-observation-action-ft",
-                        "args": {"tiling_dim": gw_tiling_dim},
-                    }
-                ]
-            ],
-            "problem_specs": common_problem_specs(include_options=False)
-            + least_specs(
-                attempt_estimation_episodes=(10,),
-                use_next_state=False,
-                check_factors=True,
-                feats_specs=gw_est_feats,
-            )
-            + bayes_least_specs(
-                init_attempt_estimation_episodes=(10,),
-                feats_specs=gw_est_feats,
-            ),
-            "metadata": {"noise_scale": 0.0},
-            "epochs": 5,
-        },
-    ]
-    return tuple(specs)
-
-
 def gaussian_illustration_experiment_specs(
     mc_tiling_dim: int = 4,
     acrobot_tiling_dim: int = 3,
     acrobot_hash_dim: int = 8192,
     gw_tiling_dim: int = 5,
-    noise_magnitudes: Sequence[float] = (0.0, 0.25, 0.5, 1.0, 2.0),
+    noise_std_multipliers: Sequence[float] = (0.0, 0.25, 0.5, 1.0, 2.0),
 ) -> Sequence[Mapping[str, Any]]:
     """Illustration specs with unit-magnitude Gaussian reward noise.
 
-    Produces one spec per (env, noise_magnitude) combination, sweeping
-    the noise standard deviation as a factor of the environment's unit
-    reward magnitude: the logged magnitude m sets noise std = m * 1.0
-    (unit = modal per-step reward magnitude, 1 for all three
-    environments), so the logged config carries variance m^2 (``scale``)
-    and ``reward_range`` 1.0. The sweep follows the bsuite convention of
-    noise std as a magnitude ladder on unit-scale rewards (Osband et
-    al., 2019: std factors {0.1, 0.3, 1.0, 3.0, 10.0}); the full
-    post-shaping range is rejected as the unit because GridWorld's is
-    dominated by the -100 cliff penalty (std 25-200 against modal
-    rewards of -1). BLADE-TD uses ``sample_weights=True`` to sample
-    from the posterior.
+    Produces one spec per (env, standard-deviation multiplier) combination.
+    The sweep value m sets the noise standard deviation directly:
+    ``sigma = std_multiplier * reference_std`` with ``reference_std`` 1.0 (the
+    modal per-step reward magnitude, 1 for all three environments), so the
+    sweep value, the config value, and the sampled standard deviation are the
+    same number m and no variance/square-root pair sits between them. The
+    sweep follows the bsuite convention of noise std as a magnitude ladder on
+    unit-scale rewards (Osband et al., 2019: std factors {0.1, 0.3, 1.0, 3.0,
+    10.0}); the full post-shaping range is rejected as the unit because
+    GridWorld's is dominated by the -100 cliff penalty (std 25-200 against
+    modal rewards of -1). BLADE-TD consumes the posterior mean: the sweep
+    compares reward estimators, so the posterior weight draw is switched off
+    and its reward estimate is fixed, as LEAST's.
     """
-    mc_est_feats: Sequence[Sequence[Mapping[str, Any]]] = [
-        [{"name": "tile-observation-action-ft", "args": {"tiling_dim": 3}}]
+    mc_est_feats: Sequence[Mapping[str, Any]] = [
+        rewardfeat.current_and_successor_features_spec(
+            current_spec=[
+                {"name": "tile-observation-action-ft", "args": {"tiling_dim": 3}}
+            ],
+            successor_spec=[
+                {"name": "tile-observation-action-ft", "args": {"tiling_dim": 3}}
+            ],
+        )
     ]
-    acrobot_est_feats: Sequence[Sequence[Mapping[str, Any]]] = [
-        [
-            {
-                "name": "drop-observation-dims-ft",
-                "args": {"axis_dims": {0: [1, 2, 3, 4, 5]}},
-            },
-            {
-                "name": "tile-observation-action-ft",
-                "args": {"tiling_dim": 1, "num_tilings": 1},
-            },
-        ]
+    acrobot_est_feats: Sequence[Mapping[str, Any]] = [
+        {"name": "action-and-termination-features", "args": {}}
     ]
-    gw_dead_ohe = _grid_dead_ohe_indices(MINES_GW_GRID)
-    gw_est_feats: Sequence[Sequence[Mapping[str, Any]]] = [
-        [
-            {"name": "flat-grid-observation-action-ft", "args": {}},
-            {
-                "name": "drop-observation-dims-ft",
-                "args": {"axis_dims": {0: gw_dead_ohe}},
-            },
-        ]
+    gw_dead_ohe = grid_dead_ohe_indices(MINES_GW_GRID)
+    gw_est_feats: Sequence[Mapping[str, Any]] = [
+        rewardfeat.current_features_spec(
+            current_spec=[
+                {"name": "flat-grid-observation-action-ft", "args": {}},
+                {
+                    "name": "drop-observation-dims-ft",
+                    "args": {"axis_dims": {0: gw_dead_ohe}},
+                },
+            ]
+        )
     ]
 
     env_templates: list[Mapping[str, Any]] = [
@@ -680,7 +564,7 @@ def gaussian_illustration_experiment_specs(
             # unit = modal per-step reward magnitude (base -1); the
             # full post-shaping range [-2, 0] (base -1 plus the
             # sin(3*position) bonus) is not the noise unit
-            "reward_range": 1.0,
+            "reference_std": 1.0,
             "feats_specs": [
                 [
                     {
@@ -694,12 +578,11 @@ def gaussian_illustration_experiment_specs(
                 + least_specs(
                     attempt_estimation_episodes=(10,),
                     check_factors=True,
-                    feats_specs=mc_est_feats,
+                    transition_feats_specs=mc_est_feats,
                 )
                 + bayes_least_specs(
                     init_attempt_estimation_episodes=(10,),
-                    feats_specs=mc_est_feats,
-                    sample_weights=True,
+                    transition_feats_specs=mc_est_feats,
                 )
             ),
             "epochs": 10,
@@ -716,7 +599,7 @@ def gaussian_illustration_experiment_specs(
             # unit = modal per-step reward magnitude (base -1); the
             # full post-shaping range [-2, 0] (base -1 plus the action
             # cost) is not the noise unit
-            "reward_range": 1.0,
+            "reference_std": 1.0,
             "feats_specs": [
                 [
                     {
@@ -733,12 +616,11 @@ def gaussian_illustration_experiment_specs(
                 + least_specs(
                     attempt_estimation_episodes=(10,),
                     check_factors=True,
-                    feats_specs=acrobot_est_feats,
+                    transition_feats_specs=acrobot_est_feats,
                 )
                 + bayes_least_specs(
                     init_attempt_estimation_episodes=(10,),
-                    feats_specs=acrobot_est_feats,
-                    sample_weights=True,
+                    transition_feats_specs=acrobot_est_feats,
                 )
             ),
             "epochs": 10,
@@ -753,7 +635,7 @@ def gaussian_illustration_experiment_specs(
             # full range [-100, 0] is dominated by the -100 cliff and
             # would scale noise std to 25-200 against modal rewards
             # of -1
-            "reward_range": 1.0,
+            "reference_std": 1.0,
             "feats_specs": [
                 [
                     {
@@ -766,14 +648,12 @@ def gaussian_illustration_experiment_specs(
                 common_problem_specs(include_options=False)
                 + least_specs(
                     attempt_estimation_episodes=(10,),
-                    use_next_state=False,
                     check_factors=True,
-                    feats_specs=gw_est_feats,
+                    transition_feats_specs=gw_est_feats,
                 )
                 + bayes_least_specs(
                     init_attempt_estimation_episodes=(10,),
-                    feats_specs=gw_est_feats,
-                    sample_weights=True,
+                    transition_feats_specs=gw_est_feats,
                 )
             ),
             "epochs": 5,
@@ -781,14 +661,14 @@ def gaussian_illustration_experiment_specs(
     ]
 
     specs: list[Mapping[str, Any]] = []
-    for noise_magnitude in noise_magnitudes:
+    for noise_std_multiplier in noise_std_multipliers:
         for template in env_templates:
             env_args = dict(template["base_args"])
             env_args["reward_noise"] = {
                 "name": "relative-gaussian",
                 "args": {
-                    "scale": noise_magnitude**2,
-                    "reward_range": template["reward_range"],
+                    "std_multiplier": noise_std_multiplier,
+                    "reference_std": template["reference_std"],
                 },
             }
             specs.append(
@@ -797,7 +677,7 @@ def gaussian_illustration_experiment_specs(
                     "args": env_args,
                     "feats_specs": template["feats_specs"],
                     "problem_specs": template["problem_specs_fn"](),
-                    "metadata": {"noise_scale": noise_magnitude},
+                    "metadata": None,
                     "epochs": template["epochs"],
                 }
             )
@@ -855,34 +735,37 @@ def grid_experiments_specs(
                 "problem_specs": common_problem_specs(include_options=False)
                 + least_specs(
                     attempt_estimation_episodes=(10,),
-                    use_next_state=False,
                     check_factors=True,
-                    feats_specs=[
-                        [
-                            {
-                                "name": "flat-grid-observation-action-ft",
-                                "args": {},
-                            },
-                            {
-                                "name": "drop-observation-dims-ft",
-                                "args": {"axis_dims": {0: dead_ohe_indices}},
-                            },
-                        ]
+                    transition_feats_specs=[
+                        rewardfeat.current_features_spec(
+                            current_spec=[
+                                {
+                                    "name": "flat-grid-observation-action-ft",
+                                    "args": {},
+                                },
+                                {
+                                    "name": "drop-observation-dims-ft",
+                                    "args": {"axis_dims": {0: dead_ohe_indices}},
+                                },
+                            ]
+                        )
                     ],
                 )
                 + bayes_least_specs(
                     init_attempt_estimation_episodes=(10,),
-                    feats_specs=[
-                        [
-                            {
-                                "name": "flat-grid-observation-action-ft",
-                                "args": {},
-                            },
-                            {
-                                "name": "drop-observation-dims-ft",
-                                "args": {"axis_dims": {0: dead_ohe_indices}},
-                            },
-                        ]
+                    transition_feats_specs=[
+                        rewardfeat.current_features_spec(
+                            current_spec=[
+                                {
+                                    "name": "flat-grid-observation-action-ft",
+                                    "args": {},
+                                },
+                                {
+                                    "name": "drop-observation-dims-ft",
+                                    "args": {"axis_dims": {0: dead_ohe_indices}},
+                                },
+                            ]
+                        )
                     ],
                 ),
                 "epochs": 5,

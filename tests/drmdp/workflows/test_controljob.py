@@ -1,13 +1,13 @@
 """Tests for controljob.py — experiment parsing without Ray."""
 
 from drmdp import core
-from drmdp.workflows import controlexps, controljob
+from drmdp.workflows import controlexps, controljob, specutils
 
 
 class TestParseExperiments:
-    def test_illustration_specs(self):
-        specs = controlexps.illustration_experiment_specs()
-        experiments = controljob.parse_experiments(specs)
+    def test_gaussian_illustration_specs(self):
+        specs = controlexps.gaussian_illustration_experiment_specs()
+        experiments = specutils.parse_experiment_specs(specs)
         assert len(experiments) > 0
         assert all(isinstance(exp, core.Experiment) for exp in experiments)
 
@@ -36,7 +36,7 @@ class TestParseExperiments:
                 "epochs": 1,
             }
         ]
-        experiments = controljob.parse_experiments(specs)
+        experiments = specutils.parse_experiment_specs(specs)
         assert len(experiments) == 2
 
     def test_preserves_metadata(self):
@@ -61,15 +61,15 @@ class TestParseExperiments:
                 "epochs": 3,
             }
         ]
-        experiments = controljob.parse_experiments(specs)
+        experiments = specutils.parse_experiment_specs(specs)
         assert experiments[0].env_spec.metadata == {"tag": "test"}
         assert experiments[0].epochs == 3
 
 
 class TestCreateTasks:
-    def test_illustration_creates_instances(self):
+    def test_gaussian_illustration_creates_instances(self):
         instances = controljob.create_tasks(
-            problem_set="illustration",
+            problem_set="gaussian-illustration",
             config_args={},
             num_runs=2,
             num_episodes=50,
@@ -83,11 +83,11 @@ class TestCreateTasks:
         assert all(isinstance(inst, core.ExperimentInstance) for inst in instances)
 
     def test_instance_count_matches_runs(self):
-        specs = controlexps.illustration_experiment_specs()
-        experiments = controljob.parse_experiments(specs)
+        specs = controlexps.gaussian_illustration_experiment_specs()
+        experiments = specutils.parse_experiment_specs(specs)
         num_runs = 3
         instances = controljob.create_tasks(
-            problem_set="illustration",
+            problem_set="gaussian-illustration",
             config_args={},
             num_runs=num_runs,
             num_episodes=50,

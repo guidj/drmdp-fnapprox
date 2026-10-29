@@ -8,7 +8,7 @@ from gymnasium.core import ObsType
 from rlplg.core import InitState
 from rlplg.environments import gridworld, iceworld, redgreen
 
-from drmdp.envs import gridutils, wrappers
+from drmdp.envs import gridutils, models, wrappers
 
 DEFAULT_GW_GRID = ["oooooooooooo", "oooooooooooo", "oooooooooooo", "sxxxxxxxxxxg"]
 DEFAULT_RG_CURE = ["red", "green", "red", "green", "wait", "green"]
@@ -111,7 +111,42 @@ class GridWorldObsAsVectorWrapper(gym.ObservationWrapper):
         """
         return self._grid_env.transition
 
-    def observation(self, observation: ObsType):
+    @property
+    def grid_shape(self) -> tuple[int, int]:
+        """Cell counts, distinct from inclusive coordinate bounds."""
+        height, width = self._grid_env._size
+        return int(height), int(width)
+
+    @property
+    def terminal_state_ids(self) -> frozenset[int]:
+        """States at which episodes end, regardless of self-loop table flags."""
+        return frozenset(
+            self.states_mapping[position] for position in self._grid_env._exits
+        )
+
+    def discrete_transition_model(self) -> models.DiscreteTransitionModel | None:
+        """Exposes the table only when transition rewards match runtime rewards.
+
+        Subclasses that override ``step`` may alter rewards without updating
+        the transition table, so the model is only safe when ``step`` is the
+        inherited base-class implementation.
+        """
+        if not hasattr(self._grid_env, "transition"):
+            return None
+        # A subclass that overrides step() can change rewards without
+        # updating the table; reject unless step is inherited.
+        if type(self._grid_env).step is not gridworld.GridWorld.step:
+            return None
+        return models.DiscreteTransitionModel(
+            observations={
+                state_id: np.array(position, dtype=np.int64)
+                for position, state_id in self.states_mapping.items()
+            },
+            transition=self.transition,
+            terminal_state_ids=self.terminal_state_ids,
+        )
+
+    def observation(self, observation: ObsType) -> np.ndarray:
         return np.array(observation["agent"], dtype=np.int64)
 
     def get_state_id(self, pos: np.ndarray) -> int:

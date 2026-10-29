@@ -1,5 +1,5 @@
 import copy
-from collections.abc import Hashable, Sequence
+from collections.abc import Hashable, Mapping, Sequence
 from typing import Any
 
 import gymnasium as gym
@@ -8,6 +8,7 @@ from gymnasium.core import ObsType
 from sklearn import cluster, mixture, model_selection
 
 from drmdp import constants, dataproc, mathutils, tiles
+from drmdp.envs import gridutils
 
 
 class RandomBinaryObsWrapper(gym.ObservationWrapper):
@@ -272,40 +273,57 @@ class TilesObsWrapper(gym.ObservationWrapper):
 class PotentialShapingWrapper(gym.Wrapper):
     """Potential-based reward shaping: r' = r + gamma * Phi(s') - Phi(s).
 
-    Preserves the optimal policy (Ng, Harada & Russell 1999).
-    Subclasses implement ``_potential(obs)`` for each environment.
+    Preserves the optimal policy for any potential (Ng, Harada &
+    Russell 1999) and shifts the action values by the state-only term
+    ``-Phi(s)``.  Subclasses implement ``_potential(obs)`` and set
+    ``goal_potential`` to the potential at the goal, so that Phi
+    vanishes on terminating transitions and the telescoping sum over
+    an episode cancels exactly.
+
+    ``scale`` multiplies the potential.  A scaled potential is still a
+    potential, so the invariance result applies to every scale; the
+    scale only sets how far the action values move and how much the
+    per-step reward varies around the base reward.
     """
 
-    def __init__(self, env: gym.Env, gamma: float = 1.0):
+    goal_potential: float = 0.0
+
+    def __init__(self, env: gym.Env, gamma: float = 1.0, scale: float = 1.0):
         super().__init__(env)
         self.gamma = gamma
+        self.scale = scale
         self._prev_potential: float = 0.0
 
     def _potential(self, obs: np.ndarray) -> float:
         raise NotImplementedError
 
+    def _shaped(self, potential: float) -> float:
+        return self.scale * (potential - self.goal_potential)
+
     def reset(self, **kwargs):
         obs, info = super().reset(**kwargs)
-        self._prev_potential = self._potential(obs)
+        self._prev_potential = self._shaped(self._potential(obs))
         return obs, info
 
     def step(self, action):
         obs, reward, term, trunc, info = super().step(action)
-        if not term:
-            potential = self._potential(obs)
-            shaping = self.gamma * potential - self._prev_potential
-            self._prev_potential = potential
-            reward = reward + shaping
+        potential = 0.0 if term else self._shaped(self._potential(obs))
+        reward = reward + self.gamma * potential - self._prev_potential
+        self._prev_potential = potential
         return obs, reward, term, trunc, info
 
 
 class MountainCarHeightShaping(PotentialShapingWrapper):
-    """Phi(s) = sin(3 * position).
+    """Phi(s) = sin(3 * position) - sin(1.5).
 
-    The MountainCar hill height function, producing rewards
-    proportional to altitude gain.  Reward range stays moderate
-    because sin is bounded to [-1, 1].
+    Hill height of the car measured from the goal height, so the
+    potential is 0 at the goal and negative below it.  The shaped
+    reward rises when the car climbs, which is the direction the
+    additive bonus rewards, but the optimum is unchanged because the
+    potential shift is a function of position only.
     """
+
+    goal_potential = float(np.sin(1.5))
 
     def _potential(self, obs: np.ndarray) -> float:
         position = float(obs[0])
@@ -313,11 +331,14 @@ class MountainCarHeightShaping(PotentialShapingWrapper):
 
 
 class AcrobotTipHeightShaping(PotentialShapingWrapper):
-    """Phi(s) = -(cos(theta1) + cos(theta1 + theta2)).
+    """Phi(s) = -(cos(theta1) + cos(theta1 + theta2)) - 1.
 
-    Negative tip-height of the second link, so the agent is
-    rewarded for swinging the tip upward.  Bounded to [-2, 2].
+    Tip height of the second link measured from the goal height of 1,
+    so the potential is 0 at termination and negative below it.
+    Bounded to [-3, 1].
     """
+
+    goal_potential = 1.0
 
     def _potential(self, obs: np.ndarray) -> float:
         cos_theta1 = float(obs[0])
@@ -326,6 +347,47 @@ class AcrobotTipHeightShaping(PotentialShapingWrapper):
         sin_theta2 = float(obs[3])
         cos_sum = cos_theta1 * cos_theta2 - sin_theta1 * sin_theta2
         return float(-(cos_theta1 + cos_sum))
+
+
+class GridWorldDistanceShaping(PotentialShapingWrapper):
+    """Phi(s) = -scale * D * (d(s)/D)**exponent, d = geodesic distance.
+
+    ``d(s)`` is the number of moves from the agent's cell to the
+    nearest exit, avoiding cliffs; ``D`` is the largest distance on the
+    grid.  The potential is zero on exit cells, so the goal reference
+    coincides with the terminal convention: a GridWorld exit is a state
+    with ``d = 0``, and no separate terminal value is needed.
+
+    ``exponent = 1`` makes the potential proportional to the
+    undiscounted optimal cost-to-go ``-d``, so the shaped action values
+    are the advantage function of the base task at ``gamma = 1``.  That
+    potential pays a constant ``-1 + scale`` on every step of a shortest
+    path, because each such step reduces ``d`` by exactly one.  Any
+    other exponent keeps the potential monotone in distance while
+    grading the step reward by how far from the exit the step happens.
+
+    ``scale`` multiplies the potential and cannot move the argmax; it
+    sets the amplitude of the per-step variation.
+    """
+
+    def __init__(
+        self,
+        env: gym.Env,
+        gamma: float = 1.0,
+        scale: float = 1.0,
+        exponent: float = 2.0,
+    ):
+        super().__init__(env=env, gamma=gamma, scale=scale)
+        self.exponent = exponent
+        self.distances = _grid_geodesic_distances(env)
+        self.max_distance = float(max(self.distances.values()))
+        if self.max_distance == 0:
+            raise ValueError("grid has no cell at a positive distance from an exit")
+
+    def _potential(self, obs: np.ndarray) -> float:
+        cell = (int(obs[0]), int(obs[1]))
+        relative = self.distances[cell] / self.max_distance
+        return float(-self.max_distance * relative**self.exponent)
 
 
 class AdditiveShapingWrapper(gym.Wrapper):
@@ -404,10 +466,13 @@ class ActionCostShapingWrapper(gym.Wrapper):
 class GaussianRewardNoiseWrapper(gym.Wrapper):
     """Adds clipped Gaussian noise to rewards.
 
-    Noise is sampled from N(0, scale * _variance(obs, action)) and
-    clipped to the 95% energy interval [-clip_std * sigma, clip_std * sigma].
-    Subclasses implement ``_variance(obs, action)`` for state/action-dependent
-    noise magnitude.
+    The noise standard deviation is ``sigma = std_multiplier *
+    _reference_std(obs, action)``, so the multiplier is expressed in units of
+    the reference standard deviation and no square or square root sits between
+    a configured value and the sampled distribution. Samples are clipped to
+    the 95% energy interval [-clip_std * sigma, clip_std * sigma]. Subclasses
+    implement ``_reference_std(obs, action)`` for state/action-dependent noise
+    magnitude.
 
     Noise is NOT applied on terminal steps so that
     terminal-state zero-reward semantics are preserved.
@@ -416,23 +481,26 @@ class GaussianRewardNoiseWrapper(gym.Wrapper):
     def __init__(
         self,
         env: gym.Env,
-        scale: float = 1.0,
+        std_multiplier: float = 1.0,
         clip_std: float = 1.96,
         seed: int | None = None,
     ):
         super().__init__(env)
-        self.scale = scale
+        if std_multiplier < 0:
+            raise ValueError(
+                f"std_multiplier must be non-negative, not {std_multiplier}"
+            )
+        self.std_multiplier = std_multiplier
         self.clip_std = clip_std
         self._rng = np.random.default_rng(seed)
 
-    def _variance(self, obs: np.ndarray, action: int) -> float:
+    def _reference_std(self, obs: np.ndarray, action: int) -> float:
         raise NotImplementedError
 
     def step(self, action):
         obs, reward, term, trunc, info = super().step(action)
         if not term:
-            variance = self._variance(obs, action)
-            sigma = np.sqrt(self.scale * variance)
+            sigma = self.std_multiplier * self._reference_std(obs, action)
             noise = self._rng.normal(0.0, sigma)
             bound = self.clip_std * sigma
             noise = float(np.clip(noise, -bound, bound))
@@ -441,35 +509,74 @@ class GaussianRewardNoiseWrapper(gym.Wrapper):
 
 
 class ConstantGaussianNoiseReward(GaussianRewardNoiseWrapper):
-    """Constant unit variance: effective noise std is sqrt(scale)."""
+    """Unit reference standard deviation: the noise std is std_multiplier."""
 
-    def _variance(self, obs: np.ndarray, action: int) -> float:
+    def _reference_std(self, obs: np.ndarray, action: int) -> float:
         return 1.0
 
 
 class RewardRangeGaussianNoiseReward(GaussianRewardNoiseWrapper):
-    """Noise variance proportional to the reward range.
+    """Noise standard deviation proportional to a reference standard deviation.
 
-    Variance = scale * reward_range^2, where reward_range is the
-    post-shaping per-step reward span of the environment, so scale acts
-    as a relative variance: the noise std is sqrt(scale) * range, and an
-    equal scale produces an equal relative perturbation across
-    environments with different reward magnitudes.
+    ``reference_std`` is the standard deviation of the post-shaping per-step
+    reward distribution of the environment, so the multiplier acts as a
+    relative perturbation: an equal ``std_multiplier`` produces an equal
+    relative perturbation across environments with different reward
+    magnitudes. The parameter is named for a standard deviation, not for the
+    ``(low, high)`` reward range of the ``gym.Env`` interface.
     """
 
     def __init__(
         self,
         env: gym.Env,
-        reward_range: float,
-        scale: float = 1.0,
+        reference_std: float,
+        std_multiplier: float = 1.0,
         clip_std: float = 1.96,
         seed: int | None = None,
     ):
-        super().__init__(env, scale=scale, clip_std=clip_std, seed=seed)
-        self.reward_range = reward_range
+        super().__init__(
+            env, std_multiplier=std_multiplier, clip_std=clip_std, seed=seed
+        )
+        self.reference_std = reference_std
 
-    def _variance(self, obs: np.ndarray, action: int) -> float:
-        return float(self.reward_range**2)
+    def _reference_std(self, obs: np.ndarray, action: int) -> float:
+        return float(self.reference_std)
+
+
+def normalize_noise_args(args: Mapping[str, Any]) -> dict[str, Any]:
+    """Maps legacy variance-multiplier reward-noise args to std multipliers.
+
+    Records and in-flight configs written before the rename hold ``scale``
+    (a multiplier on the reference variance) and ``reward_range`` (a
+    reference standard deviation under a misleading name). Both are decoded
+    to ``std_multiplier`` and ``reference_std``; the mapping is exact because
+    ``sqrt(scale)`` with a variance-multiplier parameterization is the same
+    number. Ambiguous or unknown keys raise instead of being ignored, since a
+    config carrying both shapes would hide which one took effect.
+    """
+    legacy_names = {"scale": "std_multiplier", "reward_range": "reference_std"}
+    known_names = {"std_multiplier", "reference_std", "clip_std", "seed"}
+    normalized: dict[str, Any] = {}
+    for name, value in args.items():
+        if name in legacy_names:
+            new_name = legacy_names[name]
+            if new_name in args:
+                raise TypeError(
+                    f"reward noise args carry both `{name}` and `{new_name}`"
+                )
+            if name == "scale":
+                if value < 0:
+                    raise ValueError(
+                        f"legacy `scale` must be non-negative, not {value}"
+                    )
+                normalized[new_name] = np.sqrt(value)
+            else:
+                normalized[new_name] = value
+            continue
+        if name not in known_names:
+            raise TypeError(f"unknown reward noise arg `{name}`")
+        normalized[name] = value
+    return normalized
 
 
 def wrap(env: gym.Env, wrapper: str | None = None, **kwargs):
@@ -501,3 +608,39 @@ def wrap(env: gym.Env, wrapper: str | None = None, **kwargs):
         ohe = kwargs.get("ohe", False)
         return FlatGridCoordObsWrapper(env, ohe=ohe)
     raise ValueError(f"Wrapper `{wrapper}` unknown")
+
+
+def _grid_geodesic_distances(env: gym.Env) -> dict[tuple[int, int], int]:
+    """Geodesic distance from every grid cell to its nearest exit.
+
+    Cells no exit reaches (cliffs, and open cells walled off from every
+    exit) take the largest finite distance, so the potential is defined
+    on the whole observation space.
+    """
+    grid_env = env.unwrapped
+    size = getattr(grid_env, "_size", None)
+    cliffs = getattr(grid_env, "_cliffs", None)
+    exits = getattr(grid_env, "_exits", None)
+    if size is None or cliffs is None or exits is None:
+        raise ValueError(
+            f"{type(grid_env).__name__} exposes no grid geometry; "
+            "distance shaping requires a gridworld environment"
+        )
+    grid = np.zeros(shape=size, dtype=np.int8)
+    for position in cliffs:
+        grid[position] = gridutils.CELL_CLIFF
+    for position in exits:
+        grid[position] = gridutils.CELL_GOAL
+    num_cols = size[1]
+    sources = [row * num_cols + col for row, col in exits]
+    flat_distances = gridutils.grid_bfs_distances(grid=grid, sources=sources)
+    finite = flat_distances[flat_distances >= 0]
+    if finite.size == 0:
+        raise ValueError("no grid cell reaches an exit")
+    max_distance = int(finite.max())
+    distances = {}
+    for row in range(size[0]):
+        for col in range(size[1]):
+            distance = int(flat_distances[row * num_cols + col])
+            distances[(row, col)] = max_distance if distance < 0 else distance
+    return distances

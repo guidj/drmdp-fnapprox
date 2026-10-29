@@ -1,8 +1,8 @@
 import abc
-import dataclasses
 import logging
 import random
 import sys
+import time
 from collections.abc import Callable, Mapping, Sequence
 from enum import Enum
 from typing import (
@@ -13,7 +13,7 @@ from typing import (
 import gymnasium as gym
 import numpy as np
 
-from drmdp import mathutils, metrics, optsol, transform
+from drmdp import mathutils, metrics, optsol, rewardfeat
 
 logger = logging.getLogger(__name__)
 
@@ -124,39 +124,32 @@ class DataBuffer:
     """
 
     ACC_FIRST = "FIRST"
-    ACC_LASTEST = "LASTEST"
+    ACC_LATEST = "LATEST"
 
     def __init__(
         self,
         max_capacity: int | None = None,
         max_size_bytes: int | None = None,
-        acc_mode: str = ACC_LASTEST,
+        acc_mode: str = ACC_LATEST,
     ):
-        """
-        Init.
-        """
         self.max_capacity = max_capacity
         self.max_size_bytes = max_size_bytes
         self.acc_mode = acc_mode
         self.buffer: list[Any] = []
 
     def add(self, element: Any):
-        """
-        Adds data to buffer.
-        """
-
         if self.max_capacity and self.max_size_bytes:
             safe_byte_limit = True
             safe_size_limit = True
             if list_size(self.buffer + [element]) >= self.max_size_bytes:
-                if self.acc_mode == self.ACC_LASTEST:
+                if self.acc_mode == self.ACC_LATEST:
                     while list_size(self.buffer + [element]) >= self.max_size_bytes:
                         self._pop_earliest()
                 else:
                     safe_byte_limit = False
 
             if self.size() >= self.max_capacity:
-                if self.acc_mode == self.ACC_LASTEST:
+                if self.acc_mode == self.ACC_LATEST:
                     self._pop_earliest()
                 else:
                     safe_size_limit = False
@@ -166,7 +159,7 @@ class DataBuffer:
 
         elif self.max_size_bytes:
             if list_size(self.buffer + [element]) >= self.max_size_bytes:
-                if self.acc_mode == self.ACC_LASTEST:
+                if self.acc_mode == self.ACC_LATEST:
                     while list_size(self.buffer + [element]) >= self.max_size_bytes:
                         self._pop_earliest()
                     self._append(element)
@@ -176,7 +169,7 @@ class DataBuffer:
 
         elif self.max_capacity:
             if self.size() >= self.max_capacity:
-                if self.acc_mode == self.ACC_LASTEST:
+                if self.acc_mode == self.ACC_LATEST:
                     self._pop_earliest()
                     self._append(element)
                 # else mode == ACC_FIRST - do not add
@@ -188,33 +181,18 @@ class DataBuffer:
             self._append(element)
 
     def clear(self):
-        """
-        Empties buffer.
-        """
         self.buffer = []
 
     def size(self):
-        """
-        Current buffer size.
-        """
         return len(self.buffer)
 
     def size_bytes(self):
-        """
-        Current buffer size in bytes.
-        """
         return list_size(self.buffer)
 
     def _pop_earliest(self):
-        """
-        Remove the First-In element in the list.
-        """
         self.buffer.pop(0)
 
     def _append(self, element: Any):
-        """
-        Appends values to buffers.
-        """
         self.buffer.append(element)
 
 
@@ -246,9 +224,6 @@ class WindowedTaskSchedule:
         init_update_ep: int = 10,
         rho: float = DEFAULT_RHO,
     ):
-        """
-        Instantiates the class for a given update schedule.
-        """
         if mode not in (self.FIXED, self.EXPONENTIAL, self.DOUBLE):
             raise ValueError(
                 f"Unsupported mode: {mode}. "
@@ -276,9 +251,6 @@ class WindowedTaskSchedule:
         self.next_update_ep = self.curr_update_ep + self._window
 
     def step(self, episode: int) -> None:
-        """
-        Updates the estimation window.
-        """
         if episode == self.next_update_ep:
             # New window
             self.curr_update_ep = self.next_update_ep
@@ -288,23 +260,16 @@ class WindowedTaskSchedule:
             self._done = False
 
     def set_state(self, succ: bool) -> None:
-        """
-        Sets state for the current cycle.
-        """
-
         self._done = succ
 
     @property
     def current_window_done(self) -> bool:
         """
-        Returns true if the current cycle state is `False`.
+        Whether the current estimation window has completed.
         """
         return self._done
 
     def _grow_window(self, window: int) -> int:
-        """
-        Length of the window that follows one of `window` episodes.
-        """
         if self.mode == self.FIXED:
             return self.init_update_ep
         if self.mode == self.EXPONENTIAL:
@@ -447,28 +412,30 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
     def __init__(
         self,
         env: gym.Env,
-        ft_op: transform.FTOp,
-        use_bias: bool = False,
+        feats_fn: rewardfeat.TransitionFeatureFn,
+        intercept: bool = False,
         impute_value: float = 0.0,
         estimation_buffer_mult: int | None = None,
-        use_next_state: bool = False,
         reward_error_fn: Callable[[np.ndarray], Mapping[str, Any]] | None = None,
     ):
         super().__init__(env)
-        self._validate_observation_space(ft_op)
-        self._validate_action_space(ft_op)
+        self._validate_action_space()
 
-        self.ft_op = ft_op
-        self.use_bias = use_bias
+        self.feats_fn = feats_fn
+        self.intercept = intercept
         self.impute_value = impute_value
         self.estimation_buffer_mult = estimation_buffer_mult
-        self.use_next_state = use_next_state
         self.reward_error_fn = reward_error_fn
 
         self.episodes = 0
-        self.ft_op_dim = self._compute_ftop_dim(ft_op)
-        # Double feature dimension if concatenating with next state
-        self.mdim = self.ft_op_dim * 2 if self.use_next_state else self.ft_op_dim
+        self.steps = 0
+        self._start_monotonic = time.monotonic()
+        self.mdim = feats_fn.feature_dim
+        if self.mdim < 1:
+            raise ValueError(f"feats_fn feature_dim must be positive. Got: {self.mdim}")
+        # set by every concrete estimator; estimation events and
+        # deferred attempts append to it
+        self.estimation_meta: dict[str, Any] = {}
         self._latest_obs = None
         self._segment_features = None
         self.rng = np.random.default_rng()
@@ -478,49 +445,41 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
             else None
         )
 
-    def _validate_action_space(self, ft_op: transform.FTOp):
+    def _validate_action_space(self):
         """Validate action space is Discrete."""
-        if not isinstance(ft_op.output_space.action_space, gym.spaces.Discrete):
+        if not isinstance(self.action_space, gym.spaces.Discrete):
             raise TypeError(
-                f"ft_op action space must be Discrete. "
-                f"Got: {type(ft_op.output_space.action_space)}"
+                f"Action space must be Discrete. Got: {type(self.action_space)}"
             )
-
-    @abc.abstractmethod
-    def _validate_observation_space(self, ft_op: transform.FTOp):
-        """Validate observation space type (Box or Discrete)."""
-        raise NotImplementedError
-
-    @abc.abstractmethod
-    def _compute_ftop_dim(self, ft_op: transform.FTOp) -> int:
-        """Compute feature dimension."""
-        raise NotImplementedError
 
     @abc.abstractmethod
     def _initialize_segment_features(self):
         """Initialize segment features array."""
         raise NotImplementedError
 
-    def _extract_step_features(
-        self, latest_step_feats: transform.Example
-    ) -> np.ndarray:
-        """Convert a step Example into a feature array.
-
-        Called once per step; the result is fed to both
-        _accumulate_step_features (learning) and inference.
-        Override for non-vector observations (e.g. discrete index → one-hot).
-        """
-        return latest_step_feats.observation  # type: ignore
-
     def _accumulate_step_features(self, step_features: np.ndarray):
         """Add per-step features to the segment accumulator."""
         self._segment_features += step_features
 
     def _get_estimation_inputs(self, feats: np.ndarray) -> np.ndarray:
-        """Prepare features for reward prediction, adding bias if needed."""
-        if self.use_bias:
+        """Prepare features for reward prediction, adding the intercept if needed."""
+        if self.intercept:
             return np.concatenate([feats, np.array([1.0])])
         return feats
+
+    def _add_intercept_to_matrix(
+        self, matrix: np.ndarray, nexamples: int
+    ) -> np.ndarray:
+        """Append the intercept column to the design matrix when enabled."""
+        if self.intercept:
+            return np.concatenate(
+                [
+                    matrix,
+                    np.expand_dims(np.ones(shape=nexamples), axis=-1),
+                ],
+                axis=1,
+            )
+        return matrix
 
     @abc.abstractmethod
     def _has_estimate(self) -> bool:
@@ -586,17 +545,35 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
             {
                 "update_index": len(self.estimation_meta["reward_errors"]) + 1,
                 "episode": self.episodes,
+                "steps": self.steps,
+                "elapsed_s": round(time.monotonic() - self._start_monotonic, 6),
                 **report,
             }
         )
 
-    def _on_terminal_state(self, next_obs, action: int = 0):
+    def _record_deferred_attempt(self, matrix: np.ndarray) -> None:
+        """
+        Records a scheduled attempt the gate deferred.
+
+        The record exposes why the attempt did not solve: the buffer
+        size and the nonzero-column count against the design width.
+        """
+        self.estimation_meta.setdefault("deferred_attempts", []).append(
+            {
+                "episode": self.episodes,
+                "steps": self.steps,
+                "buffer_rows": int(matrix.shape[0]),
+                "nonzero_columns": optsol.matrix_factors_rank(matrix),
+                "matrix_columns": int(matrix.shape[1]),
+            }
+        )
+
+    def _on_terminal_state(self, transition: rewardfeat.Transition):
         """
         Handle terminal state.
         Override in child classes that need terminal state handling.
         """
-        del next_obs
-        del action
+        del transition
 
     def _get_estimator_info(self) -> dict[str, Any]:
         """
@@ -617,18 +594,6 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
         rewards = np.array(rew_buffer, dtype=np.float64)
         nexamples = rewards.shape[0]
         return matrix, rewards, nexamples
-
-    def _add_bias_to_matrix(self, matrix: np.ndarray, nexamples: int) -> np.ndarray:
-        """Add bias column to matrix if use_bias is True."""
-        if self.use_bias:
-            return np.concatenate(
-                [
-                    matrix,
-                    np.expand_dims(np.ones(shape=nexamples), axis=-1),
-                ],
-                axis=1,
-            )
-        return matrix
 
     def _handle_estimation_failure(
         self, err: ValueError, matrix: np.ndarray, rewards: np.ndarray
@@ -699,21 +664,24 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
         raise NotImplementedError
 
     def step(self, action):
-        latest_step_feats = self.ft_op(transform.Example(self._latest_obs, action))
+        previous_obs = self._latest_obs
         next_obs, reward, term, trunc, info = super().step(action)
+        self.steps += 1
+        transition = rewardfeat.Transition(
+            observation=previous_obs,
+            action=action,
+            next_observation=next_obs,
+            terminated=term,
+            truncated=trunc,
+            info=info,
+        )
 
-        if self.use_next_state:
-            next_state_feats = self.ft_op(transform.Example(next_obs, 0))
-            concatenated_obs = np.concatenate(
-                [latest_step_feats.observation, next_state_feats.observation]
+        step_features = np.asarray(self.feats_fn(transition), dtype=np.float64)
+        if step_features.shape != (self.mdim,):
+            raise ValueError(
+                f"{self.get_name()} - feats_fn returned shape "
+                f"{step_features.shape}, expected ({self.mdim},)"
             )
-            latest_step_feats = dataclasses.replace(
-                latest_step_feats,
-                observation=concatenated_obs,
-                indices=None,
-            )
-
-        step_features = self._extract_step_features(latest_step_feats)
         if not self._has_estimate() or self._should_buffer_when_estimated():
             self._accumulate_step_features(step_features)
 
@@ -727,8 +695,9 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
 
         if self._has_estimate():
             # Use estimated reward
-            feats = self._get_estimation_inputs(step_features)
-            reward = self._get_estimated_reward(feats)
+            reward = self._get_estimated_reward(
+                self._get_estimation_inputs(step_features)
+            )
             est_state = OptState.SOLVED
         else:
             # Add example to buffer and use aggregate reward (one-time learning)
@@ -745,7 +714,7 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
 
         # Handle terminal state
         if term:
-            self._on_terminal_state(next_obs, action=0)
+            self._on_terminal_state(transition)
 
         # Attempt estimation on episode end
         if term or trunc:
@@ -775,114 +744,6 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
         return obs, info
 
 
-class DiscretisedLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
-    """
-    The aggregate reward windows are used to
-    estimate the underlying MDP rewards.
-
-    Once estimated, the approximate rewards are used.
-    Until then, the aggregate rewards are emitted when
-    presented, and zero is used otherwise.
-
-    Rewards are estimated with Least-Squares.
-    Uses discrete observation space with count-based feature accumulation.
-    """
-
-    def __init__(
-        self,
-        env: gym.Env,
-        ft_op: transform.FTOp,
-        attempt_estimation_episode: int,
-        estimation_buffer_mult: int | None = None,
-        use_bias: bool = False,
-        impute_value: float = 0.0,
-        check_factors: bool = False,
-        use_next_state: bool = False,
-    ):
-        super().__init__(
-            env=env,
-            ft_op=ft_op,
-            use_bias=use_bias,
-            impute_value=impute_value,
-            estimation_buffer_mult=estimation_buffer_mult,
-            use_next_state=use_next_state,
-        )
-        self.attempt_estimation_episode = attempt_estimation_episode
-        self.check_factors = check_factors
-        self.weights = None
-        self.estimation_meta = {
-            "use_bias": self.use_bias,
-            "check_factors": check_factors,
-            "snapshots": [],
-        }
-
-    def _validate_observation_space(self, ft_op: transform.FTOp):
-        if not isinstance(ft_op.output_space.observation_space, gym.spaces.Discrete):
-            raise TypeError(
-                f"ft_op space must be Discrete. "
-                f"Got: {type(ft_op.output_space.observation_space)}"
-            )
-
-    def _compute_ftop_dim(self, ft_op: transform.FTOp) -> int:
-        return ft_op.output_space.observation_space.n  # type: ignore
-
-    def _initialize_segment_features(self):
-        return np.zeros(shape=(self.mdim))
-
-    def _extract_step_features(
-        self, latest_step_feats: transform.Example
-    ) -> np.ndarray:
-        ohe = np.zeros(self.ft_op_dim)
-        ohe[latest_step_feats.observation] = 1  # type: ignore
-        return ohe
-
-    def _has_estimate(self) -> bool:
-        return self.weights is not None
-
-    def _get_estimated_reward(self, feats: np.ndarray) -> float:
-        return np.dot(feats, self.weights)  # type: ignore
-
-    def _should_attempt_estimation(self, term: bool, trunc: bool) -> bool:
-        return (
-            (term or trunc)
-            and self.weights is None
-            and self.episodes >= self.attempt_estimation_episode
-            and self.est_buffer.size() >= self.mdim
-        )
-
-    def estimate_rewards(self):
-        """
-        Estimate rewards with Least Squares.
-        """
-        matrix, rewards, nexamples = self._extract_buffer_data()
-
-        # Check matrix rank if requested
-        if self.check_factors:
-            rank = optsol.matrix_factors_rank(matrix)
-            if rank < matrix.shape[1]:
-                return
-
-        # Add bias column if needed
-        matrix = self._add_bias_to_matrix(matrix, nexamples)
-
-        try:
-            weights = optsol.solve_least_squares(matrix=matrix, rhs=rewards)
-        except ValueError as err:
-            self._handle_estimation_failure(err, matrix, rewards)
-        else:
-            self.weights = weights
-            error = self._calculate_rmse(matrix, weights, rewards)
-            snapshot = self._create_snapshot(nexamples, matrix, weights, error)
-            self.estimation_meta["snapshots"].append(snapshot)
-            logger.info(
-                "%s - Estimated rewards for %s. RMSE: %f; No. Samples: %d",
-                self.get_name(),
-                self.get_env_name(),
-                error,
-                nexamples,
-            )
-
-
 class LeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
     """
     The aggregate reward windows are used to
@@ -899,43 +760,32 @@ class LeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
     def __init__(
         self,
         env: gym.Env,
-        ft_op: transform.FTOp,
+        feats_fn: rewardfeat.TransitionFeatureFn,
         attempt_estimation_episode: int,
         estimation_buffer_mult: int | None = None,
-        use_bias: bool = False,
         impute_value: float = 0.0,
         check_factors: bool = False,
-        use_next_state: bool = False,
         reward_error_fn: Callable[[np.ndarray], Mapping[str, Any]] | None = None,
+        intercept: bool = False,
     ):
         super().__init__(
             env=env,
-            ft_op=ft_op,
-            use_bias=use_bias,
+            feats_fn=feats_fn,
+            intercept=intercept,
             impute_value=impute_value,
             estimation_buffer_mult=estimation_buffer_mult,
-            use_next_state=use_next_state,
             reward_error_fn=reward_error_fn,
         )
         self.attempt_estimation_episode = attempt_estimation_episode
         self.check_factors = check_factors
         self.weights = None
         self.estimation_meta = {
-            "use_bias": use_bias,
+            "intercept": intercept,
             "check_factors": check_factors,
             "snapshots": [],
             "reward_errors": [],
+            "deferred_attempts": [],
         }
-
-    def _validate_observation_space(self, ft_op: transform.FTOp):
-        if not isinstance(ft_op.output_space.observation_space, gym.spaces.Box):
-            raise TypeError(
-                f"ft_op space must be Box. "
-                f"Got: {type(ft_op.output_space.observation_space)}"
-            )
-
-    def _compute_ftop_dim(self, ft_op: transform.FTOp) -> int:
-        return np.size(ft_op.output_space.observation_space.high)
 
     def _initialize_segment_features(self):
         return np.zeros(shape=(self.mdim))
@@ -964,10 +814,11 @@ class LeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         if self.check_factors:
             rank = optsol.matrix_factors_rank(matrix)
             if rank < matrix.shape[1]:
+                self._record_deferred_attempt(matrix)
                 return
 
-        # Add bias column if needed
-        matrix = self._add_bias_to_matrix(matrix, nexamples)
+        # Add the intercept column if needed
+        matrix = self._add_intercept_to_matrix(matrix, nexamples)
 
         try:
             weights = optsol.solve_least_squares(matrix=matrix, rhs=rewards)
@@ -986,6 +837,9 @@ class LeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
                 error,
                 nexamples,
             )
+
+
+DiscretisedLeastLfaGenerativeRewardWrapper = LeastLfaGenerativeRewardWrapper
 
 
 class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
@@ -1008,25 +862,23 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
     def __init__(
         self,
         env: gym.Env,
-        ft_op: transform.FTOp,
+        feats_fn: rewardfeat.TransitionFeatureFn,
         mode: str = WindowedTaskSchedule.EXPONENTIAL,
         init_attempt_estimation_episode: int = 10,
         schedule_rho: float = WindowedTaskSchedule.DEFAULT_RHO,
         estimation_buffer_mult: int | None = None,
-        use_bias: bool = False,
         impute_value: float = 0.0,
         check_factors: bool = False,
-        use_next_state: bool = False,
         sample_weights: bool = False,
         reward_error_fn: Callable[[np.ndarray], Mapping[str, Any]] | None = None,
+        intercept: bool = False,
     ):
         super().__init__(
             env=env,
-            ft_op=ft_op,
-            use_bias=use_bias,
+            feats_fn=feats_fn,
+            intercept=intercept,
             impute_value=impute_value,
             estimation_buffer_mult=estimation_buffer_mult,
-            use_next_state=use_next_state,
             reward_error_fn=reward_error_fn,
         )
         self.mode = mode
@@ -1044,21 +896,12 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         self._sampled_weights: np.ndarray | None = None
         self._sampled_posterior: optsol.MultivariateNormal | None = None
         self.estimation_meta: dict[str, Any] = {
-            "use_bias": use_bias,
+            "intercept": intercept,
             "check_factors": check_factors,
             "snapshots": [],
             "reward_errors": [],
+            "deferred_attempts": [],
         }
-
-    def _validate_observation_space(self, ft_op: transform.FTOp):
-        if not isinstance(ft_op.output_space.observation_space, gym.spaces.Box):
-            raise TypeError(
-                f"ft_op space must be Box. "
-                f"Got: {type(ft_op.output_space.observation_space)}"
-            )
-
-    def _compute_ftop_dim(self, ft_op: transform.FTOp) -> int:
-        return np.size(ft_op.output_space.observation_space.high)
 
     def _initialize_segment_features(self):
         return np.zeros(shape=(self.mdim))
@@ -1122,10 +965,11 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         if self.check_factors:
             rank = optsol.matrix_factors_rank(matrix)
             if rank < matrix.shape[1]:
+                self._record_deferred_attempt(matrix)
                 return False
 
-        # Add bias column if needed
-        matrix = self._add_bias_to_matrix(matrix, nexamples)
+        # Add the intercept column if needed
+        matrix = self._add_intercept_to_matrix(matrix, nexamples)
 
         try:
             if self.mv_normal_rewards is None:
@@ -1184,38 +1028,31 @@ class ConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
     def __init__(
         self,
         env: gym.Env,
-        ft_op: transform.FTOp,
+        feats_fn: rewardfeat.TransitionFeatureFn,
         attempt_estimation_episode: int,
         estimation_buffer_mult: int | None = None,
-        use_bias: bool = False,
         impute_value: float = 0.0,
         constraints_buffer_limit: int | None = None,
-        use_next_state: bool = False,
+        terminal_constraint_fn: rewardfeat.TransitionFeatureFn | None = None,
+        intercept: bool = False,
     ):
         super().__init__(
             env=env,
-            ft_op=ft_op,
-            use_bias=use_bias,
+            feats_fn=feats_fn,
+            intercept=intercept,
             impute_value=impute_value,
             estimation_buffer_mult=estimation_buffer_mult,
-            use_next_state=use_next_state,
         )
         self.attempt_estimation_episode = attempt_estimation_episode
         self.constraints_buffer_limit = constraints_buffer_limit
+        self.terminal_constraint_fn = terminal_constraint_fn
         self.weights = None
-        self.estimation_meta = {"use_bias": use_bias, "snapshots": []}
+        self.estimation_meta: dict[str, Any] = {
+            "intercept": intercept,
+            "snapshots": [],
+        }
         # Terminal state buffer for constraints
         self.tst_buffer = DataBuffer(max_capacity=constraints_buffer_limit)
-
-    def _validate_observation_space(self, ft_op: transform.FTOp):
-        if not isinstance(ft_op.output_space.observation_space, gym.spaces.Box):
-            raise TypeError(
-                f"ft_op space must be Box. "
-                f"Got: {type(ft_op.output_space.observation_space)}"
-            )
-
-    def _compute_ftop_dim(self, ft_op: transform.FTOp) -> int:
-        return np.size(ft_op.output_space.observation_space.high)
 
     def _initialize_segment_features(self):
         return np.zeros(shape=(self.mdim))
@@ -1234,12 +1071,10 @@ class ConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
             and self.est_buffer.size() >= self.mdim
         )
 
-    def _on_terminal_state(self, next_obs, action: int = 0):
+    def _on_terminal_state(self, transition: rewardfeat.Transition):
         # Add constraint for terminal state if there is no estimate yet
-        if self.weights is None:
-            self.tst_buffer.add(
-                self.ft_op(transform.Example(next_obs, action)).observation
-            )
+        if self.weights is None and self.terminal_constraint_fn is not None:
+            self.tst_buffer.add(self.terminal_constraint_fn(transition))
 
     def estimate_rewards(self):
         """
@@ -1255,9 +1090,9 @@ class ConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
             else []
         )
 
-        # Add bias column if needed
-        matrix = self._add_bias_to_matrix(matrix, nexamples)
-        if self.use_bias and len(term_states) > 0:
+        # Add the intercept column if needed
+        matrix = self._add_intercept_to_matrix(matrix, nexamples)
+        if self.intercept and len(term_states) > 0:
             term_states = np.concatenate(
                 [
                     term_states,
@@ -1314,27 +1149,27 @@ class RecurringConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
     def __init__(
         self,
         env: gym.Env,
-        ft_op: transform.FTOp,
+        feats_fn: rewardfeat.TransitionFeatureFn,
         mode: str = WindowedTaskSchedule.EXPONENTIAL,
         init_attempt_estimation_episode: int = 10,
         schedule_rho: float = WindowedTaskSchedule.DEFAULT_RHO,
         estimation_buffer_mult: int | None = None,
-        use_bias: bool = False,
         impute_value: float = 0.0,
         constraints_buffer_limit: int | None = None,
-        use_next_state: bool = False,
+        terminal_constraint_fn: rewardfeat.TransitionFeatureFn | None = None,
+        intercept: bool = False,
     ):
         super().__init__(
             env=env,
-            ft_op=ft_op,
-            use_bias=use_bias,
+            feats_fn=feats_fn,
+            intercept=intercept,
             impute_value=impute_value,
             estimation_buffer_mult=estimation_buffer_mult,
-            use_next_state=use_next_state,
         )
         self.mode = mode
         self.init_attempt_estimation_episode = init_attempt_estimation_episode
         self.constraints_buffer_limit = constraints_buffer_limit
+        self.terminal_constraint_fn = terminal_constraint_fn
         self.windowed_task_schedule = WindowedTaskSchedule(
             mode=mode,
             init_update_ep=init_attempt_estimation_episode,
@@ -1344,21 +1179,11 @@ class RecurringConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         self.posterior_updates = 0
         self.weights: np.ndarray | None = None
         self.estimation_meta: dict[str, Any] = {
-            "use_bias": self.use_bias,
+            "intercept": intercept,
             "snapshots": [],
         }
         # Terminal state buffer for constraints
         self.tst_buffer = DataBuffer(max_capacity=constraints_buffer_limit)
-
-    def _validate_observation_space(self, ft_op: transform.FTOp):
-        if not isinstance(ft_op.output_space.observation_space, gym.spaces.Box):
-            raise TypeError(
-                f"ft_op space must be Box. "
-                f"Got: {type(ft_op.output_space.observation_space)}"
-            )
-
-    def _compute_ftop_dim(self, ft_op: transform.FTOp) -> int:
-        return np.size(ft_op.output_space.observation_space.high)
 
     def _initialize_segment_features(self):
         return np.zeros(shape=(self.mdim))
@@ -1380,9 +1205,10 @@ class RecurringConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
             and self.est_buffer.size() >= self.mdim
         )
 
-    def _on_terminal_state(self, next_obs, action: int = 0):
+    def _on_terminal_state(self, transition: rewardfeat.Transition):
         # Add constraint for terminal state
-        self.tst_buffer.add(self.ft_op(transform.Example(next_obs, action)).observation)
+        if self.terminal_constraint_fn is not None:
+            self.tst_buffer.add(self.terminal_constraint_fn(transition))
 
     def _on_episode_end(self, term: bool, trunc: bool):
         self.windowed_task_schedule.step(self.episodes)
@@ -1409,13 +1235,13 @@ class RecurringConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
             else np.array([])
         )
 
-        # Add bias column if needed
-        matrix = self._add_bias_to_matrix(matrix, nexamples)
-        if self.use_bias and len(term_states) > 0:
+        # Add the intercept column if needed
+        matrix = self._add_intercept_to_matrix(matrix, nexamples)
+        if self.intercept and len(term_states) > 0:
             term_states = np.concatenate(
                 [
                     term_states,
-                    np.expand_dims(np.ones(shape=nexamples), axis=-1),
+                    np.expand_dims(np.ones(shape=len(term_states)), axis=-1),
                 ],
                 axis=1,
             )
