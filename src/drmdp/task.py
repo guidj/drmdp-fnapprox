@@ -356,6 +356,101 @@ ESTIMATOR_MAPPERS = frozenset(
     }
 )
 
+ONE_SHOT_REWARD_MAPPERS = frozenset(
+    {
+        "least-lfa",
+        "discrete-least-lfa",
+        "cvlps",
+    }
+)
+
+
+def estimation_only(exp_instance: core.ExperimentInstance):
+    """
+    Entry point running reward estimation without control.
+
+    The env stack matches `policy_control`: shaping and noise on the
+    training env, aggregate window sums from `DelayedRewardWrapper`,
+    and the reward mapper with its true-reward evaluator built from the
+    clean proxy. The action source is a seeded uniform-random policy;
+    no value function is learned, so the occupancy is exploration
+    alone. One-shot estimators stop at their first estimation event:
+    the freeze ends information collection, and the remaining episodes
+    would add no measurement.
+    """
+    env_spec = exp_instance.experiment.env_spec
+    problem_spec = exp_instance.experiment.problem_spec
+    proxied_env = create_env(
+        env_spec.name, args=env_spec.args, gamma=problem_spec.gamma
+    )
+    env, monitor = monitor_wrapper(proxied_env.env)
+    rew_delay = reward_delay_distribution(problem_spec.delay_config)
+    env = delay_wrapper(env, rew_delay)
+    env = reward_mapper(
+        env,
+        proxy_env=proxied_env.proxy,
+        mapping_spec=problem_spec.reward_mapper,
+    )
+
+    num_episodes = exp_instance.run_config.episodes_per_run
+    log_frequency = max(exp_instance.run_config.log_episode_frequency, 1)
+    seeder = core.Seeder(
+        exp_instance.instance_id if exp_instance.run_config.use_seed else None
+    )
+    num_actions = int(env.action_space.n)
+
+    def log_episode(episode: int, returns: Sequence[float]) -> None:
+        exp_logger.log(
+            episode=episode,
+            steps=run_steps,
+            returns=float(np.mean(returns)),
+            info=dict(reward_estimation_info(env)),
+        )
+
+    returns: list[float] = []
+    run_steps = 0
+    last_logged_episode = -1
+    with logger.ExperimentLogger(
+        log_dir=exp_instance.run_config.output_dir, experiment_instance=exp_instance
+    ) as exp_logger:
+        episode = 0
+        for episode in range(num_episodes):
+            seed = seeder.get_seed(episode=episode)
+            env.reset(seed=seed)
+            rng = np.random.default_rng(seed)
+            while True:
+                action = int(rng.integers(num_actions))
+                _, _, term, trunc, _ = env.step(action)
+                run_steps += 1
+                if term or trunc:
+                    break
+            returns.append(monitor.rewards)
+            # a one-shot estimator that fired during this episode's
+            # attempt is logged immediately: the run stops at the freeze
+            if episode % log_frequency == 0 or _one_shot_estimated(
+                env, problem_spec.reward_mapper["name"]
+            ):
+                log_episode(episode, returns)
+                last_logged_episode = episode
+            if _one_shot_estimated(env, problem_spec.reward_mapper["name"]):
+                break
+        # the trailing episodes' events ride the final log entry
+        if last_logged_episode < episode:
+            log_episode(episode, returns)
+    env.close()
+
+
+def _one_shot_estimated(env: gym.Env, mapper_name: str) -> bool:
+    """
+    Whether a one-shot estimator has frozen weights.
+
+    """
+    if mapper_name not in ONE_SHOT_REWARD_MAPPERS:
+        return False
+    if not env.has_wrapper_attr("weights"):
+        return False
+    return env.get_wrapper_attr("weights") is not None
+
 
 def reward_mapper(env: gym.Env, proxy_env: gym.Env, mapping_spec: Mapping[str, Any]):
     """
@@ -457,7 +552,7 @@ def reward_estimation_info(env: gym.Env) -> Mapping[str, Any]:
     """
     Reward-estimation events recorded by the reward mapper so far.
 
-    The full list is attached to each log entry and the aggregation
+    The full lists are attached to each log entry and the aggregation
     pipeline deduplicates by update index, so every event is reported
     once regardless of the log frequency.
     """
@@ -465,9 +560,15 @@ def reward_estimation_info(env: gym.Env) -> Mapping[str, Any]:
         return {}
     estimation_meta = env.get_wrapper_attr("estimation_meta")
     reward_errors = estimation_meta.get("reward_errors", [])
-    if not reward_errors:
+    deferred_attempts = estimation_meta.get("deferred_attempts", [])
+    if not reward_errors and not deferred_attempts:
         return {}
-    return {"reward_errors": [dict(event) for event in reward_errors]}
+    info: dict[str, Any] = {}
+    if reward_errors:
+        info["reward_errors"] = [dict(event) for event in reward_errors]
+    if deferred_attempts:
+        info["deferred_attempts"] = [dict(event) for event in deferred_attempts]
+    return info
 
 
 def observation_encoder(

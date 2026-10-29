@@ -1,8 +1,10 @@
 """Tests for rewardeval — true-reward error measurement of estimated rewards."""
 
 import json
+import math
 import os
 
+import gymnasium as gym
 import numpy as np
 
 from drmdp import core, optsol, rewardeval, task, transform
@@ -27,15 +29,23 @@ class TestDiscreteStateActionRewards:
         )
         return proxy, ft_op
 
-    def test_enumerates_every_state_action_pair(self):
+    def test_enumerates_live_state_action_pairs(self):
+        """Every live (non-absorbing) state's pairs, absorbing excluded."""
         proxy, ft_op = self._mines_setup()
         features, true_rewards = rewardeval.discrete_state_action_rewards(
             proxy_env=proxy, feats_fn=FTOpHook(ft_op)
         )
-        states_mapping = proxy.get_wrapper_attr("states_mapping")
-        expected_rows = len(states_mapping) * proxy.action_space.n
+        transition = proxy.get_wrapper_attr("transition")
+        live_states = [
+            state_id
+            for state_id in sorted(transition)
+            if not rewardeval._is_absorbing_state(transition[state_id], state_id)
+        ]
+        expected_rows = len(live_states) * proxy.action_space.n
         assert features.shape[0] == expected_rows
         assert true_rewards.shape == (expected_rows,)
+        # the exit cell is the grid's only absorbing state
+        assert len(live_states) == len(transition) - 1
         proxy.close()
 
     def test_rewards_agree_with_random_policy_steps(self):
@@ -48,11 +58,20 @@ class TestDiscreteStateActionRewards:
             proxy_env=proxy, feats_fn=FTOpHook(ft_op)
         )
         states_mapping = proxy.get_wrapper_attr("states_mapping")
-        nactions = proxy.action_space.n
+        transition = proxy.get_wrapper_attr("transition")
+        live_states = [
+            state_id
+            for state_id in sorted(transition)
+            if not rewardeval._is_absorbing_state(transition[state_id], state_id)
+        ]
+        row_of_state = {
+            state_id: row_idx * proxy.action_space.n
+            for row_idx, state_id in enumerate(live_states)
+        }
 
         def reward_for(position, action):
             state_id = states_mapping[tuple(position)]
-            return true_rewards[state_id * nactions + action]
+            return true_rewards[row_of_state[state_id] + action]
 
         proxy.action_space.seed(0)
         obs, _ = proxy.reset(seed=0)
@@ -82,6 +101,34 @@ class TestDiscreteStateActionRewards:
         )
         report = measure(weights)
         np.testing.assert_allclose(report["rmse"], 0.0, atol=1e-10)
+        proxy.close()
+
+
+class TestIsAbsorbingState:
+    """Self-loop detection over the dense transition table."""
+
+    def _mines_proxy(self):
+        result = task.create_env(
+            "GridWorld-MINES",
+            {"grid": controlexps.MINES_GW_GRID, "max_episode_steps": 200},
+        )
+        return result.proxy
+
+    def test_exit_state_is_absorbing(self):
+        proxy = self._mines_proxy()
+        transition = proxy.get_wrapper_attr("transition")
+        states_mapping = proxy.get_wrapper_attr("states_mapping")
+        goal_id = states_mapping[(5, 11)]
+        assert rewardeval._is_absorbing_state(transition[goal_id], goal_id)
+        proxy.close()
+
+    def test_live_states_are_not_absorbing(self):
+        proxy = self._mines_proxy()
+        transition = proxy.get_wrapper_attr("transition")
+        states_mapping = proxy.get_wrapper_attr("states_mapping")
+        start_id = states_mapping[(5, 0)]
+        # a wall move stays, but at least one action leaves the cell
+        assert not rewardeval._is_absorbing_state(transition[start_id], start_id)
         proxy.close()
 
 
@@ -224,13 +271,14 @@ class TestPolicyControlRewardErrorLogging:
         # exact RMSE requires full state-action coverage before LEAST's
         # single fit: minimum-norm least squares assigns 0 to unvisited
         # columns, so an uncovered live pair would break rmse ~ 0.
-        # 80 episodes on this 14-state grid cover all pairs.
+        # 80 episodes on this grid cover all 13 live states' pairs; the
+        # exit state is absorbing and excluded from the enumeration.
         events = self._run_control("least-lfa", tmp_path, episodes=80)
         assert len(events) == 1
         event = events[0]
         assert event["update_index"] == 1
         assert event["episode"] <= 80
-        assert event["num_samples"] == 56  # 14 states x 4 actions
+        assert event["num_samples"] == 52  # 13 live states x 4 actions
         np.testing.assert_allclose(event["rmse"], 0.0, atol=1e-6)
 
     def test_bayes_least_lfa_sequential_events(self, tmp_path):
@@ -332,5 +380,5 @@ def read_reward_errors(log_file: str) -> list[dict]:
 
 def weights_dim(ft_op: transform.FTOp) -> int:
     """Dimension of the estimator weights for a Box feature space."""
-    space = ft_op.output_space.observation_space
-    return int(np.prod(space.shape))
+    box_space: gym.spaces.Box = ft_op.output_space.observation_space  # type: ignore[assignment]
+    return math.prod(box_space.shape)

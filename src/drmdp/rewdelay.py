@@ -2,6 +2,7 @@ import abc
 import logging
 import random
 import sys
+import time
 from collections.abc import Callable, Mapping, Sequence
 from enum import Enum
 from typing import (
@@ -462,9 +463,14 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
         self.reward_error_fn = reward_error_fn
 
         self.episodes = 0
+        self.steps = 0
+        self._start_monotonic = time.monotonic()
         self.mdim = feats_fn.feature_dim
         if self.mdim < 1:
             raise ValueError(f"feats_fn feature_dim must be positive. Got: {self.mdim}")
+        # set by every concrete estimator; estimation events and
+        # deferred attempts append to it
+        self.estimation_meta: dict[str, Any] = {}
         self._latest_obs = None
         self._segment_features = None
         self.rng = np.random.default_rng()
@@ -574,7 +580,26 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
             {
                 "update_index": len(self.estimation_meta["reward_errors"]) + 1,
                 "episode": self.episodes,
+                "steps": self.steps,
+                "elapsed_s": round(time.monotonic() - self._start_monotonic, 6),
                 **report,
+            }
+        )
+
+    def _record_deferred_attempt(self, matrix: np.ndarray) -> None:
+        """
+        Records a scheduled attempt the gate deferred.
+
+        The record exposes why the attempt did not solve: the buffer
+        size and the nonzero-column count against the design width.
+        """
+        self.estimation_meta.setdefault("deferred_attempts", []).append(
+            {
+                "episode": self.episodes,
+                "steps": self.steps,
+                "buffer_rows": int(matrix.shape[0]),
+                "nonzero_columns": optsol.matrix_factors_rank(matrix),
+                "matrix_columns": int(matrix.shape[1]),
             }
         )
 
@@ -676,6 +701,7 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
     def step(self, action):
         previous_obs = self._latest_obs
         next_obs, reward, term, trunc, info = super().step(action)
+        self.steps += 1
         transition = rewardfeat.Transition(
             observation=previous_obs,
             action=action,
@@ -790,6 +816,7 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
             "intercept": intercept,
             "check_factors": check_factors,
             "snapshots": [],
+            "deferred_attempts": [],
         }
 
     def _initialize_segment_features(self):
@@ -819,6 +846,7 @@ class DiscretisedLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         if self.check_factors:
             rank = optsol.matrix_factors_rank(matrix)
             if rank < matrix.shape[1]:
+                self._record_deferred_attempt(matrix)
                 return
 
         # Add the intercept column if needed
@@ -882,6 +910,7 @@ class LeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
             "check_factors": check_factors,
             "snapshots": [],
             "reward_errors": [],
+            "deferred_attempts": [],
         }
 
     def _initialize_segment_features(self):
@@ -911,6 +940,7 @@ class LeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         if self.check_factors:
             rank = optsol.matrix_factors_rank(matrix)
             if rank < matrix.shape[1]:
+                self._record_deferred_attempt(matrix)
                 return
 
         # Add the intercept column if needed
@@ -993,6 +1023,7 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
             "check_factors": check_factors,
             "snapshots": [],
             "reward_errors": [],
+            "deferred_attempts": [],
         }
 
     def _initialize_segment_features(self):
@@ -1057,6 +1088,7 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         if self.check_factors:
             rank = optsol.matrix_factors_rank(matrix)
             if rank < matrix.shape[1]:
+                self._record_deferred_attempt(matrix)
                 return False
 
         # Add the intercept column if needed

@@ -138,7 +138,16 @@ class TestEstimationEventRows:
                 "experiment": {
                     "env_spec": {"name": "GridWorld-MINES"},
                     "problem_spec": {
-                        "reward_mapper": {"name": "bayes-least-lfa"},
+                        "reward_mapper": {
+                            "name": "bayes-least-lfa",
+                            "args": {
+                                "check_factors": False,
+                                "transition_feats_spec": {
+                                    "name": "action-and-termination-features",
+                                    "args": {},
+                                },
+                            },
+                        },
                         "gamma": 0.99,
                         "delay_config": {"name": "clipped-poisson", "args": {}},
                     },
@@ -152,6 +161,8 @@ class TestEstimationEventRows:
         return {
             "update_index": update_index,
             "episode": episode,
+            "steps": 100 * update_index,
+            "elapsed_s": 0.5 * update_index,
             "rmse": 0.25 * update_index,
             "num_samples": 220,
         }
@@ -169,8 +180,14 @@ class TestEstimationEventRows:
         assert first["delay_config"] == {"name": "clipped-poisson", "args": {}}
         assert first["update_index"] == 1
         assert first["episode"] == 4
+        assert first["steps"] == 100
+        assert first["elapsed_s"] == 0.5
         assert first["rmse"] == 0.25
         assert first["num_samples"] == 220
+        assert first["check_factors"] is False
+        assert first["feats_spec"] == json.dumps(
+            {"name": "action-and-termination-features", "args": {}}, sort_keys=True
+        )
         assert second["update_index"] == 2
         assert second["episode"] == 20
 
@@ -185,6 +202,98 @@ class TestEstimationEventRows:
 
     def test_none_info_yields_no_rows(self):
         assert agg.estimation_event_rows(self._log_row(None)) == []
+
+
+class TestDeferredAttemptRows:
+    """Per-deferral rows and the routing predicate."""
+
+    def _log_row(self, attempts):
+        row = {
+            "episode": 20,
+            "steps": 100,
+            "returns": -1.0,
+            "info": {"deferred_attempts": attempts},
+            "meta": {
+                "exp_id": "exp",
+                "instance_id": 0,
+                "experiment": {
+                    "env_spec": {"name": "MountainCar-v0"},
+                    "problem_spec": {
+                        "reward_mapper": {
+                            "name": "least-lfa",
+                            "args": {
+                                "check_factors": True,
+                                "transition_feats_spec": {
+                                    "name": "state-bins-action-features",
+                                    "args": {"bins": [4, 2]},
+                                },
+                            },
+                        },
+                        "gamma": 0.99,
+                        "delay_config": {"name": "clipped-poisson", "args": {}},
+                    },
+                },
+            },
+            "exp_id": "exp",
+            "instance_id": 0,
+        }
+        return row
+
+    def test_extracts_one_row_per_attempt(self):
+        attempts = [
+            {
+                "episode": 10,
+                "steps": 2500,
+                "buffer_rows": 60,
+                "nonzero_columns": 20,
+                "matrix_columns": 24,
+            },
+            {
+                "episode": 11,
+                "steps": 5000,
+                "buffer_rows": 84,
+                "nonzero_columns": 24,
+                "matrix_columns": 24,
+            },
+        ]
+        rows = agg.deferred_attempt_rows(self._log_row(attempts))
+        assert len(rows) == 2
+        first = rows[0]
+        assert first["episode"] == 10
+        assert first["steps"] == 2500
+        assert first["buffer_rows"] == 60
+        assert first["nonzero_columns"] == 20
+        assert first["matrix_columns"] == 24
+        assert first["method"] == "LEAST"
+        assert first["check_factors"] is True
+        assert first["env_name"] == "MountainCar-v0"
+
+    def test_numpy_array_attempts(self):
+        attempts = np.array(
+            [
+                {
+                    "episode": 10,
+                    "steps": 2500,
+                    "buffer_rows": 60,
+                    "nonzero_columns": 20,
+                    "matrix_columns": 24,
+                }
+            ],
+            dtype=object,
+        )
+        rows = agg.deferred_attempt_rows(self._log_row(attempts))
+        assert len(rows) == 1
+        assert rows[0]["episode"] == 10
+
+    def test_no_attempts_yields_no_rows(self):
+        assert agg.deferred_attempt_rows(self._log_row([])) == []
+        assert agg.deferred_attempt_rows({"info": None}) == []
+
+    def test_routing_predicates(self):
+        attempts = [{"episode": 10}]
+        assert agg.has_deferred_attempts(self._log_row(attempts))
+        assert not agg.has_deferred_attempts(self._log_row([]))
+        assert not agg.has_estimation_events(self._log_row(attempts))
 
 
 class TestEstimationEventDedup:

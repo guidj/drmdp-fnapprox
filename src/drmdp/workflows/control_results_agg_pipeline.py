@@ -316,6 +316,15 @@ def pipeline(ds_logs: ray.data.Dataset) -> Mapping[str, ray.data.Dataset]:
         .aggregate(EstimationEventDedup())
         .flat_map(lambda row: [row["estimation_event_dedup"]])
     )
+    # Deferred attempts share the log-attachment pattern; one row per
+    # (run, episode), the episode on which the attempt was scheduled.
+    ds_deferrals = (
+        ds_logs.filter(has_deferred_attempts)
+        .flat_map(deferred_attempt_rows)
+        .groupby(["exp_id", "instance_id", "episode"])
+        .aggregate(EstimationEventDedup(name="deferred_attempt_dedup"))
+        .flat_map(lambda row: [row["deferred_attempt_dedup"]])
+    )
     # Per-run rows are projected from the joined stream before `ds_logs`
     # is rebound to the episode-grouped view, which drops per-run rows
     ds_runs = ds_logs.flat_map(run_rows)
@@ -329,6 +338,7 @@ def pipeline(ds_logs: ray.data.Dataset) -> Mapping[str, ray.data.Dataset]:
         "logs": ds_logs,
         "metrics": ds_metrics,
         "estimations": ds_estimations,
+        "deferrals": ds_deferrals,
         "runs": ds_runs,
     }
 
@@ -354,6 +364,13 @@ def has_estimation_events(row: Mapping[str, Any]) -> bool:
     return len(reward_error_events(row)) > 0
 
 
+def has_deferred_attempts(row: Mapping[str, Any]) -> bool:
+    """
+    Whether a log record carries deferred-attempt records.
+    """
+    return len(deferred_attempt_events(row)) > 0
+
+
 def reward_error_events(row: Mapping[str, Any]) -> Sequence[Any]:
     """
     Estimation events attached to a log record.
@@ -370,6 +387,29 @@ def reward_error_events(row: Mapping[str, Any]) -> Sequence[Any]:
     return list(events)
 
 
+def deferred_attempt_events(row: Mapping[str, Any]) -> Sequence[Any]:
+    """
+    Deferred-attempt records attached to a log record.
+
+    One record per scheduled estimation attempt that a gate deferred;
+    the list is attached to every log entry of the run, like the
+    estimation events.
+    """
+    info = row.get("info")
+    if not info:
+        return ()
+    attempts = info.get("deferred_attempts")
+    if attempts is None:
+        return ()
+    return list(attempts)
+
+
+def _mapper_args(row: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Reward-mapper args of the run a log record belongs to."""
+    problem_spec = row["meta"]["experiment"]["problem_spec"]
+    return dict(problem_spec["reward_mapper"].get("args") or {})
+
+
 def estimation_event_rows(row: Mapping[str, Any]) -> list[dict[str, Any]]:
     """
     Per estimation-event rows from one experiment log record.
@@ -384,21 +424,65 @@ def estimation_event_rows(row: Mapping[str, Any]) -> list[dict[str, Any]]:
     meta = row["meta"]
     experiment = meta["experiment"]
     problem_spec = experiment["problem_spec"]
+    mapper_args = _mapper_args(row)
     method = dataproc.MAPPERS_NAMES[problem_spec["reward_mapper"]["name"]]
+    feats_spec = mapper_args.get("transition_feats_spec") or {}
     return [
         {
             "exp_id": row["exp_id"],
             "instance_id": row["instance_id"],
             "episode": event["episode"],
+            "steps": event.get("steps"),
+            "elapsed_s": event.get("elapsed_s"),
             "update_index": event["update_index"],
             "rmse": event["rmse"],
             "num_samples": event["num_samples"],
             "method": method,
+            "check_factors": bool(mapper_args.get("check_factors", False)),
+            "feats_spec": json.dumps(feats_spec, sort_keys=True),
             "env_name": experiment["env_spec"]["name"],
             "gamma": problem_spec["gamma"],
             "delay_config": problem_spec["delay_config"],
         }
         for event in events
+    ]
+
+
+def deferred_attempt_rows(row: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """
+    Per deferred-attempt rows from one experiment log record.
+
+    Each row carries the run identity, the attempt's episode and buffer
+    state, and the experiment configuration, so a run that never
+    estimates states why: the nonzero-column count against the design
+    width.
+    """
+    attempts = deferred_attempt_events(row)
+    if not attempts:
+        return []
+    meta = row["meta"]
+    experiment = meta["experiment"]
+    problem_spec = experiment["problem_spec"]
+    mapper_args = _mapper_args(row)
+    method = dataproc.MAPPERS_NAMES[problem_spec["reward_mapper"]["name"]]
+    feats_spec = mapper_args.get("transition_feats_spec") or {}
+    return [
+        {
+            "exp_id": row["exp_id"],
+            "instance_id": row["instance_id"],
+            "episode": attempt["episode"],
+            "steps": attempt.get("steps"),
+            "buffer_rows": attempt["buffer_rows"],
+            "nonzero_columns": attempt["nonzero_columns"],
+            "matrix_columns": attempt["matrix_columns"],
+            "method": method,
+            "check_factors": bool(mapper_args.get("check_factors", False)),
+            "feats_spec": json.dumps(feats_spec, sort_keys=True),
+            "env_name": experiment["env_spec"]["name"],
+            "gamma": problem_spec["gamma"],
+            "delay_config": problem_spec["delay_config"],
+        }
+        for attempt in attempts
     ]
 
 

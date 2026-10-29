@@ -2,12 +2,13 @@
 Measures the error of estimated per-step rewards against true rewards.
 
 Discrete environments — those exposing a `transition` table and a
-`states_mapping` (GridWorld) — are enumerated: every state and action
-is scored, with the true reward taken from the transition entry's
-probability-weighted reward (the expected reward; deterministic tables
-have a single probability-1 entry). Continuous environments are sampled
-with a random policy on the clean proxy env: `num_samples` steps per
-call, resetting at episode ends.
+`states_mapping` — are enumerated: every live state and
+action is scored, with the true reward taken from the transition
+entry's probability-weighted reward (the expected reward; deterministic
+tables have a single probability-1 entry). Absorbing states are
+excluded from the enumeration: no episode acts from them. Continuous
+environments are sampled with a random policy on the clean proxy env:
+`num_samples` steps per call, resetting at episode ends.
 
 Feature computation reuses the estimator's own transition-feature
 function, so the error is measured in the representation the estimator
@@ -18,7 +19,7 @@ the target the estimator infers from the delayed, noisy training
 rewards.
 """
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 import gymnasium as gym
@@ -41,10 +42,10 @@ def true_reward_error_fn(
 
     The callable takes the estimator's weights and returns
     `{"rmse": float, "num_samples": int}`. Discrete envs score every
-    state-action pair, with the feature matrix computed once; continuous
-    envs draw `num_samples` fresh random-policy samples per call. With
-    `seed`, every call draws the same samples, so successive estimates
-    are scored on a fixed evaluation set.
+    live state-action pair, with the feature matrix computed once;
+    continuous envs draw `num_samples` fresh random-policy samples
+    per call. With `seed`, every call draws the same samples, so
+    successive estimates are scored on a fixed evaluation set.
 
     Args:
         proxy_env: clean env (un-noised rewards) used as the source of
@@ -92,16 +93,20 @@ def discrete_state_action_rewards(
     intercept: bool = False,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Features and true rewards for every state-action pair of a discrete env.
+    Features and true rewards for every live state-action pair of a
+    discrete env.
 
-    Rows are ordered state-major, action-minor: the row for state id
-    `s` and action `a` sits at index `s * num_actions + a`, matching the
-    `states_mapping` ids. Rewards and next states are read from the
-    env's transition table, which is start-independent — cliff falls
-    target the start given at construction — so one table serves every
-    episode.
+    Absorbing states — states whose every action returns to the
+    state itself — are excluded: no episode acts from them, so their
+    self-loop rows lie outside any recovery claim's domain.
 
-    The transition table carries no `info`, so a feature that reads an
+    Rows are ordered state-major, action-minor: live states appear
+    in ascending id order, and the row of the k-th live state (0-based)
+    and action `a` sits at index `k * num_actions + a`. Skipping
+    absorbing states decouples row index from state id. Rewards and
+    next states are read from the env's transition table.
+
+    The transition table carries no `info`, so a `feats_fn` that reads an
     env event from `info` cannot be scored through enumeration; such a
     feature raises at evaluation time rather than being scored zero.
     """
@@ -117,6 +122,8 @@ def discrete_state_action_rewards(
     features: list[np.ndarray] = []
     true_rewards: list[float] = []
     for state_id in sorted(transition):
+        if _is_absorbing_state(transition[state_id], state_id):
+            continue
         obs = np.array(position_by_id[state_id], dtype=np.int64)
         for action in range(num_actions):
             entries = transition[state_id][action]
@@ -138,6 +145,24 @@ def discrete_state_action_rewards(
                 float(sum(prob * step_reward for prob, _, step_reward, _ in entries))
             )
     return np.array(features), np.array(true_rewards)
+
+
+def _is_absorbing_state(
+    state_entries: Mapping[Any, Sequence[Any]], state_id: Any
+) -> bool:
+    """
+    Whether every action of a state realizes a self-loop.
+
+    The transition table is dense over next states, so the realized
+    entry of an action is its probability-1 row. A state whose every
+    action returns to itself is absorbing: episodes end on entry, so
+    no step is ever taken from it.
+    """
+    for entries in state_entries.values():
+        realized = max(entries, key=lambda entry: entry[0])
+        if realized[1] != state_id:
+            return False
+    return True
 
 
 def random_policy_rewards(

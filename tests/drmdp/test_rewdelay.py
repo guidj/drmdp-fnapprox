@@ -849,6 +849,101 @@ class TestDiscretisedLeastLfaGenerativeRewardWrapper:
             assert abs(reward) <= np.max(np.abs(wrapper.weights)) + 1e-6
 
 
+class TestEstimationAttemptRecords:
+    """Steps, wall-time, and deferral records of estimation attempts."""
+
+    class _DeadColumnFeatures:
+        """Two features, the second always zero: coverage caps below width."""
+
+        @property
+        def feature_dim(self) -> int:
+            return 2
+
+        def __call__(self, transition) -> np.ndarray:
+            del transition
+            return np.array([1.0, 0.0])
+
+    class _ConstantErrorFn:
+        """A fixed error report, so the record's metadata is the test target."""
+
+        def __call__(self, weights: np.ndarray):
+            del weights
+            return {"rmse": 0.5, "num_samples": 10}
+
+    def _run(self, check_factors: bool, episodes: int = 3):
+        env = DummyEnv(term_steps=2)
+        delayed = rewdelay.DelayedRewardWrapper(
+            env, reward_delay=rewdelay.FixedDelay(delay=2)
+        )
+        wrapper = rewdelay.LeastLfaGenerativeRewardWrapper(
+            delayed,
+            feats_fn=self._DeadColumnFeatures(),
+            attempt_estimation_episode=1,
+            check_factors=check_factors,
+            reward_error_fn=self._ConstantErrorFn(),
+        )
+        wrapper.reset()
+        for _ in range(episodes):
+            done = False
+            while not done:
+                _, _, term, trunc, _ = wrapper.step(0)
+                done = term or trunc
+            wrapper.reset()
+        return wrapper
+
+    def test_event_records_steps_and_elapsed_time(self):
+        wrapper = self._run(check_factors=False)
+        # fires at the second episode's end: the buffer holds its second
+        # window there, after four environment steps
+        events = wrapper.estimation_meta["reward_errors"]
+        assert len(events) == 1
+        assert events[0]["update_index"] == 1
+        assert events[0]["episode"] == 2
+        assert events[0]["steps"] == 4
+        assert events[0]["elapsed_s"] >= 0.0
+        assert events[0]["rmse"] == 0.5
+        assert wrapper.weights is not None
+
+    def test_gate_deferral_records_the_buffer_state(self):
+        wrapper = self._run(check_factors=True)
+        # the second column never activates, so the coverage gate defers
+        # every scheduled attempt and never solves
+        assert wrapper.weights is None
+        assert wrapper.estimation_meta["reward_errors"] == []
+        deferred = wrapper.estimation_meta["deferred_attempts"]
+        assert len(deferred) == 2
+        first = deferred[0]
+        assert first["episode"] == 2
+        assert first["steps"] == 4
+        assert first["buffer_rows"] == 2
+        assert first["nonzero_columns"] == 1
+        assert first["matrix_columns"] == 2
+
+    def test_bayes_gate_deferral_keeps_the_posterior_unset(self):
+        env = DummyEnv(term_steps=2)
+        delayed = rewdelay.DelayedRewardWrapper(
+            env, reward_delay=rewdelay.FixedDelay(delay=2)
+        )
+        wrapper = rewdelay.BayesLeastLfaGenerativeRewardWrapper(
+            delayed,
+            feats_fn=self._DeadColumnFeatures(),
+            init_attempt_estimation_episode=1,
+            check_factors=True,
+        )
+        wrapper.reset()
+        for _ in range(3):
+            done = False
+            while not done:
+                _, _, term, trunc, _ = wrapper.step(0)
+                done = term or trunc
+            wrapper.reset()
+        assert wrapper.mv_normal_rewards is None
+        deferred = wrapper.estimation_meta["deferred_attempts"]
+        assert len(deferred) == 2
+        assert deferred[0]["nonzero_columns"] == 1
+        assert deferred[0]["matrix_columns"] == 2
+
+
 class TestBayesLeastLfaGenerativeRewardWrapper:
     """Tests for BayesLeastLfaGenerativeRewardWrapper — episode-boundary buffering, segment accumulation for posterior updates, and sampled-weights control."""
 
