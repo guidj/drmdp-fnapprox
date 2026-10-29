@@ -101,7 +101,7 @@ def cell_key(experiment: core.Experiment) -> str:
     env_args = experiment.env_spec.args or {}
     noise_args = (env_args.get("reward_noise") or {}).get("args") or {}
     noise_label = f"n{noise_args.get('std_multiplier', 'none')}"
-    return f"{env_name}-{encoding}-{mapper['name']}-{check_mode}-{delay_label}-{noise_label}"
+    return f"{env_name}_{encoding}_{mapper['name']}_{check_mode}_{delay_label}_{noise_label}"
 
 
 @ray.remote
