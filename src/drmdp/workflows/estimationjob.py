@@ -59,12 +59,12 @@ def create_tasks(
 
     cells: dict[str, list[core.Experiment]] = {}
     for experiment in experiments:
-        cells.setdefault(cell_slug(experiment), []).append(experiment)
+        cells.setdefault(cell_key(experiment), []).append(experiment)
 
     # per-env episode caps: instances are generated per cell so the
     # cap rides the run config
     instances: list[core.ExperimentInstance] = []
-    for slug, cell_experiments in cells.items():
+    for key, cell_experiments in cells.items():
         env_name = cell_experiments[0].env_spec.name
         instances.extend(
             task.generate_experiments_instances(
@@ -74,7 +74,7 @@ def create_tasks(
                 log_episode_frequency=log_episode_frequency,
                 use_seed=use_seed,
                 output_dir=output_dir,
-                task_prefix=f"{task_prefix}-{slug}",
+                task_prefix=f"{task_prefix}-{key}",
                 export_model=False,
             )
         )
@@ -89,7 +89,7 @@ def create_tasks(
     return instances
 
 
-def cell_slug(experiment: core.Experiment) -> str:
+def cell_key(experiment: core.Experiment) -> str:
     """Identity of a campaign cell within one environment."""
     env_name = experiment.env_spec.name
     encoding = (experiment.env_spec.metadata or {}).get("encoding", "none")

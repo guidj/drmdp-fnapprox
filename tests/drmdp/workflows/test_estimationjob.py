@@ -58,7 +58,7 @@ class TestCreateTasks:
         identities = [(inst.exp_id, inst.instance_id) for inst in instances]
         assert len(set(identities)) == len(identities)
 
-    def test_cell_slug_separates_gate_variants(self):
+    def test_cell_key_separates_gate_variants(self):
         specs = estimationexps.estimation_experiment_specs()
         experiments = specutils.parse_experiment_specs(specs)
         gated = [
@@ -66,9 +66,9 @@ class TestCreateTasks:
             for experiment in experiments
             if (experiment.env_spec.metadata or {}).get("encoding") == "structural-sine"
         ]
-        slugs = {estimationjob.cell_slug(experiment) for experiment in gated}
+        keys = {estimationjob.cell_key(experiment) for experiment in gated}
         # encoding x 3 methods (gate splits LEAST) x 2 delays x 2 noise
-        assert len(slugs) == 12
+        assert len(keys) == 12
 
 
 class TestEstimationOnly:

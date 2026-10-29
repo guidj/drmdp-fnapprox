@@ -622,7 +622,7 @@ class _ObservationDtypeFeatures:
     def __call__(self, transition: rewardfeat.Transition) -> np.ndarray:
         assert transition.observation.dtype == np.float32
         assert transition.next_observation.dtype == np.float32
-        return transition.next_observation
+        return np.asarray(transition.next_observation)
 
 
 class _CountingSuccessorFeatures:
@@ -632,7 +632,7 @@ class _CountingSuccessorFeatures:
 
     def __call__(self, transition: rewardfeat.Transition) -> np.ndarray:
         self.calls += 1
-        return transition.next_observation
+        return np.asarray(transition.next_observation)
 
 
 class _ConstantAndSuccessorFeatures:
