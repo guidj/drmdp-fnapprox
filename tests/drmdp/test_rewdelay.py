@@ -84,7 +84,7 @@ class TestDelayedRewardWrapper:
         assert wrapped.rewards == [1]
 
         # Seg 1, Step 2
-        # sement info has been reset
+        # segment info has been reset
         # for the next step
         wrapped.step(0)
         assert wrapped.segment == 1
@@ -438,7 +438,7 @@ class TestLeastLfaGenerativeRewardWrapper:
             env, feats_fn=FTOpHook(ft_op), attempt_estimation_episode=5
         )
 
-        assert wrapped
+        assert isinstance(wrapped, rewdelay.LeastLfaGenerativeRewardWrapper)
         assert wrapped.mdim == 4
         assert wrapped.weights is None
         assert wrapped.est_buffer.size() == 0
@@ -787,14 +787,14 @@ class TestLeastLfaGenerativeRewardWrapper:
         assert wrapper.estimation_meta["reward_errors"] == []
 
 
-class TestDiscretisedLeastLfaGenerativeRewardWrapper:
-    """Tests per-step reward prediction in DiscretisedLeastLfaGenerativeRewardWrapper."""
+class TestLeastLfaDiscreteFeatures:
+    """Tests per-step reward prediction with discrete feature inputs."""
 
     def _make_wrapper(self, term_steps, delay, num_features=4):
         env = DummyEnv(term_steps=term_steps)
         ft_op = DiscreteDummyFTOp(env, num_features=num_features)
         delayed = rewdelay.DelayedRewardWrapper(env, rewdelay.FixedDelay(delay=delay))
-        wrapper = rewdelay.DiscretisedLeastLfaGenerativeRewardWrapper(
+        wrapper = rewdelay.LeastLfaGenerativeRewardWrapper(
             delayed,
             feats_fn=FTOpHook(ft_op),
             attempt_estimation_episode=1,

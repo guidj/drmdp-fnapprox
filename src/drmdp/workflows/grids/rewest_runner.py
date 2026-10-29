@@ -36,7 +36,8 @@ class RewardStoreWrapper(gym.Wrapper):
     def step(self, action: int) -> tuple[Any, float, bool, bool, dict[str, Any]]:
         obs, reward, term, trunc, info = super().step(action)
         if len(self.buffer) < self.buffer_size:
-            assert self._prev_obs is not None
+            if self._prev_obs is None:
+                raise RuntimeError("step() called before reset()")
             self.buffer.append(reward)
             self.obs_buffer.append(self._prev_obs)
             self.action_buffer.append(action)

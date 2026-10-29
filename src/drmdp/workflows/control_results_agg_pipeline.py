@@ -37,7 +37,7 @@ class PipelineArgs:
     output_dir: str
 
 
-class StepSnapshotAggretator(ray.data.aggregate.AggregateFn):
+class StepSnapshotAggregator(ray.data.aggregate.AggregateFn):
     """
     Aggregates returns.
     """
@@ -45,7 +45,7 @@ class StepSnapshotAggretator(ray.data.aggregate.AggregateFn):
     AggType = Mapping[str, dict[str, Any]]
     Row = Mapping[str, Any]
 
-    def __init__(self, name: str = "StepSnapshotAggretator()"):
+    def __init__(self, name: str = "StepSnapshotAggregator()"):
         super().__init__(
             init=self._init,
             merge=self._merge,
@@ -157,7 +157,7 @@ def parse_experiment_metadata(paths: Sequence[str]) -> Mapping[str, Any]:
     metadata_files = [os.path.join(path, "experiment-params.json") for path in paths]
     results = {}
     read_remote = ray.remote(parse_experiments_metadata_files)
-    refs = [read_remote.remote(seq) for seq in chunks(metadata_files, n=100)]
+    refs = [read_remote.remote(seq) for seq in chunks(metadata_files, chunk_size=100)]
     while True:
         completed_refs, refs = ray.wait(refs)
         for completed_ref in completed_refs:
@@ -330,7 +330,7 @@ def pipeline(ds_logs: ray.data.Dataset) -> Mapping[str, ray.data.Dataset]:
     ds_runs = ds_logs.flat_map(run_rows)
     ds_logs = (
         ds_logs.groupby("episode")
-        .aggregate(StepSnapshotAggretator(name="step_snapshot_agg"))
+        .aggregate(StepSnapshotAggregator(name="step_snapshot_agg"))
         .flat_map(step_snapshot_rows)
     )
     ds_metrics = calculate_metrics(ds_logs)
@@ -527,7 +527,7 @@ def step_snapshot_rows(row: Mapping[str, Any]) -> list[dict[str, Any]]:
     """
     One row per experiment of an episode's snapshot aggregation.
 
-    A null-valued entry (see StepSnapshotAggretator._merge on null
+    A null-valued entry (see StepSnapshotAggregator._merge on null
     struct fields) is an experiment that logged no run at the episode;
     it produces no row.
     """
@@ -559,10 +559,10 @@ def calculate_metrics(ds: ray.data.Dataset) -> ray.data.Dataset:
     return ds.map(apply)
 
 
-def chunks(seq: Sequence[Any], n):
-    """Yield successive n-sized chunks from seq."""
-    for i in range(0, len(seq), n):
-        yield seq[i : i + n]
+def chunks(seq: Sequence[Any], chunk_size: int):
+    """Yield successive chunk_size-sized chunks from seq."""
+    for idx in range(0, len(seq), chunk_size):
+        yield seq[idx : idx + chunk_size]
 
 
 def parse_args() -> PipelineArgs:

@@ -343,14 +343,14 @@ class TestStepSnapshotRows:
 
     def test_rows_skip_null_entries(self):
         # an exp_id that logged no run at the episode arrives as a null
-        # struct field (see StepSnapshotAggretator._merge)
+        # struct field (see StepSnapshotAggregator._merge)
         rows = agg.step_snapshot_rows(
             self._snapshot_row({"exp": self._data("exp"), "exp-b": None, "exp-c": None})
         )
         assert [row["exp_id"] for row in rows] == ["exp"]
 
 
-class TestStepSnapshotAggretator:
+class TestStepSnapshotAggregator:
     """Records carry run identity; finalize sorts into parallel arrays."""
 
     def _row(self, exp_id, instance_id, returns, steps=100):
@@ -364,7 +364,7 @@ class TestStepSnapshotAggretator:
         }
 
     def _aggregator(self):
-        return agg.StepSnapshotAggretator()
+        return agg.StepSnapshotAggregator()
 
     def test_accumulate_keeps_run_identity(self):
         aggregator = self._aggregator()

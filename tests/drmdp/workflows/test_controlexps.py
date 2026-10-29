@@ -3,7 +3,7 @@ from drmdp.workflows import controlexps
 
 class TestGridDeadOheIndices:
     def test_mines_gw_grid(self):
-        indices = controlexps._grid_dead_ohe_indices(controlexps.MINES_GW_GRID)
+        indices = controlexps.grid_dead_ohe_indices(controlexps.MINES_GW_GRID)
         nrows = len(controlexps.MINES_GW_GRID)
         ncols = len(controlexps.MINES_GW_GRID[0])
         nstates = nrows * ncols
@@ -26,7 +26,7 @@ class TestGridDeadOheIndices:
 
     def test_simple_grid(self):
         grid = ["sox", "xog"]
-        indices = controlexps._grid_dead_ohe_indices(grid)
+        indices = controlexps.grid_dead_ohe_indices(grid)
         nstates = 2 * 3
         cliff_states = [2, 3]
         goal_states = [5]
@@ -38,7 +38,7 @@ class TestGridDeadOheIndices:
 
     def test_no_cliffs(self):
         grid = ["sog"]
-        indices = controlexps._grid_dead_ohe_indices(grid)
+        indices = controlexps.grid_dead_ohe_indices(grid)
         nstates = 1 * 3
         goal_states = [2]
         expected = sorted(

@@ -6,14 +6,16 @@ multiplier): the estimators receive aggregate window sums under a random
 policy and are scored against the true per-step rewards, without policy
 learning. The encodings are the ones measured in the 2026-10-28 encoding
 analyses: reward-structure encodings, the general transition recipe, the
-production feature maps, and uniform-bin space partitions.
+production feature maps, and uniform-bin space partitions. Dynamics structure
+means that an encoding assumes an environment's transition rule, not its
+reward values.
 """
 
 from collections.abc import Mapping, Sequence
 from typing import Any
 
 from drmdp import rewardfeat
-from drmdp.workflows.controlexps import MINES_GW_GRID, _grid_dead_ohe_indices
+from drmdp.workflows import controlexps
 
 EPSILON = 0.1
 GAMMA = 1.0
@@ -23,12 +25,6 @@ LEARNING_RATE_SPEC = {
 }
 ATTEMPT_ESTIMATION_EPISODE = 10
 ESTIMATION_BUFFER_MULT = 25
-
-# grid dimensions of GridWorld-MINES, for the nominal-grid encodings: the
-# observation box declares the cell count as its upper bound, so the
-# reachable coordinates are passed explicitly
-MINES_GRID_LOW = [0, 0]
-MINES_GRID_HIGH = [5, 11]
 
 # estimation-episode caps: one-shot LEAST stops at its first estimation
 # event, so the cap matters for the encodings that defer or update
@@ -50,8 +46,66 @@ NOISE_STD_MULTIPLIERS: Sequence[float] = (0.0, 1.0)
 REFERENCE_STD = 1.0
 
 
+def estimation_experiment_specs() -> Sequence[Mapping[str, Any]]:
+    """
+    Estimation-only experiment specs.
+
+    One spec per (env, encoding, noise multiplier): the encoding label
+    and knowledge class are recorded in the experiment metadata, and the
+    problem specs hold the method and delay axes. `feats_specs` is empty:
+    no control pipeline runs in this campaign.
+    """
+    specs: list[Mapping[str, Any]] = []
+    for env_name, template in _env_templates().items():
+        for noise_std_multiplier in NOISE_STD_MULTIPLIERS:
+            env_args = dict(template["base_args"])
+            env_args["reward_noise"] = {
+                "name": "relative-gaussian",
+                "args": {
+                    "std_multiplier": noise_std_multiplier,
+                    "reference_std": REFERENCE_STD,
+                },
+            }
+            for label, knowledge, transition_feats_spec in template["encodings"]:
+                specs.append(
+                    {
+                        "name": env_name,
+                        "args": env_args,
+                        "feats_specs": [[]],
+                        "problem_specs": _problem_specs(transition_feats_spec),
+                        "metadata": {
+                            "encoding": label,
+                            "knowledge": knowledge,
+                            "noise_std_multiplier": noise_std_multiplier,
+                        },
+                        "epochs": 1,
+                    }
+                )
+    return tuple(specs)
+
+
+def episode_cap(env_name: str) -> int:
+    """Estimation-episode cap of an environment."""
+    if env_name not in EPISODE_CAPS:
+        raise ValueError(
+            f"no episode cap declared for {env_name!r}. Known: {sorted(EPISODE_CAPS)}"
+        )
+    return EPISODE_CAPS[env_name]
+
+
+def expected_run_count(num_runs: int) -> int:
+    """Total experiment instances of the campaign, for logging and tests."""
+    encodings = sum(
+        len(template["encodings"]) for template in _env_templates().values()
+    )
+    methods = len(_mapper_axis({}))
+    return (
+        encodings * methods * len(DELAY_CONFIGS) * len(NOISE_STD_MULTIPLIERS) * num_runs
+    )
+
+
 def _mc_structural_sine() -> Mapping[str, Any]:
-    """Constant and terminal-gated sin(3 * successor position)."""
+    """Constant and terminal-gated sine of successor position."""
     return {
         "name": "constant-and-successor-basis-features",
         "args": {
@@ -116,7 +170,7 @@ def _current_tiles(tiling_dim: int) -> Mapping[str, Any]:
     )
 
 
-def _mc_currsucc_tiles(tiling_dim: int) -> Mapping[str, Any]:
+def _current_and_successor_tiles(tiling_dim: int) -> Mapping[str, Any]:
     """Current tiles followed by successor tiles, the production map."""
     return rewardfeat.current_and_successor_features_spec(
         current_spec=[
@@ -141,22 +195,22 @@ def _nonterminal_action() -> Mapping[str, Any]:
 def _gw_transition_anomaly() -> Mapping[str, Any]:
     """Constant and nominal-move anomaly indicator."""
     return {
-        "name": "grid-nominal-transition-anomaly-features",
-        "args": {"low": MINES_GRID_LOW, "high": MINES_GRID_HIGH},
+        "name": "gridworld-nominal-transition-anomaly-features",
+        "args": {},
     }
 
 
 def _gw_next_cell() -> Mapping[str, Any]:
     """Constant and nominal-next-cell one-hot."""
     return {
-        "name": "grid-nominal-next-cell-features",
-        "args": {"low": MINES_GRID_LOW, "high": MINES_GRID_HIGH},
+        "name": "gridworld-nominal-next-cell-features",
+        "args": {},
     }
 
 
-def _gw_sa_ohe() -> Mapping[str, Any]:
+def _gw_sa_ohe(grid: Sequence[str]) -> Mapping[str, Any]:
     """One-hot over live state-action pairs, dead columns dropped."""
-    dead_ohe_indices = _grid_dead_ohe_indices(MINES_GW_GRID)
+    dead_ohe_indices = controlexps.grid_dead_ohe_indices(grid)
     return rewardfeat.current_features_spec(
         current_spec=[
             {"name": "flat-grid-observation-action-ft", "args": {}},
@@ -193,17 +247,24 @@ def _bayes_args(transition_feats_spec: Mapping[str, Any]) -> Mapping[str, Any]:
     }
 
 
+def _mapper_axis(
+    transition_feats_spec: Mapping[str, Any],
+) -> Sequence[tuple[str, Mapping[str, Any]]]:
+    """(mapper_name, mapper_args) for each estimation method."""
+    return (
+        ("least-lfa", _least_args(transition_feats_spec, True)),
+        ("least-lfa", _least_args(transition_feats_spec, False)),
+        ("bayes-least-lfa", _bayes_args(transition_feats_spec)),
+    )
+
+
 def _problem_specs(
     transition_feats_spec: Mapping[str, Any],
 ) -> Sequence[Mapping[str, Any]]:
     """The method axis: gated LEAST, ungated LEAST, and BLADE-TD."""
     specs = []
     for delay_config in DELAY_CONFIGS:
-        for mapper_name, mapper_args in (
-            ("least-lfa", _least_args(transition_feats_spec, True)),
-            ("least-lfa", _least_args(transition_feats_spec, False)),
-            ("bayes-least-lfa", _bayes_args(transition_feats_spec)),
-        ):
+        for mapper_name, mapper_args in _mapper_axis(transition_feats_spec):
             specs.append(
                 {
                     "policy_type": "markovian",
@@ -226,7 +287,7 @@ def _mc_encodings() -> Sequence[tuple[str, str, Mapping[str, Any]]]:
         ("sa-bins-4x2", "general", _sa_bins((4, 2))),
         ("sa-bins-18x4", "general", _sa_bins((18, 4))),
         ("current-tiles-td3", "env-specific", _current_tiles(3)),
-        ("currsucc-tiles-td3", "env-specific", _mc_currsucc_tiles(3)),
+        ("currsucc-tiles-td3", "env-specific", _current_and_successor_tiles(3)),
     )
 
 
@@ -242,9 +303,9 @@ def _acrobot_encodings() -> Sequence[tuple[str, str, Mapping[str, Any]]]:
 def _gw_encodings() -> Sequence[tuple[str, str, Mapping[str, Any]]]:
     """(label, knowledge class, transition-feature spec) for GridWorld-MINES."""
     return (
-        ("transition-anomaly", "general", _gw_transition_anomaly()),
-        ("next-cell-ohe", "general", _gw_next_cell()),
-        ("sa-ohe", "env-specific", _gw_sa_ohe()),
+        ("transition-anomaly", "dynamics structure", _gw_transition_anomaly()),
+        ("next-cell-ohe", "dynamics structure", _gw_next_cell()),
+        ("sa-ohe", "env-specific", _gw_sa_ohe(controlexps.MINES_GW_GRID)),
         ("tiles-td3", "env-specific", _current_tiles(3)),
     )
 
@@ -274,67 +335,9 @@ def _env_templates() -> Mapping[str, Any]:
         },
         "GridWorld-MINES": {
             "base_args": {
-                "grid": MINES_GW_GRID,
+                "grid": controlexps.MINES_GW_GRID,
                 "max_episode_steps": 200,
             },
             "encodings": _gw_encodings(),
         },
     }
-
-
-def estimation_experiment_specs() -> Sequence[Mapping[str, Any]]:
-    """
-    Estimation-only experiment specs.
-
-    One spec per (env, encoding, noise multiplier): the encoding label
-    and knowledge class ride in the experiment metadata, and the
-    problem specs hold the method and delay axes. `feats_specs` is empty:
-    no control pipeline runs in this campaign.
-    """
-    specs: list[Mapping[str, Any]] = []
-    for env_name, template in _env_templates().items():
-        for noise_std_multiplier in NOISE_STD_MULTIPLIERS:
-            env_args = dict(template["base_args"])
-            env_args["reward_noise"] = {
-                "name": "relative-gaussian",
-                "args": {
-                    "std_multiplier": noise_std_multiplier,
-                    "reference_std": REFERENCE_STD,
-                },
-            }
-            for label, knowledge, transition_feats_spec in template["encodings"]:
-                specs.append(
-                    {
-                        "name": env_name,
-                        "args": env_args,
-                        "feats_specs": [[]],
-                        "problem_specs": _problem_specs(transition_feats_spec),
-                        "metadata": {
-                            "encoding": label,
-                            "knowledge": knowledge,
-                            "noise_std_multiplier": noise_std_multiplier,
-                        },
-                        "epochs": 1,
-                    }
-                )
-    return tuple(specs)
-
-
-def episode_cap(env_name: str) -> int:
-    """Estimation-episode cap of an environment."""
-    if env_name not in EPISODE_CAPS:
-        raise ValueError(
-            f"no episode cap declared for {env_name!r}. Known: {sorted(EPISODE_CAPS)}"
-        )
-    return EPISODE_CAPS[env_name]
-
-
-def expected_run_count(num_runs: int) -> int:
-    """Total experiment instances of the campaign, for logging and tests."""
-    encodings = sum(
-        len(template["encodings"]) for template in _env_templates().values()
-    )
-    methods = 3
-    return (
-        encodings * methods * len(DELAY_CONFIGS) * len(NOISE_STD_MULTIPLIERS) * num_runs
-    )

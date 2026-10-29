@@ -470,7 +470,7 @@ def reward_mapper(env: gym.Env, proxy_env: gym.Env, mapping_spec: Mapping[str, A
     intercept = bool(m_args.get("intercept", False))
 
     if name == "discrete-least-lfa":
-        return rewdelay.DiscretisedLeastLfaGenerativeRewardWrapper(
+        return rewdelay.LeastLfaGenerativeRewardWrapper(
             env=env,
             feats_fn=feats_fn,
             **m_args,

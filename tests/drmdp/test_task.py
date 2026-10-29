@@ -1,13 +1,12 @@
 """Tests for task.py — env creation, reward mapping, experiment generation."""
 
-from collections.abc import Sequence
-
 import numpy as np
 import pytest
 
-from drmdp import algorithms, core, envs, rewdelay, task, transform
+from drmdp import core, envs, rewdelay, task, transform
 from drmdp.envs import wrappers
 from drmdp.workflows import controlexps
+from tests.drmdp.testhelpers import assert_training_snapshots
 
 
 class TestCreateEnv:
@@ -460,7 +459,7 @@ class TestCreateAlgorithm:
     def test_markovian_trains_and_updates_weights(self):
         algo, env, mon = self._make_algo("markovian")
         snapshots = list(algo.train(env=env, num_episodes=3, monitor=mon))
-        _assert_training_snapshots(snapshots, expected_count=3)
+        assert_training_snapshots(snapshots, expected_count=3)
         assert mon.step > 0
         env.close()
 
@@ -468,14 +467,14 @@ class TestCreateAlgorithm:
         delay = rewdelay.FixedDelay(delay=3)
         algo, env, mon = self._make_algo("drop-missing", delay_reward=delay)
         snapshots = list(algo.train(env=env, num_episodes=3, monitor=mon))
-        _assert_training_snapshots(snapshots, expected_count=3)
+        assert_training_snapshots(snapshots, expected_count=3)
         assert mon.step > 0
         env.close()
 
     def test_uniform_random_trains(self):
         algo, env, mon = self._make_algo("uniform-random")
         snapshots = list(algo.train(env=env, num_episodes=3, monitor=mon))
-        _assert_training_snapshots(snapshots, expected_count=3)
+        assert_training_snapshots(snapshots, expected_count=3)
         assert mon.step > 0
         env.close()
 
@@ -496,21 +495,3 @@ class TestCreateAlgorithm:
                 policy_type="nonexistent",
             )
         env.close()
-
-
-def _assert_training_snapshots(
-    snapshots: Sequence[algorithms.PolicyControlSnapshot],
-    expected_count: int,
-):
-    """Verify invariant properties that every training run must satisfy."""
-    assert len(snapshots) == expected_count
-    for snapshot in snapshots:
-        assert isinstance(snapshot, algorithms.PolicyControlSnapshot)
-        assert snapshot.steps > 0
-        assert isinstance(snapshot.weights, np.ndarray)
-        assert np.isfinite(snapshot.returns)
-
-    shapes = [snap.weights.shape for snap in snapshots]
-    assert len(set(shapes)) == 1, f"Inconsistent weight shapes: {set(shapes)}"
-
-    assert not np.all(snapshots[-1].weights == 0)

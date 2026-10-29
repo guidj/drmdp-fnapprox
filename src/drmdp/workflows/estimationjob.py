@@ -10,14 +10,13 @@ true-reward errors per estimation event.
 import argparse
 import dataclasses
 import logging
-from collections.abc import Mapping, Sequence
-from typing import Any
+from collections.abc import Sequence
 
 import numpy as np
 import ray
 
 from drmdp import core, task
-from drmdp.workflows import estimationexps, raytasks
+from drmdp.workflows import estimationexps, raytasks, specutils
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +55,7 @@ def create_tasks(
     estimation-event dedup.
     """
     specs = estimationexps.estimation_experiment_specs()
-    experiments = parse_experiments(specs=specs)
+    experiments = specutils.parse_experiment_specs(specs=specs)
 
     cells: dict[str, list[core.Experiment]] = {}
     for experiment in experiments:
@@ -103,30 +102,6 @@ def cell_slug(experiment: core.Experiment) -> str:
     noise_args = (env_args.get("reward_noise") or {}).get("args") or {}
     noise_label = f"n{noise_args.get('std_multiplier', 'none')}"
     return f"{env_name}-{encoding}-{mapper['name']}{gate_label}-{delay_label}-{noise_label}"
-
-
-def parse_experiments(
-    specs: Sequence[Mapping[str, Any]],
-) -> Sequence[core.Experiment]:
-    """
-    Convert experiments from Dict into typed datastructures.
-    """
-    experiment_specs: list[core.Experiment] = []
-    for spec in specs:
-        for problem_spec in spec["problem_specs"]:
-            experiment_specs.append(
-                core.Experiment(
-                    env_spec=core.EnvSpec(
-                        name=spec["name"],
-                        args=spec["args"],
-                        feats_spec=next(iter(spec["feats_specs"])),
-                        metadata=spec.get("metadata"),
-                    ),
-                    problem_spec=core.ProblemSpec(**problem_spec),
-                    epochs=spec["epochs"],
-                )
-            )
-    return experiment_specs
 
 
 @ray.remote

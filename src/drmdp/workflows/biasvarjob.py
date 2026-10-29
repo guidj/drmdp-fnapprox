@@ -213,12 +213,14 @@ def least_lfa_specs(
 ) -> list[Mapping[str, Any]]:
     """Generate specs for least-lfa estimator."""
     specs: list[Mapping[str, Any]] = []
-    for aee, feat_spec in itertools.product(attempt_estimation_episodes, feat_specs):
+    for attempt_episode, feat_spec in itertools.product(
+        attempt_estimation_episodes, feat_specs
+    ):
         specs.append(
             {
                 "name": "least-lfa",
                 "args": {
-                    "attempt_estimation_episode": aee,
+                    "attempt_estimation_episode": attempt_episode,
                     "transition_feats_spec": {
                         "name": "current-features",
                         "args": {"current_spec": feat_spec},
@@ -236,14 +238,14 @@ def bayes_least_lfa_specs(
 ) -> list[Mapping[str, Any]]:
     """Generate specs for bayes-least-lfa estimator."""
     specs: list[Mapping[str, Any]] = []
-    for iaee, feat_spec in itertools.product(
+    for init_attempt_episode, feat_spec in itertools.product(
         init_attempt_estimation_episodes, feat_specs
     ):
         specs.append(
             {
                 "name": "bayes-least-lfa",
                 "args": {
-                    "init_attempt_estimation_episode": iaee,
+                    "init_attempt_estimation_episode": init_attempt_episode,
                     "mode": "exponential",
                     "transition_feats_spec": {
                         "name": "current-features",

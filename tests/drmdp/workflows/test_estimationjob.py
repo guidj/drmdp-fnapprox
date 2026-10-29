@@ -6,20 +6,20 @@ import os
 import numpy as np
 
 from drmdp import core, task
-from drmdp.workflows import estimationexps, estimationjob
+from drmdp.workflows import estimationexps, estimationjob, specutils
 
 
 class TestParseExperiments:
     def test_experiments_match_the_problem_spec_grid(self):
         specs = estimationexps.estimation_experiment_specs()
-        experiments = estimationjob.parse_experiments(specs)
+        experiments = specutils.parse_experiment_specs(specs)
         assert len(experiments) == 168  # 28 specs x 6 problem specs
         assert all(isinstance(exp, core.Experiment) for exp in experiments)
         assert all(exp.env_spec.feats_spec == [] for exp in experiments)
 
     def test_encoding_metadata_flows_to_the_env_spec(self):
         specs = estimationexps.estimation_experiment_specs()
-        experiments = estimationjob.parse_experiments(specs)
+        experiments = specutils.parse_experiment_specs(specs)
         metadata = {exp.env_spec.metadata["encoding"] for exp in experiments}
         assert "transition-anomaly" in metadata
         assert "structural-sine" in metadata
@@ -60,7 +60,7 @@ class TestCreateTasks:
 
     def test_cell_slug_separates_gate_variants(self):
         specs = estimationexps.estimation_experiment_specs()
-        experiments = estimationjob.parse_experiments(specs)
+        experiments = specutils.parse_experiment_specs(specs)
         gated = [
             experiment
             for experiment in experiments

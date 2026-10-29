@@ -124,39 +124,32 @@ class DataBuffer:
     """
 
     ACC_FIRST = "FIRST"
-    ACC_LASTEST = "LASTEST"
+    ACC_LATEST = "LATEST"
 
     def __init__(
         self,
         max_capacity: int | None = None,
         max_size_bytes: int | None = None,
-        acc_mode: str = ACC_LASTEST,
+        acc_mode: str = ACC_LATEST,
     ):
-        """
-        Init.
-        """
         self.max_capacity = max_capacity
         self.max_size_bytes = max_size_bytes
         self.acc_mode = acc_mode
         self.buffer: list[Any] = []
 
     def add(self, element: Any):
-        """
-        Adds data to buffer.
-        """
-
         if self.max_capacity and self.max_size_bytes:
             safe_byte_limit = True
             safe_size_limit = True
             if list_size(self.buffer + [element]) >= self.max_size_bytes:
-                if self.acc_mode == self.ACC_LASTEST:
+                if self.acc_mode == self.ACC_LATEST:
                     while list_size(self.buffer + [element]) >= self.max_size_bytes:
                         self._pop_earliest()
                 else:
                     safe_byte_limit = False
 
             if self.size() >= self.max_capacity:
-                if self.acc_mode == self.ACC_LASTEST:
+                if self.acc_mode == self.ACC_LATEST:
                     self._pop_earliest()
                 else:
                     safe_size_limit = False
@@ -166,7 +159,7 @@ class DataBuffer:
 
         elif self.max_size_bytes:
             if list_size(self.buffer + [element]) >= self.max_size_bytes:
-                if self.acc_mode == self.ACC_LASTEST:
+                if self.acc_mode == self.ACC_LATEST:
                     while list_size(self.buffer + [element]) >= self.max_size_bytes:
                         self._pop_earliest()
                     self._append(element)
@@ -176,7 +169,7 @@ class DataBuffer:
 
         elif self.max_capacity:
             if self.size() >= self.max_capacity:
-                if self.acc_mode == self.ACC_LASTEST:
+                if self.acc_mode == self.ACC_LATEST:
                     self._pop_earliest()
                     self._append(element)
                 # else mode == ACC_FIRST - do not add
@@ -188,33 +181,18 @@ class DataBuffer:
             self._append(element)
 
     def clear(self):
-        """
-        Empties buffer.
-        """
         self.buffer = []
 
     def size(self):
-        """
-        Current buffer size.
-        """
         return len(self.buffer)
 
     def size_bytes(self):
-        """
-        Current buffer size in bytes.
-        """
         return list_size(self.buffer)
 
     def _pop_earliest(self):
-        """
-        Remove the First-In element in the list.
-        """
         self.buffer.pop(0)
 
     def _append(self, element: Any):
-        """
-        Appends values to buffers.
-        """
         self.buffer.append(element)
 
 
@@ -246,9 +224,6 @@ class WindowedTaskSchedule:
         init_update_ep: int = 10,
         rho: float = DEFAULT_RHO,
     ):
-        """
-        Instantiates the class for a given update schedule.
-        """
         if mode not in (self.FIXED, self.EXPONENTIAL, self.DOUBLE):
             raise ValueError(
                 f"Unsupported mode: {mode}. "
@@ -276,9 +251,6 @@ class WindowedTaskSchedule:
         self.next_update_ep = self.curr_update_ep + self._window
 
     def step(self, episode: int) -> None:
-        """
-        Updates the estimation window.
-        """
         if episode == self.next_update_ep:
             # New window
             self.curr_update_ep = self.next_update_ep
@@ -288,23 +260,16 @@ class WindowedTaskSchedule:
             self._done = False
 
     def set_state(self, succ: bool) -> None:
-        """
-        Sets state for the current cycle.
-        """
-
         self._done = succ
 
     @property
     def current_window_done(self) -> bool:
         """
-        Returns true if the current cycle state is `False`.
+        Whether the current estimation window has completed.
         """
         return self._done
 
     def _grow_window(self, window: int) -> int:
-        """
-        Length of the window that follows one of `window` episodes.
-        """
         if self.mode == self.FIXED:
             return self.init_update_ep
         if self.mode == self.EXPONENTIAL:
@@ -779,97 +744,6 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
         return obs, info
 
 
-class DiscretisedLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
-    """
-    The aggregate reward windows are used to
-    estimate the underlying MDP rewards.
-
-    Once estimated, the approximate rewards are used.
-    Until then, the aggregate rewards are emitted when
-    presented, and zero is used otherwise.
-
-    Rewards are estimated with Least-Squares.
-    Uses discrete observation space with count-based feature accumulation.
-    """
-
-    def __init__(
-        self,
-        env: gym.Env,
-        feats_fn: rewardfeat.TransitionFeatureFn,
-        attempt_estimation_episode: int,
-        estimation_buffer_mult: int | None = None,
-        impute_value: float = 0.0,
-        check_factors: bool = False,
-        intercept: bool = False,
-    ):
-        super().__init__(
-            env=env,
-            feats_fn=feats_fn,
-            intercept=intercept,
-            impute_value=impute_value,
-            estimation_buffer_mult=estimation_buffer_mult,
-        )
-        self.attempt_estimation_episode = attempt_estimation_episode
-        self.check_factors = check_factors
-        self.weights = None
-        self.estimation_meta = {
-            "intercept": intercept,
-            "check_factors": check_factors,
-            "snapshots": [],
-            "deferred_attempts": [],
-        }
-
-    def _initialize_segment_features(self):
-        return np.zeros(shape=(self.mdim))
-
-    def _has_estimate(self) -> bool:
-        return self.weights is not None
-
-    def _get_estimated_reward(self, feats: np.ndarray) -> float:
-        return np.dot(feats, self.weights)  # type: ignore
-
-    def _should_attempt_estimation(self, term: bool, trunc: bool) -> bool:
-        return (
-            (term or trunc)
-            and self.weights is None
-            and self.episodes >= self.attempt_estimation_episode
-            and self.est_buffer.size() >= self.mdim
-        )
-
-    def estimate_rewards(self):
-        """
-        Estimate rewards with Least Squares.
-        """
-        matrix, rewards, nexamples = self._extract_buffer_data()
-
-        # Check matrix rank if requested
-        if self.check_factors:
-            rank = optsol.matrix_factors_rank(matrix)
-            if rank < matrix.shape[1]:
-                self._record_deferred_attempt(matrix)
-                return
-
-        # Add the intercept column if needed
-        matrix = self._add_intercept_to_matrix(matrix, nexamples)
-
-        try:
-            weights = optsol.solve_least_squares(matrix=matrix, rhs=rewards)
-        except ValueError as err:
-            self._handle_estimation_failure(err, matrix, rewards)
-        else:
-            self.weights = weights
-            error = self._calculate_rmse(matrix, weights, rewards)
-            snapshot = self._create_snapshot(nexamples, matrix, weights, error)
-            self.estimation_meta["snapshots"].append(snapshot)
-            logger.info(
-                "%s - Estimated rewards for %s. RMSE: %f; No. Samples: %d",
-                self.get_name(),
-                self.get_env_name(),
-                error,
-                nexamples,
-            )
-
-
 class LeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
     """
     The aggregate reward windows are used to
@@ -963,6 +837,9 @@ class LeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
                 error,
                 nexamples,
             )
+
+
+DiscretisedLeastLfaGenerativeRewardWrapper = LeastLfaGenerativeRewardWrapper
 
 
 class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):

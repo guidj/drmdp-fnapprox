@@ -9,9 +9,16 @@ from sklearn import cluster, mixture, model_selection
 
 from drmdp import constants, envs
 from drmdp.envs import gympg, wrappers
-from drmdp.workflows import controlexps
 
 DISTANCE_GRID = ["sog", "xxx"]
+MINES_GRID = [
+    "ooooxooooooo",
+    "oooooooooxoo",
+    "oxoooooxoooo",
+    "oooooxoooooo",
+    "ooxooooooxoo",
+    "sxxxxxxxxxxg",
+]
 
 
 class BoxEnv(gym.Env):
@@ -391,7 +398,7 @@ class TestWrapFunction:
     def test_flat_grid_coord(self):
         env = envs.make(
             "GridWorld-MINES",
-            grid=controlexps.MINES_GW_GRID,
+            grid=MINES_GRID,
             max_episode_steps=200,
         )
         wrapped = wrappers.wrap(env, wrapper=constants.FLAT_GRID_COORD, ohe=False)

@@ -3,6 +3,8 @@ and mapper construction."""
 
 import os
 
+import pytest
+
 from drmdp import envs, task
 from drmdp.workflows.grids import rewest_runner, validate_least_coverage
 
@@ -83,7 +85,7 @@ class TestLoadGrids:
             os.path.dirname(__file__), "..", "..", "..", "assets", "grids.json"
         )
         if not os.path.exists(grids_path):
-            return
+            pytest.skip(f"grids fixture not found: {grids_path}")
         grids_one = validate_least_coverage.load_grids(
             grid_files=[grids_path],
             min_passes=4,

@@ -1,13 +1,13 @@
 """Tests for controljob.py — experiment parsing without Ray."""
 
 from drmdp import core
-from drmdp.workflows import controlexps, controljob
+from drmdp.workflows import controlexps, controljob, specutils
 
 
 class TestParseExperiments:
     def test_gaussian_illustration_specs(self):
         specs = controlexps.gaussian_illustration_experiment_specs()
-        experiments = controljob.parse_experiments(specs)
+        experiments = specutils.parse_experiment_specs(specs)
         assert len(experiments) > 0
         assert all(isinstance(exp, core.Experiment) for exp in experiments)
 
@@ -36,7 +36,7 @@ class TestParseExperiments:
                 "epochs": 1,
             }
         ]
-        experiments = controljob.parse_experiments(specs)
+        experiments = specutils.parse_experiment_specs(specs)
         assert len(experiments) == 2
 
     def test_preserves_metadata(self):
@@ -61,7 +61,7 @@ class TestParseExperiments:
                 "epochs": 3,
             }
         ]
-        experiments = controljob.parse_experiments(specs)
+        experiments = specutils.parse_experiment_specs(specs)
         assert experiments[0].env_spec.metadata == {"tag": "test"}
         assert experiments[0].epochs == 3
 
@@ -84,7 +84,7 @@ class TestCreateTasks:
 
     def test_instance_count_matches_runs(self):
         specs = controlexps.gaussian_illustration_experiment_specs()
-        experiments = controljob.parse_experiments(specs)
+        experiments = specutils.parse_experiment_specs(specs)
         num_runs = 3
         instances = controljob.create_tasks(
             problem_set="gaussian-illustration",

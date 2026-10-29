@@ -482,7 +482,7 @@ def electric_motor_experiment_specs() -> Sequence[Mapping[str, Any]]:
     return tuple(specs)
 
 
-def _grid_dead_ohe_indices(grid: Sequence[str], nactions: int = 4) -> list[int]:
+def grid_dead_ohe_indices(grid: Sequence[str], nactions: int = 4) -> list[int]:
     """
     Returns OHE indices of dead state-action columns.
 
@@ -538,7 +538,7 @@ def gaussian_illustration_experiment_specs(
     acrobot_est_feats: Sequence[Mapping[str, Any]] = [
         {"name": "action-and-termination-features", "args": {}}
     ]
-    gw_dead_ohe = _grid_dead_ohe_indices(MINES_GW_GRID)
+    gw_dead_ohe = grid_dead_ohe_indices(MINES_GW_GRID)
     gw_est_feats: Sequence[Mapping[str, Any]] = [
         rewardfeat.current_features_spec(
             current_spec=[

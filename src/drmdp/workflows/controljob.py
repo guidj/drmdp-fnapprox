@@ -4,7 +4,6 @@ Boostrap and run distributed jobs.
 
 import argparse
 import dataclasses
-import itertools
 import logging
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -13,7 +12,7 @@ import numpy as np
 import ray
 
 from drmdp import core, task
-from drmdp.workflows import controlexps, raytasks
+from drmdp.workflows import controlexps, raytasks, specutils
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +64,7 @@ def create_tasks(
     elif problem_set == GIL_PS:
         specs = controlexps.gaussian_illustration_experiment_specs()
 
-    experiments = parse_experiments(specs=specs)
+    experiments = specutils.parse_experiment_specs(specs=specs)
     experiment_instances = list(
         task.generate_experiments_instances(
             experiments=experiments,
@@ -87,32 +86,6 @@ def create_tasks(
         len(experiment_instances),
     )
     return experiment_instances
-
-
-def parse_experiments(
-    specs: Sequence[Mapping[str, Any]],
-) -> Sequence[core.Experiment]:
-    """
-    Convert experiments from Dict into typed datastructures.
-    """
-    experiment_specs: list[core.Experiment] = []
-    for spec in specs:
-        for feat_tfx_spec, problem_spec in itertools.product(
-            spec["feats_specs"], spec["problem_specs"]
-        ):
-            experiment_specs.append(
-                core.Experiment(
-                    env_spec=core.EnvSpec(
-                        name=spec["name"],
-                        args=spec["args"],
-                        feats_spec=feat_tfx_spec,
-                        metadata=spec.get("metadata"),
-                    ),
-                    problem_spec=core.ProblemSpec(**problem_spec),
-                    epochs=spec["epochs"],
-                )
-            )
-    return experiment_specs
 
 
 @ray.remote
