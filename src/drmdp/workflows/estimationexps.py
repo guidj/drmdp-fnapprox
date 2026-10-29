@@ -30,9 +30,9 @@ ESTIMATION_BUFFER_MULT = 100
 # event, so the cap matters for the encodings that defer or update
 # continually
 EPISODE_CAPS: Mapping[str, int] = {
-    "MountainCar-v0": 40,
-    "Acrobot-v1": 250,
-    "GridWorld-MINES": 400,
+    "MountainCar-v0": 500,
+    "Acrobot-v1": 500,
+    "GridWorld-MINES": 500,
 }
 
 DELAY_CONFIGS: tuple[Mapping[str, Any], ...] = (

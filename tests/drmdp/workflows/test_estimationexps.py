@@ -75,9 +75,9 @@ class TestEstimationExperimentSpecs:
         assert estimationexps.expected_run_count(num_runs=5) == 1680
 
     def test_episode_cap(self):
-        assert estimationexps.episode_cap("MountainCar-v0") == 40
-        assert estimationexps.episode_cap("Acrobot-v1") == 250
-        assert estimationexps.episode_cap("GridWorld-MINES") == 400
+        assert estimationexps.episode_cap("MountainCar-v0") == 500
+        assert estimationexps.episode_cap("Acrobot-v1") == 500
+        assert estimationexps.episode_cap("GridWorld-MINES") == 500
         with pytest.raises(ValueError, match="no episode cap"):
             estimationexps.episode_cap("UnknownEnv-v0")
 

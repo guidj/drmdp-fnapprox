@@ -41,9 +41,9 @@ class TestCreateTasks:
             cap = instance.run_config.episodes_per_run
             caps_by_env.setdefault(env_name, set()).add(cap)
         assert caps_by_env == {
-            "MountainCar-v0": {40},
-            "Acrobot-v1": {250},
-            "GridWorld-MINES": {400},
+            "MountainCar-v0": {500},
+            "Acrobot-v1": {500},
+            "GridWorld-MINES": {500},
         }
 
     def test_every_cell_has_a_distinct_exp_id(self):
