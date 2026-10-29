@@ -415,7 +415,7 @@ class TestLeastLfaGenerativeRewardWrapper:
             delayed,
             feats_fn=FTOpHook(ft_op),
             attempt_estimation_episode=1,
-            check_factors=False,
+            estimation_check="none",
         )
         return wrapper
 
@@ -490,7 +490,7 @@ class TestLeastLfaGenerativeRewardWrapper:
             feats_fn=FTOpHook(DummyFTOp(env)),
             intercept=True,
             attempt_estimation_episode=1,
-            check_factors=False,
+            estimation_check="none",
         )
         drive_episodes(wrapper, num_episodes=3, steps_per_episode=4)
         assert wrapper.weights is not None
@@ -730,7 +730,7 @@ class TestLeastLfaGenerativeRewardWrapper:
             delayed,
             feats_fn=FTOpHook(DummyFTOp(env)),
             attempt_estimation_episode=2,
-            check_factors=False,
+            estimation_check="none",
             reward_error_fn=stub_reward_error_fn(seen_weights),
         )
         # 2-step episodes at delay 2 buffer one segment each;
@@ -755,7 +755,7 @@ class TestLeastLfaGenerativeRewardWrapper:
             delayed,
             feats_fn=FTOpHook(DummyFTOp(env)),
             attempt_estimation_episode=2,
-            check_factors=False,
+            estimation_check="none",
         )
         drive_episodes(wrapper, num_episodes=6, steps_per_episode=2)
 
@@ -778,7 +778,7 @@ class TestLeastLfaGenerativeRewardWrapper:
             delayed,
             feats_fn=FTOpHook(DummyFTOp(env)),
             attempt_estimation_episode=2,
-            check_factors=False,
+            estimation_check="none",
             reward_error_fn=failing_error_fn,
         )
         drive_episodes(wrapper, num_episodes=6, steps_per_episode=2)
@@ -798,7 +798,7 @@ class TestLeastLfaDiscreteFeatures:
             delayed,
             feats_fn=FTOpHook(ft_op),
             attempt_estimation_episode=1,
-            check_factors=False,
+            estimation_check="none",
         )
         return wrapper
 
@@ -870,7 +870,7 @@ class TestEstimationAttemptRecords:
             del weights
             return {"rmse": 0.5, "num_samples": 10}
 
-    def _run(self, check_factors: bool, episodes: int = 3):
+    def _run(self, estimation_check: str = "none", episodes: int = 3):
         env = DummyEnv(term_steps=2)
         delayed = rewdelay.DelayedRewardWrapper(
             env, reward_delay=rewdelay.FixedDelay(delay=2)
@@ -879,7 +879,7 @@ class TestEstimationAttemptRecords:
             delayed,
             feats_fn=self._DeadColumnFeatures(),
             attempt_estimation_episode=1,
-            check_factors=check_factors,
+            estimation_check=estimation_check,
             reward_error_fn=self._ConstantErrorFn(),
         )
         wrapper.reset()
@@ -892,7 +892,7 @@ class TestEstimationAttemptRecords:
         return wrapper
 
     def test_event_records_steps_and_elapsed_time(self):
-        wrapper = self._run(check_factors=False)
+        wrapper = self._run(estimation_check="none")
         # fires at the second episode's end: the buffer holds its second
         # window there, after four environment steps
         events = wrapper.estimation_meta["reward_errors"]
@@ -905,7 +905,7 @@ class TestEstimationAttemptRecords:
         assert wrapper.weights is not None
 
     def test_gate_deferral_records_the_buffer_state(self):
-        wrapper = self._run(check_factors=True)
+        wrapper = self._run(estimation_check="factors")
         # the second column never activates, so the coverage gate defers
         # every scheduled attempt and never solves
         assert wrapper.weights is None
@@ -928,7 +928,7 @@ class TestEstimationAttemptRecords:
             delayed,
             feats_fn=self._DeadColumnFeatures(),
             init_attempt_estimation_episode=1,
-            check_factors=True,
+            estimation_check="factors",
         )
         wrapper.reset()
         for _ in range(3):
@@ -942,6 +942,269 @@ class TestEstimationAttemptRecords:
         assert len(deferred) == 2
         assert deferred[0]["nonzero_columns"] == 1
         assert deferred[0]["matrix_columns"] == 2
+
+
+class TestResolveEstimationCheck:
+    """Tests for resolve_estimation_check — new mode, legacy bool, and conflicts."""
+
+    @pytest.mark.parametrize(
+        "estimation_check, expected",
+        [
+            ("none", "none"),
+            ("factors", "factors"),
+            ("full-rank", "full-rank"),
+        ],
+    )
+    def test_new_mode_passthrough(self, estimation_check, expected):
+        assert (
+            rewdelay.resolve_estimation_check(estimation_check=estimation_check)
+            == expected
+        )
+
+    def test_both_omitted_defaults_to_none(self):
+        assert rewdelay.resolve_estimation_check() == "none"
+
+    def test_invalid_mode_raises(self):
+        with pytest.raises(ValueError, match="unknown estimation_check"):
+            rewdelay.resolve_estimation_check(estimation_check="bogus")
+
+
+class TestEstimationCheckGate:
+    """Behavioral gate tests: zero column, covered-but-dependent, and full-rank designs."""
+
+    class _ZeroColumnFeatures:
+        """Two features, the second always zero."""
+
+        @property
+        def feature_dim(self) -> int:
+            return 2
+
+        def __call__(self, transition) -> np.ndarray:
+            del transition
+            return np.array([1.0, 0.0])
+
+    class _DependentColumnFeatures:
+        """Two features where column 2 = 2 * column 1: covered but rank-deficient."""
+
+        @property
+        def feature_dim(self) -> int:
+            return 2
+
+        def __call__(self, transition) -> np.ndarray:
+            del transition
+            return np.array([1.0, 2.0])
+
+    class _FullRankFeatures:
+        """Two features whose per-window sums form a full-rank design.
+
+        Both features vary with a global call counter so that accumulated
+        window sums differ across episodes, producing rank 2 with two
+        or more windows.
+        """
+
+        def __init__(self):
+            self._call_count = 0
+
+        @property
+        def feature_dim(self) -> int:
+            return 2
+
+        def __call__(self, transition) -> np.ndarray:
+            del transition
+            self._call_count += 1
+            return np.array([float(self._call_count), float(self._call_count**2)])
+
+    def _run_wrapper(self, feats_cls, estimation_check, episodes=3):
+        env = DummyEnv(term_steps=2)
+        delayed = rewdelay.DelayedRewardWrapper(
+            env, reward_delay=rewdelay.FixedDelay(delay=2)
+        )
+        wrapper = rewdelay.LeastLfaGenerativeRewardWrapper(
+            delayed,
+            feats_fn=feats_cls(),
+            attempt_estimation_episode=1,
+            estimation_check=estimation_check,
+        )
+        wrapper.reset()
+        for _ in range(episodes):
+            done = False
+            while not done:
+                _, _, term, trunc, _ = wrapper.step(0)
+                done = term or trunc
+            wrapper.reset()
+        return wrapper
+
+    def test_zero_column_none_mode_solves(self):
+        wrapper = self._run_wrapper(self._ZeroColumnFeatures, "none")
+        assert wrapper.weights is not None
+        assert len(wrapper.estimation_meta["snapshots"]) == 1
+
+    def test_zero_column_factors_mode_defers(self):
+        wrapper = self._run_wrapper(self._ZeroColumnFeatures, "factors")
+        assert wrapper.weights is None
+        assert len(wrapper.estimation_meta["deferred_attempts"]) >= 1
+        deferred = wrapper.estimation_meta["deferred_attempts"][0]
+        assert deferred["estimation_check"] == "factors"
+        assert deferred["nonzero_columns"] < deferred["matrix_columns"]
+        assert "numerical_rank" not in deferred
+
+    def test_zero_column_full_rank_mode_defers(self):
+        wrapper = self._run_wrapper(self._ZeroColumnFeatures, "full-rank")
+        assert wrapper.weights is None
+        assert len(wrapper.estimation_meta["deferred_attempts"]) >= 1
+        deferred = wrapper.estimation_meta["deferred_attempts"][0]
+        assert deferred["estimation_check"] == "full-rank"
+        assert "numerical_rank" in deferred
+        assert deferred["numerical_rank"] < deferred["matrix_columns"]
+
+    def test_dependent_columns_none_mode_solves(self):
+        wrapper = self._run_wrapper(self._DependentColumnFeatures, "none")
+        assert wrapper.weights is not None
+
+    def test_dependent_columns_factors_mode_solves(self):
+        wrapper = self._run_wrapper(self._DependentColumnFeatures, "factors")
+        assert wrapper.weights is not None
+
+    def test_dependent_columns_full_rank_mode_defers(self):
+        wrapper = self._run_wrapper(self._DependentColumnFeatures, "full-rank")
+        assert wrapper.weights is None
+        deferred = wrapper.estimation_meta["deferred_attempts"]
+        assert len(deferred) >= 1
+        assert deferred[0]["estimation_check"] == "full-rank"
+        assert deferred[0]["numerical_rank"] < deferred[0]["matrix_columns"]
+
+    def test_full_rank_none_mode_solves(self):
+        wrapper = self._run_wrapper(self._FullRankFeatures, "none")
+        assert wrapper.weights is not None
+
+    def test_full_rank_factors_mode_solves(self):
+        wrapper = self._run_wrapper(self._FullRankFeatures, "factors")
+        assert wrapper.weights is not None
+
+    def test_full_rank_full_rank_mode_solves(self):
+        wrapper = self._run_wrapper(self._FullRankFeatures, "full-rank")
+        assert wrapper.weights is not None
+
+    def test_factors_mode_defers_on_zero_column(self):
+        env = DummyEnv(term_steps=2)
+        delayed = rewdelay.DelayedRewardWrapper(
+            env, reward_delay=rewdelay.FixedDelay(delay=2)
+        )
+        wrapper = rewdelay.LeastLfaGenerativeRewardWrapper(
+            delayed,
+            feats_fn=self._ZeroColumnFeatures(),
+            attempt_estimation_episode=1,
+            estimation_check="factors",
+        )
+        assert wrapper.estimation_check == "factors"
+        wrapper.reset()
+        for _ in range(3):
+            done = False
+            while not done:
+                _, _, term, trunc, _ = wrapper.step(0)
+                done = term or trunc
+            wrapper.reset()
+        assert wrapper.weights is None
+
+    def test_estimation_meta_includes_check_mode(self):
+        wrapper = self._run_wrapper(self._FullRankFeatures, "full-rank")
+        assert wrapper.estimation_meta["estimation_check"] == "full-rank"
+
+    def test_none_and_factors_do_not_compute_numerical_rank(self):
+        wrapper_none = self._run_wrapper(self._FullRankFeatures, "none")
+        wrapper_factors = self._run_wrapper(self._FullRankFeatures, "factors")
+        for wrapper in (wrapper_none, wrapper_factors):
+            for attempt in wrapper.estimation_meta.get("deferred_attempts", []):
+                assert "numerical_rank" not in attempt
+
+
+class TestBayesEstimationCheckGate:
+    """BLADE-TD gate: rejection preserves posterior and update count."""
+
+    class _ZeroColumnFeatures:
+        @property
+        def feature_dim(self) -> int:
+            return 2
+
+        def __call__(self, transition) -> np.ndarray:
+            del transition
+            return np.array([1.0, 0.0])
+
+    class _FullRankFeatures:
+        def __init__(self):
+            self._call_count = 0
+
+        @property
+        def feature_dim(self) -> int:
+            return 2
+
+        def __call__(self, transition) -> np.ndarray:
+            del transition
+            self._call_count += 1
+            return np.array([float(self._call_count), float(self._call_count**2)])
+
+    def _make_bayes_wrapper(self, feats_cls, estimation_check, episodes=3):
+        env = DummyEnv(term_steps=2)
+        delayed = rewdelay.DelayedRewardWrapper(
+            env, reward_delay=rewdelay.FixedDelay(delay=2)
+        )
+        wrapper = rewdelay.BayesLeastLfaGenerativeRewardWrapper(
+            delayed,
+            feats_fn=feats_cls(),
+            init_attempt_estimation_episode=1,
+            estimation_check=estimation_check,
+        )
+        wrapper.reset()
+        for _ in range(episodes):
+            done = False
+            while not done:
+                _, _, term, trunc, _ = wrapper.step(0)
+                done = term or trunc
+            wrapper.reset()
+        return wrapper
+
+    def test_rejected_initial_preserves_none_posterior(self):
+        wrapper = self._make_bayes_wrapper(self._ZeroColumnFeatures, "factors")
+        assert wrapper.mv_normal_rewards is None
+        assert wrapper.posterior_updates == 0
+        assert len(wrapper.estimation_meta["deferred_attempts"]) >= 1
+
+    def test_rejected_full_rank_preserves_none_posterior(self):
+        wrapper = self._make_bayes_wrapper(self._ZeroColumnFeatures, "full-rank")
+        assert wrapper.mv_normal_rewards is None
+        assert wrapper.posterior_updates == 0
+        deferred = wrapper.estimation_meta["deferred_attempts"]
+        assert len(deferred) >= 1
+        assert "numerical_rank" in deferred[0]
+
+    def test_full_rank_features_solve_with_none_mode(self):
+        wrapper = self._make_bayes_wrapper(self._FullRankFeatures, "none")
+        assert wrapper.mv_normal_rewards is not None
+
+    def test_full_rank_features_solve_with_factors_mode(self):
+        wrapper = self._make_bayes_wrapper(self._FullRankFeatures, "factors")
+        assert wrapper.mv_normal_rewards is not None
+
+    def test_full_rank_features_solve_with_full_rank_mode(self):
+        wrapper = self._make_bayes_wrapper(self._FullRankFeatures, "full-rank")
+        assert wrapper.mv_normal_rewards is not None
+
+    def test_factors_mode_resolves(self):
+        env = DummyEnv(term_steps=2)
+        delayed = rewdelay.DelayedRewardWrapper(
+            env, reward_delay=rewdelay.FixedDelay(delay=2)
+        )
+        wrapper = rewdelay.BayesLeastLfaGenerativeRewardWrapper(
+            delayed,
+            feats_fn=self._ZeroColumnFeatures(),
+            init_attempt_estimation_episode=1,
+            estimation_check="factors",
+        )
+        assert wrapper.estimation_check == "factors"
+
+    def test_estimation_meta_includes_check_mode(self):
+        wrapper = self._make_bayes_wrapper(self._FullRankFeatures, "full-rank")
+        assert wrapper.estimation_meta["estimation_check"] == "full-rank"
 
 
 class TestBayesLeastLfaGenerativeRewardWrapper:
@@ -961,7 +1224,7 @@ class TestBayesLeastLfaGenerativeRewardWrapper:
             env=delayed,
             feats_fn=FTOpHook(ft_op),
             init_attempt_estimation_episode=1,
-            check_factors=False,
+            estimation_check="none",
             schedule_rho=schedule_rho,
             sample_weights=sample_weights,
         )
@@ -994,7 +1257,7 @@ class TestBayesLeastLfaGenerativeRewardWrapper:
                 delayed,
                 feats_fn=FTOpHook(DummyFTOp(env)),
                 init_attempt_estimation_episode=10,
-                check_factors=False,
+                estimation_check="none",
                 schedule_rho=rho,
                 reward_error_fn=stub_reward_error_fn([]),
             )
@@ -1177,7 +1440,7 @@ class TestBayesLeastLfaGenerativeRewardWrapper:
             delayed,
             feats_fn=FTOpHook(DummyFTOp(env)),
             init_attempt_estimation_episode=2,
-            check_factors=False,
+            estimation_check="none",
             reward_error_fn=stub_reward_error_fn(seen_weights),
         )
         # prior on first full buffer, then updates on each exponential window
@@ -1204,7 +1467,7 @@ class TestBayesLeastLfaGenerativeRewardWrapper:
             delayed,
             feats_fn=FTOpHook(DummyFTOp(env)),
             init_attempt_estimation_episode=2,
-            check_factors=False,
+            estimation_check="none",
         )
         drive_episodes(wrapper, num_episodes=10, steps_per_episode=2)
 
@@ -1223,7 +1486,7 @@ class TestBayesLeastLfaGenerativeRewardWrapper:
             delayed,
             feats_fn=FTOpHook(DummyFTOp(env)),
             init_attempt_estimation_episode=2,
-            check_factors=False,
+            estimation_check="none",
             sample_weights=True,
             reward_error_fn=stub_reward_error_fn(seen_weights),
         )

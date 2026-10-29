@@ -14,7 +14,7 @@ reward values.
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from drmdp import rewardfeat
+from drmdp import rewardfeat, rewdelay
 from drmdp.workflows import controlexps
 
 EPSILON = 0.1
@@ -222,8 +222,15 @@ def _gw_sa_ohe(grid: Sequence[str]) -> Mapping[str, Any]:
     )
 
 
+ESTIMATION_CHECK_MODES: Sequence[str] = (
+    rewdelay.ESTIMATION_CHECK_NONE,
+    rewdelay.ESTIMATION_CHECK_FACTORS,
+    rewdelay.ESTIMATION_CHECK_FULL_RANK,
+)
+
+
 def _least_args(
-    transition_feats_spec: Mapping[str, Any], check_factors: bool
+    transition_feats_spec: Mapping[str, Any], estimation_check: str
 ) -> Mapping[str, Any]:
     return {
         "attempt_estimation_episode": ATTEMPT_ESTIMATION_EPISODE,
@@ -231,11 +238,13 @@ def _least_args(
         "impute_value": 0,
         "estimation_buffer_mult": ESTIMATION_BUFFER_MULT,
         "intercept": False,
-        "check_factors": check_factors,
+        "estimation_check": estimation_check,
     }
 
 
-def _bayes_args(transition_feats_spec: Mapping[str, Any]) -> Mapping[str, Any]:
+def _bayes_args(
+    transition_feats_spec: Mapping[str, Any], estimation_check: str
+) -> Mapping[str, Any]:
     return {
         "init_attempt_estimation_episode": ATTEMPT_ESTIMATION_EPISODE,
         "mode": "exponential",
@@ -244,24 +253,32 @@ def _bayes_args(transition_feats_spec: Mapping[str, Any]) -> Mapping[str, Any]:
         "estimation_buffer_mult": ESTIMATION_BUFFER_MULT,
         "intercept": False,
         "sample_weights": False,
+        "estimation_check": estimation_check,
     }
 
 
 def _mapper_axis(
     transition_feats_spec: Mapping[str, Any],
 ) -> Sequence[tuple[str, Mapping[str, Any]]]:
-    """(mapper_name, mapper_args) for each estimation method."""
-    return (
-        ("least-lfa", _least_args(transition_feats_spec, True)),
-        ("least-lfa", _least_args(transition_feats_spec, False)),
-        ("bayes-least-lfa", _bayes_args(transition_feats_spec)),
-    )
+    """(mapper_name, mapper_args) for each (estimator, check mode) pair."""
+    entries: list[tuple[str, Mapping[str, Any]]] = []
+    for estimation_check in ESTIMATION_CHECK_MODES:
+        entries.append(
+            ("least-lfa", _least_args(transition_feats_spec, estimation_check))
+        )
+        entries.append(
+            (
+                "bayes-least-lfa",
+                _bayes_args(transition_feats_spec, estimation_check),
+            )
+        )
+    return tuple(entries)
 
 
 def _problem_specs(
     transition_feats_spec: Mapping[str, Any],
 ) -> Sequence[Mapping[str, Any]]:
-    """The method axis: gated LEAST, ungated LEAST, and BLADE-TD."""
+    """Estimator × check-mode × delay axis."""
     specs = []
     for delay_config in DELAY_CONFIGS:
         for mapper_name, mapper_args in _mapper_axis(transition_feats_spec):

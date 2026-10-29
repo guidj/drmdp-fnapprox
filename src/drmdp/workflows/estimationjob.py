@@ -94,14 +94,14 @@ def cell_key(experiment: core.Experiment) -> str:
     env_name = experiment.env_spec.name
     encoding = (experiment.env_spec.metadata or {}).get("encoding", "none")
     mapper = experiment.problem_spec.reward_mapper
-    gate = mapper["args"].get("check_factors")
-    gate_label = "" if gate is None else f"-gate{int(gate)}"
+    mapper_args = mapper["args"] or {}
+    check_mode = mapper_args.get("estimation_check", "none")
     delay_args = (experiment.problem_spec.delay_config or {})["args"]
     delay_label = f"d{delay_args['min_delay']}x{delay_args['max_delay']}"
     env_args = experiment.env_spec.args or {}
     noise_args = (env_args.get("reward_noise") or {}).get("args") or {}
     noise_label = f"n{noise_args.get('std_multiplier', 'none')}"
-    return f"{env_name}-{encoding}-{mapper['name']}{gate_label}-{delay_label}-{noise_label}"
+    return f"{env_name}-{encoding}-{mapper['name']}-{check_mode}-{delay_label}-{noise_label}"
 
 
 @ray.remote

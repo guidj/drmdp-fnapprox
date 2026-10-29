@@ -27,6 +27,24 @@ class OptState(str, Enum):
     SOLVED = "solved"
 
 
+ESTIMATION_CHECK_NONE = "none"
+ESTIMATION_CHECK_FACTORS = "factors"
+ESTIMATION_CHECK_FULL_RANK = "full-rank"
+_VALID_ESTIMATION_CHECKS = frozenset(
+    {ESTIMATION_CHECK_NONE, ESTIMATION_CHECK_FACTORS, ESTIMATION_CHECK_FULL_RANK}
+)
+
+
+def resolve_estimation_check(estimation_check: str = ESTIMATION_CHECK_NONE) -> str:
+    """Validate and return an estimation check mode."""
+    if estimation_check not in _VALID_ESTIMATION_CHECKS:
+        raise ValueError(
+            f"unknown estimation_check {estimation_check!r}; "
+            f"expected one of {sorted(_VALID_ESTIMATION_CHECKS)}"
+        )
+    return estimation_check
+
+
 class RewardDelay(abc.ABC):
     """
     Abstract class for delayed reward config.
@@ -551,22 +569,51 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
             }
         )
 
-    def _record_deferred_attempt(self, matrix: np.ndarray) -> None:
-        """
-        Records a scheduled attempt the gate deferred.
+    def _check_estimation_gate(
+        self, matrix: np.ndarray, estimation_check: str
+    ) -> tuple[bool, dict[str, Any]]:
+        """Apply the estimation gate to the design matrix.
 
-        The record exposes why the attempt did not solve: the buffer
-        size and the nonzero-column count against the design width.
+        Returns (passed, diagnostics).  The diagnostics dict always
+        contains ``buffer_rows``, ``matrix_columns``, ``nonzero_columns``,
+        and ``estimation_check``.  ``numerical_rank`` is present only
+        when ``estimation_check`` is ``"full-rank"``.
         """
-        self.estimation_meta.setdefault("deferred_attempts", []).append(
-            {
-                "episode": self.episodes,
-                "steps": self.steps,
-                "buffer_rows": int(matrix.shape[0]),
-                "nonzero_columns": optsol.matrix_factors_rank(matrix),
-                "matrix_columns": int(matrix.shape[1]),
-            }
-        )
+        ncols = int(matrix.shape[1])
+        nonzero = optsol.matrix_factors_rank(matrix)
+        diagnostics: dict[str, Any] = {
+            "estimation_check": estimation_check,
+            "buffer_rows": int(matrix.shape[0]),
+            "matrix_columns": ncols,
+            "nonzero_columns": nonzero,
+        }
+        if estimation_check == ESTIMATION_CHECK_FACTORS:
+            return nonzero >= ncols, diagnostics
+        if estimation_check == ESTIMATION_CHECK_FULL_RANK:
+            numerical_rank = optsol.matrix_numerical_rank(matrix)
+            diagnostics["numerical_rank"] = numerical_rank
+            return numerical_rank >= ncols, diagnostics
+        return True, diagnostics
+
+    def _record_deferred_attempt(
+        self, matrix: np.ndarray, diagnostics: dict[str, Any] | None = None
+    ) -> None:
+        """Records a scheduled attempt the gate deferred."""
+        record: dict[str, Any] = {
+            "episode": self.episodes,
+            "steps": self.steps,
+        }
+        if diagnostics is not None:
+            record.update(diagnostics)
+        else:
+            record.update(
+                {
+                    "buffer_rows": int(matrix.shape[0]),
+                    "nonzero_columns": optsol.matrix_factors_rank(matrix),
+                    "matrix_columns": int(matrix.shape[1]),
+                }
+            )
+        self.estimation_meta.setdefault("deferred_attempts", []).append(record)
 
     def _on_terminal_state(self, transition: rewardfeat.Transition):
         """
@@ -764,7 +811,7 @@ class LeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         attempt_estimation_episode: int,
         estimation_buffer_mult: int | None = None,
         impute_value: float = 0.0,
-        check_factors: bool = False,
+        estimation_check: str = ESTIMATION_CHECK_NONE,
         reward_error_fn: Callable[[np.ndarray], Mapping[str, Any]] | None = None,
         intercept: bool = False,
     ):
@@ -777,11 +824,11 @@ class LeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
             reward_error_fn=reward_error_fn,
         )
         self.attempt_estimation_episode = attempt_estimation_episode
-        self.check_factors = check_factors
+        self.estimation_check = resolve_estimation_check(estimation_check)
         self.weights = None
-        self.estimation_meta = {
+        self.estimation_meta: dict[str, Any] = {
             "intercept": intercept,
-            "check_factors": check_factors,
+            "estimation_check": self.estimation_check,
             "snapshots": [],
             "reward_errors": [],
             "deferred_attempts": [],
@@ -805,20 +852,16 @@ class LeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         )
 
     def estimate_rewards(self):
-        """
-        Estimate rewards with Least Squares.
-        """
         matrix, rewards, nexamples = self._extract_buffer_data()
-
-        # Check matrix rank if requested
-        if self.check_factors:
-            rank = optsol.matrix_factors_rank(matrix)
-            if rank < matrix.shape[1]:
-                self._record_deferred_attempt(matrix)
-                return
-
-        # Add the intercept column if needed
         matrix = self._add_intercept_to_matrix(matrix, nexamples)
+
+        if self.estimation_check != ESTIMATION_CHECK_NONE:
+            passed, diagnostics = self._check_estimation_gate(
+                matrix, self.estimation_check
+            )
+            if not passed:
+                self._record_deferred_attempt(matrix, diagnostics)
+                return
 
         try:
             weights = optsol.solve_least_squares(matrix=matrix, rhs=rewards)
@@ -868,7 +911,7 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         schedule_rho: float = WindowedTaskSchedule.DEFAULT_RHO,
         estimation_buffer_mult: int | None = None,
         impute_value: float = 0.0,
-        check_factors: bool = False,
+        estimation_check: str = ESTIMATION_CHECK_NONE,
         sample_weights: bool = False,
         reward_error_fn: Callable[[np.ndarray], Mapping[str, Any]] | None = None,
         intercept: bool = False,
@@ -883,7 +926,7 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         )
         self.mode = mode
         self.init_attempt_estimation_episode = init_attempt_estimation_episode
-        self.check_factors = check_factors
+        self.estimation_check = resolve_estimation_check(estimation_check)
         self.sample_weights = sample_weights
         self.windowed_task_schedule = WindowedTaskSchedule(
             mode=mode,
@@ -897,7 +940,7 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         self._sampled_posterior: optsol.MultivariateNormal | None = None
         self.estimation_meta: dict[str, Any] = {
             "intercept": intercept,
-            "check_factors": check_factors,
+            "estimation_check": self.estimation_check,
             "snapshots": [],
             "reward_errors": [],
             "deferred_attempts": [],
@@ -955,21 +998,16 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         }
 
     def estimate_rewards(self) -> bool:
-        """
-        Estimate rewards or update posterior estimate
-        of Least Squares.
-        """
         matrix, rewards, nexamples = self._extract_buffer_data()
-
-        # Check matrix rank if requested
-        if self.check_factors:
-            rank = optsol.matrix_factors_rank(matrix)
-            if rank < matrix.shape[1]:
-                self._record_deferred_attempt(matrix)
-                return False
-
-        # Add the intercept column if needed
         matrix = self._add_intercept_to_matrix(matrix, nexamples)
+
+        if self.estimation_check != ESTIMATION_CHECK_NONE:
+            passed, diagnostics = self._check_estimation_gate(
+                matrix, self.estimation_check
+            )
+            if not passed:
+                self._record_deferred_attempt(matrix, diagnostics)
+                return False
 
         try:
             if self.mv_normal_rewards is None:

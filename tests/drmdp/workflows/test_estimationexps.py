@@ -38,35 +38,41 @@ class TestEstimationExperimentSpecs:
         multipliers = {spec["metadata"]["noise_std_multiplier"] for spec in specs}
         assert multipliers == {0.0, 1.0}
 
-    def test_problem_specs_hold_the_method_and_delay_axes(self):
+    def test_problem_specs_hold_the_estimator_mode_and_delay_axes(self):
         specs = estimationexps.estimation_experiment_specs()
         for spec in specs:
-            assert len(spec["problem_specs"]) == 6  # 3 methods x 2 delays
+            # 2 estimators x 3 check modes x 2 delays = 12
+            assert len(spec["problem_specs"]) == 12
             least_specs = [
                 problem
                 for problem in spec["problem_specs"]
                 if problem["reward_mapper"]["name"] == "least-lfa"
             ]
-            assert len(least_specs) == 4  # 2 gates x 2 delays
-            gates = {
-                problem["reward_mapper"]["args"]["check_factors"]
+            assert len(least_specs) == 6  # 3 modes x 2 delays
+            least_modes = {
+                problem["reward_mapper"]["args"]["estimation_check"]
                 for problem in least_specs
             }
-            assert gates == {True, False}
+            assert least_modes == {"none", "factors", "full-rank"}
             bayes_specs = [
                 problem
                 for problem in spec["problem_specs"]
                 if problem["reward_mapper"]["name"] == "bayes-least-lfa"
             ]
-            assert len(bayes_specs) == 2
+            assert len(bayes_specs) == 6  # 3 modes x 2 delays
+            bayes_modes = {
+                problem["reward_mapper"]["args"]["estimation_check"]
+                for problem in bayes_specs
+            }
+            assert bayes_modes == {"none", "factors", "full-rank"}
             delays = {str(problem["delay_config"]) for problem in spec["problem_specs"]}
             assert len(delays) == 2
-            # no control pipeline runs in this campaign
             assert spec["feats_specs"] == [[]]
 
     def test_expected_run_count_matches_the_grid(self):
-        assert estimationexps.expected_run_count(num_runs=1) == 168
-        assert estimationexps.expected_run_count(num_runs=5) == 840
+        # 14 encodings x 6 methods x 2 delays x 2 noise = 336 per run
+        assert estimationexps.expected_run_count(num_runs=1) == 336
+        assert estimationexps.expected_run_count(num_runs=5) == 1680
 
     def test_episode_cap(self):
         assert estimationexps.episode_cap("MountainCar-v0") == 40

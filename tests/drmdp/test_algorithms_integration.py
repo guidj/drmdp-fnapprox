@@ -187,7 +187,7 @@ class TestPolicyControlEndToEnd:
                         "attempt_estimation_episode": 3,
                         "impute_value": 0,
                         "estimation_buffer_mult": 25,
-                        "check_factors": True,
+                        "estimation_check": "factors",
                         "transition_feats_spec": {
                             "name": "current-features",
                             "args": {

@@ -38,7 +38,7 @@ METHOD_CONFIGS: dict[str, dict[str, Any]] = {
         "intercept": False,
         "impute_value": 0,
         "estimation_buffer_mult": 25,
-        "check_factors": True,
+        "estimation_check": "factors",
     },
     "bayes-least-lfa": {
         "init_attempt_estimation_episode": 10,
@@ -170,7 +170,7 @@ def build_epsilon_sweep_configs(
     One grid per size, a single delay level (median lambda), fixed
     num_episodes -- only epsilon and max_steps vary, to test whether low
     exploration (not buffer size or episode budget) is what blocks LEAST
-    from reaching a reward estimate on GridWorld (`check_factors` coverage
+    from reaching a reward estimate on GridWorld (`estimation_check="factors"` coverage
     gate, see `agents/analyses/2026-09-04-least-blade-imr-reward-estimation-analysis.md`).
     """
     lower, upper = mathutils.poisson_exact_confidence_interval(

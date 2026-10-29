@@ -13,7 +13,7 @@ class TestParseExperiments:
     def test_experiments_match_the_problem_spec_grid(self):
         specs = estimationexps.estimation_experiment_specs()
         experiments = specutils.parse_experiment_specs(specs)
-        assert len(experiments) == 168  # 28 specs x 6 problem specs
+        assert len(experiments) == 336  # 28 specs x 12 problem specs
         assert all(isinstance(exp, core.Experiment) for exp in experiments)
         assert all(exp.env_spec.feats_spec == [] for exp in experiments)
 
@@ -34,7 +34,7 @@ class TestCreateTasks:
             log_episode_frequency=5,
             use_seed=True,
         )
-        assert len(instances) == 168
+        assert len(instances) == 336
         caps_by_env = {}
         for instance in instances:
             env_name = instance.experiment.env_spec.name
@@ -58,23 +58,23 @@ class TestCreateTasks:
         identities = [(inst.exp_id, inst.instance_id) for inst in instances]
         assert len(set(identities)) == len(identities)
 
-    def test_cell_key_separates_gate_variants(self):
+    def test_cell_key_separates_check_mode_variants(self):
         specs = estimationexps.estimation_experiment_specs()
         experiments = specutils.parse_experiment_specs(specs)
-        gated = [
+        sine_exps = [
             experiment
             for experiment in experiments
             if (experiment.env_spec.metadata or {}).get("encoding") == "structural-sine"
         ]
-        keys = {estimationjob.cell_key(experiment) for experiment in gated}
-        # encoding x 3 methods (gate splits LEAST) x 2 delays x 2 noise
-        assert len(keys) == 12
+        keys = {estimationjob.cell_key(experiment) for experiment in sine_exps}
+        # 2 estimators x 3 modes x 2 delays x 2 noise = 24
+        assert len(keys) == 24
 
 
 class TestEstimationOnly:
     """End-to-end: the random-policy loop records events and stops at fires."""
 
-    def _gw_instance(self, tmp_path, encoding, gated, episodes):
+    def _gw_instance(self, tmp_path, encoding, estimation_check, episodes):
         spec = None
         for candidate in estimationexps.estimation_experiment_specs():
             if (
@@ -87,7 +87,7 @@ class TestEstimationOnly:
             problem
             for problem in spec["problem_specs"]
             if problem["reward_mapper"]["name"] == "least-lfa"
-            and problem["reward_mapper"]["args"]["check_factors"] == gated
+            and problem["reward_mapper"]["args"]["estimation_check"] == estimation_check
             and problem["delay_config"]["args"]["min_delay"] == 2
         )
         return core.ExperimentInstance(
@@ -123,7 +123,10 @@ class TestEstimationOnly:
 
     def test_one_shot_run_stops_at_first_event(self, tmp_path):
         instance = self._gw_instance(
-            tmp_path, encoding="transition-anomaly", gated=False, episodes=30
+            tmp_path,
+            encoding="transition-anomaly",
+            estimation_check="none",
+            episodes=30,
         )
         task.estimation_only(instance)
         entries = self._read_log(tmp_path)
@@ -145,7 +148,10 @@ class TestEstimationOnly:
         # coverage gate defers; the ungated variant would fire at the
         # first attempt
         instance = self._gw_instance(
-            tmp_path, encoding="next-cell-ohe", gated=True, episodes=20
+            tmp_path,
+            encoding="next-cell-ohe",
+            estimation_check="factors",
+            episodes=20,
         )
         task.estimation_only(instance)
         entries = self._read_log(tmp_path)

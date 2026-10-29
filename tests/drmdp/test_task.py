@@ -258,7 +258,7 @@ class TestRewardMapper:
                     "attempt_estimation_episode": 10,
                     "impute_value": 0,
                     "estimation_buffer_mult": 25,
-                    "check_factors": False,
+                    "estimation_check": "none",
                     "transition_feats_spec": {
                         "name": "current-features",
                         "args": {

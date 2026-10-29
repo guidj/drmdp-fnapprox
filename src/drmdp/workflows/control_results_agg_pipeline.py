@@ -410,6 +410,11 @@ def _mapper_args(row: Mapping[str, Any]) -> Mapping[str, Any]:
     return dict(problem_spec["reward_mapper"].get("args") or {})
 
 
+def _resolve_check_mode(mapper_args: Mapping[str, Any]) -> str:
+    """Resolve estimation check mode from mapper args."""
+    return str(mapper_args.get("estimation_check", "none"))
+
+
 def estimation_event_rows(row: Mapping[str, Any]) -> list[dict[str, Any]]:
     """
     Per estimation-event rows from one experiment log record.
@@ -425,6 +430,7 @@ def estimation_event_rows(row: Mapping[str, Any]) -> list[dict[str, Any]]:
     experiment = meta["experiment"]
     problem_spec = experiment["problem_spec"]
     mapper_args = _mapper_args(row)
+    check_mode = _resolve_check_mode(mapper_args)
     method = dataproc.MAPPERS_NAMES[problem_spec["reward_mapper"]["name"]]
     feats_spec = mapper_args.get("transition_feats_spec") or {}
     return [
@@ -438,7 +444,7 @@ def estimation_event_rows(row: Mapping[str, Any]) -> list[dict[str, Any]]:
             "rmse": event["rmse"],
             "num_samples": event["num_samples"],
             "method": method,
-            "check_factors": bool(mapper_args.get("check_factors", False)),
+            "estimation_check": check_mode,
             "feats_spec": json.dumps(feats_spec, sort_keys=True),
             "env_name": experiment["env_spec"]["name"],
             "gamma": problem_spec["gamma"],
@@ -464,6 +470,7 @@ def deferred_attempt_rows(row: Mapping[str, Any]) -> list[dict[str, Any]]:
     experiment = meta["experiment"]
     problem_spec = experiment["problem_spec"]
     mapper_args = _mapper_args(row)
+    check_mode = _resolve_check_mode(mapper_args)
     method = dataproc.MAPPERS_NAMES[problem_spec["reward_mapper"]["name"]]
     feats_spec = mapper_args.get("transition_feats_spec") or {}
     return [
@@ -475,8 +482,9 @@ def deferred_attempt_rows(row: Mapping[str, Any]) -> list[dict[str, Any]]:
             "buffer_rows": attempt["buffer_rows"],
             "nonzero_columns": attempt["nonzero_columns"],
             "matrix_columns": attempt["matrix_columns"],
+            "numerical_rank": attempt.get("numerical_rank"),
             "method": method,
-            "check_factors": bool(mapper_args.get("check_factors", False)),
+            "estimation_check": check_mode,
             "feats_spec": json.dumps(feats_spec, sort_keys=True),
             "env_name": experiment["env_spec"]["name"],
             "gamma": problem_spec["gamma"],
@@ -500,8 +508,8 @@ def run_rows(row: Mapping[str, Any]) -> list[dict[str, Any]]:
     meta = row["meta"]
     experiment = meta["experiment"]
     problem_spec = experiment["problem_spec"]
-    # Ray reads an empty `info` as {} or None; neither carries an
-    # evaluation mean
+    mapper_args = dict(problem_spec["reward_mapper"].get("args") or {})
+    check_mode = _resolve_check_mode(mapper_args)
     info = row.get("info") or {}
     policy_eval = info.get("policy_eval") or {}
     return [
@@ -513,6 +521,7 @@ def run_rows(row: Mapping[str, Any]) -> list[dict[str, Any]]:
             "steps": row["steps"],
             "policy_eval_mean": policy_eval.get("mean"),
             "method": dataproc.MAPPERS_NAMES[problem_spec["reward_mapper"]["name"]],
+            "estimation_check": check_mode,
             "env_name": experiment["env_spec"]["name"],
             "gamma": problem_spec["gamma"],
             "delay_config": problem_spec["delay_config"],

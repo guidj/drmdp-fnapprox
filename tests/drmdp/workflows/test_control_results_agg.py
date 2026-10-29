@@ -141,7 +141,7 @@ class TestEstimationEventRows:
                         "reward_mapper": {
                             "name": "bayes-least-lfa",
                             "args": {
-                                "check_factors": False,
+                                "estimation_check": "none",
                                 "transition_feats_spec": {
                                     "name": "action-and-termination-features",
                                     "args": {},
@@ -184,7 +184,7 @@ class TestEstimationEventRows:
         assert first["elapsed_s"] == 0.5
         assert first["rmse"] == 0.25
         assert first["num_samples"] == 220
-        assert first["check_factors"] is False
+        assert first["estimation_check"] == "none"
         assert first["feats_spec"] == json.dumps(
             {"name": "action-and-termination-features", "args": {}}, sort_keys=True
         )
@@ -222,7 +222,7 @@ class TestDeferredAttemptRows:
                         "reward_mapper": {
                             "name": "least-lfa",
                             "args": {
-                                "check_factors": True,
+                                "estimation_check": "factors",
                                 "transition_feats_spec": {
                                     "name": "state-bins-action-features",
                                     "args": {"bins": [4, 2]},
@@ -265,7 +265,7 @@ class TestDeferredAttemptRows:
         assert first["nonzero_columns"] == 20
         assert first["matrix_columns"] == 24
         assert first["method"] == "LEAST"
-        assert first["check_factors"] is True
+        assert first["estimation_check"] == "factors"
         assert first["env_name"] == "MountainCar-v0"
 
     def test_numpy_array_attempts(self):

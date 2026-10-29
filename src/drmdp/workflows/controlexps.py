@@ -55,7 +55,7 @@ def least_specs(
     transition_feats_specs: Sequence[Mapping[str, Any]],
     delay_configs: Sequence[Mapping[str, Any]] = default_delay_config(),
     discounts: Sequence[float] = DEFAULT_DISCOUNT_FACTORS,
-    check_factors: bool = False,
+    estimation_check: str = "none",
     impute_value: float = DEFAULT_IMPUTE_VALUE,
 ) -> Sequence[Mapping[str, Any]]:
     """
@@ -81,7 +81,7 @@ def least_specs(
                         "impute_value": impute_value,
                         "estimation_buffer_mult": 25,
                         "intercept": False,
-                        "check_factors": check_factors,
+                        "estimation_check": estimation_check,
                     },
                 },
                 "delay_config": delay_config,
@@ -577,7 +577,7 @@ def gaussian_illustration_experiment_specs(
                 common_problem_specs(include_options=False)
                 + least_specs(
                     attempt_estimation_episodes=(10,),
-                    check_factors=True,
+                    estimation_check="factors",
                     transition_feats_specs=mc_est_feats,
                 )
                 + bayes_least_specs(
@@ -615,7 +615,7 @@ def gaussian_illustration_experiment_specs(
                 common_problem_specs(include_options=False)
                 + least_specs(
                     attempt_estimation_episodes=(10,),
-                    check_factors=True,
+                    estimation_check="factors",
                     transition_feats_specs=acrobot_est_feats,
                 )
                 + bayes_least_specs(
@@ -648,7 +648,7 @@ def gaussian_illustration_experiment_specs(
                 common_problem_specs(include_options=False)
                 + least_specs(
                     attempt_estimation_episodes=(10,),
-                    check_factors=True,
+                    estimation_check="factors",
                     transition_feats_specs=gw_est_feats,
                 )
                 + bayes_least_specs(
@@ -735,7 +735,7 @@ def grid_experiments_specs(
                 "problem_specs": common_problem_specs(include_options=False)
                 + least_specs(
                     attempt_estimation_episodes=(10,),
-                    check_factors=True,
+                    estimation_check="factors",
                     transition_feats_specs=[
                         rewardfeat.current_features_spec(
                             current_spec=[
