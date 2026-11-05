@@ -1,3 +1,5 @@
+import random
+
 import gymnasium as gym
 import numpy as np
 import pytest
@@ -271,6 +273,60 @@ class TestDelayedRewardWrapper:
                 assert (term, trunc) == (False, False)
             else:
                 assert (term, trunc) == (True, False)
+
+
+class TestDelaySamplerSeeding:
+    """The sampler seed contract: same seed reproduces the sequence, and
+    no other component's draws can shift it."""
+
+    def test_uniform_same_seed_reproduces_the_sequence(self):
+        first = rewdelay.UniformDelay(2, 4, seed=7)
+        second = rewdelay.UniformDelay(2, 4, seed=7)
+        assert [first.sample() for _ in range(50)] == [
+            second.sample() for _ in range(50)
+        ]
+
+    def test_uniform_different_seeds_differ(self):
+        first = rewdelay.UniformDelay(2, 4, seed=7)
+        second = rewdelay.UniformDelay(2, 4, seed=8)
+        assert [first.sample() for _ in range(50)] != [
+            second.sample() for _ in range(50)
+        ]
+
+    def test_uniform_is_independent_of_the_global_generator(self):
+        state = random.getstate()
+        try:
+            random.seed(123)
+            reference_sampler = rewdelay.UniformDelay(2, 4, seed=7)
+            reference = [reference_sampler.sample() for _ in range(50)]
+            random.seed(321)
+            follower = rewdelay.UniformDelay(2, 4, seed=7)
+            global_draws = [random.randint(2, 4) for _ in range(10)]
+            sequence = [follower.sample() for _ in range(50)]
+        finally:
+            random.setstate(state)
+        assert sequence == reference
+        assert len(global_draws) == 10
+
+    def test_uniform_unseeded_stays_within_range(self):
+        sampler = rewdelay.UniformDelay(2, 4)
+        assert all(2 <= sampler.sample() <= 4 for _ in range(50))
+
+    def test_clipped_poisson_same_seed_reproduces_the_sequence(self):
+        first = rewdelay.ClippedPoissonDelay(lam=3, min_delay=2, seed=5)
+        second = rewdelay.ClippedPoissonDelay(lam=3, min_delay=2, seed=5)
+        assert [int(first.sample()) for _ in range(50)] == [
+            int(second.sample()) for _ in range(50)
+        ]
+
+    def test_clipped_poisson_unseeded_respects_bounds(self):
+        sampler = rewdelay.ClippedPoissonDelay(lam=3, min_delay=2)
+        assert all(int(sampler.sample()) >= 2 for _ in range(200))
+
+    def test_fixed_delay_accepts_a_seed_and_stays_constant(self):
+        sampler = rewdelay.FixedDelay(delay=3, seed=9)
+        assert sampler.sample() == 3
+        assert sampler.range() == (3, 3)
 
 
 class TestDataBuffer:
@@ -1249,6 +1305,55 @@ class TestEstimationCheckGate:
         for wrapper in (wrapper_none, wrapper_factors):
             for attempt in wrapper.estimation_meta.get("deferred_attempts", []):
                 assert "numerical_rank" not in attempt
+
+
+class TestGenerativeWrapperRngSeeding:
+    """The estimator generator seed: same seed, same draw sequence."""
+
+    @staticmethod
+    def _least_lfa(rng_seed: int | None):
+        env = DummyEnv(term_steps=2)
+        delayed = rewdelay.DelayedRewardWrapper(
+            env, reward_delay=rewdelay.FixedDelay(delay=2)
+        )
+        return rewdelay.LeastLfaGenerativeRewardWrapper(
+            delayed,
+            feats_fn=FTOpHook(DummyFTOp(env)),
+            attempt_estimation_episode=5,
+            rng_seed=rng_seed,
+        )
+
+    @staticmethod
+    def _bayes(rng_seed: int | None):
+        env = DummyEnv(term_steps=2)
+        delayed = rewdelay.DelayedRewardWrapper(
+            env, reward_delay=rewdelay.FixedDelay(delay=2)
+        )
+        return rewdelay.BayesLeastLfaGenerativeRewardWrapper(
+            delayed,
+            feats_fn=FTOpHook(DummyFTOp(env)),
+            init_attempt_estimation_episode=1,
+            rng_seed=rng_seed,
+        )
+
+    def test_least_lfa_same_seed_reproduces_draws(self):
+        first = self._least_lfa(7)
+        second = self._least_lfa(7)
+        assert [first.rng.random() for _ in range(10)] == [
+            second.rng.random() for _ in range(10)
+        ]
+
+    def test_bayes_same_seed_reproduces_draws(self):
+        first = self._bayes(7)
+        second = self._bayes(7)
+        assert [first.rng.random() for _ in range(10)] == [
+            second.rng.random() for _ in range(10)
+        ]
+
+    def test_unseeded_generators_are_independent_instances(self):
+        first = self._least_lfa(None)
+        second = self._least_lfa(None)
+        assert first.rng is not second.rng
 
 
 class TestBayesEstimationCheckGate:

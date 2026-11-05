@@ -66,7 +66,10 @@ class FixedDelay(RewardDelay):
     Fixed window delays.
     """
 
-    def __init__(self, delay: int):
+    def __init__(self, delay: int, seed: int | None = None):
+        # A fixed delay consumes no random draws; the seed is accepted so
+        # every sampler honours the same construction contract.
+        del seed
         super().__init__()
         self.delay = delay
 
@@ -87,13 +90,16 @@ class UniformDelay(RewardDelay):
     from a range of values.
     """
 
-    def __init__(self, min_delay: int, max_delay: int):
+    def __init__(self, min_delay: int, max_delay: int, seed: int | None = None):
         super().__init__()
         self.min_delay = min_delay
         self.max_delay = max_delay
+        # Instance-local generator: seeded runs reproduce their delay
+        # sequence, and no other component's draws can shift it.
+        self._rng = random.Random(seed)
 
     def sample(self):
-        return random.randint(self.min_delay, self.max_delay)
+        return self._rng.randint(self.min_delay, self.max_delay)
 
     def range(self) -> tuple[int, int]:
         return self.min_delay, self.max_delay
@@ -109,7 +115,11 @@ class ClippedPoissonDelay(RewardDelay):
     """
 
     def __init__(
-        self, lam: int, min_delay: int | None = None, max_delay: int | None = None
+        self,
+        lam: int,
+        min_delay: int | None = None,
+        max_delay: int | None = None,
+        seed: int | None = None,
     ):
         """
         Calculate upper and lower bounds if not provided.
@@ -119,7 +129,7 @@ class ClippedPoissonDelay(RewardDelay):
         self.lam = lam
         self.min_delay = min_delay or lower
         self.max_delay = max_delay or upper
-        self.rng = np.random.default_rng()
+        self.rng = np.random.default_rng(seed)
 
     def sample(self):
         return np.clip(self.rng.poisson(self.lam), self.min_delay, self.max_delay)
@@ -476,6 +486,7 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
         impute_value: float = 0.0,
         estimation_buffer_mult: int | None = None,
         reward_error_fn: Callable[[np.ndarray], Mapping[str, Any]] | None = None,
+        rng_seed: int | None = None,
     ):
         super().__init__(env)
         self._validate_action_space()
@@ -497,7 +508,7 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
         self.estimation_meta: dict[str, Any] = {}
         self._latest_obs = None
         self._segment_features = None
-        self.rng = np.random.default_rng()
+        self.rng = np.random.default_rng(rng_seed)
         self.est_buffer = DataBuffer(
             max_capacity=self.mdim * estimation_buffer_mult
             if estimation_buffer_mult
@@ -859,6 +870,7 @@ class LeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         estimation_check: str = ESTIMATION_CHECK_NONE,
         reward_error_fn: Callable[[np.ndarray], Mapping[str, Any]] | None = None,
         intercept: bool = False,
+        rng_seed: int | None = None,
     ):
         super().__init__(
             env=env,
@@ -867,6 +879,7 @@ class LeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
             impute_value=impute_value,
             estimation_buffer_mult=estimation_buffer_mult,
             reward_error_fn=reward_error_fn,
+            rng_seed=rng_seed,
         )
         self.attempt_estimation_episode = attempt_estimation_episode
         self.estimation_check = resolve_estimation_check(estimation_check)
@@ -960,6 +973,7 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         sample_weights: bool = False,
         reward_error_fn: Callable[[np.ndarray], Mapping[str, Any]] | None = None,
         intercept: bool = False,
+        rng_seed: int | None = None,
     ):
         super().__init__(
             env=env,
@@ -968,6 +982,7 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
             impute_value=impute_value,
             estimation_buffer_mult=estimation_buffer_mult,
             reward_error_fn=reward_error_fn,
+            rng_seed=rng_seed,
         )
         self.mode = mode
         self.init_attempt_estimation_episode = init_attempt_estimation_episode
@@ -1118,6 +1133,7 @@ class ConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         constraints_buffer_limit: int | None = None,
         terminal_constraint_fn: rewardfeat.TransitionFeatureFn | None = None,
         intercept: bool = False,
+        rng_seed: int | None = None,
     ):
         super().__init__(
             env=env,
@@ -1125,6 +1141,7 @@ class ConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
             intercept=intercept,
             impute_value=impute_value,
             estimation_buffer_mult=estimation_buffer_mult,
+            rng_seed=rng_seed,
         )
         self.attempt_estimation_episode = attempt_estimation_episode
         self.constraints_buffer_limit = constraints_buffer_limit
@@ -1241,6 +1258,7 @@ class RecurringConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         constraints_buffer_limit: int | None = None,
         terminal_constraint_fn: rewardfeat.TransitionFeatureFn | None = None,
         intercept: bool = False,
+        rng_seed: int | None = None,
     ):
         super().__init__(
             env=env,
@@ -1248,6 +1266,7 @@ class RecurringConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
             intercept=intercept,
             impute_value=impute_value,
             estimation_buffer_mult=estimation_buffer_mult,
+            rng_seed=rng_seed,
         )
         self.mode = mode
         self.init_attempt_estimation_episode = init_attempt_estimation_episode

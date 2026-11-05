@@ -166,3 +166,47 @@ class TestEstimationOnly:
             for attempt in deferred
         )
         assert all(attempt["steps"] > 0 for attempt in deferred)
+
+    def test_seeded_runs_reproduce_their_record(self, tmp_path):
+        """Same instance seed, same record: delay and noise draws included."""
+        first_dir = tmp_path / "first"
+        second_dir = tmp_path / "second"
+        first = self._gw_instance(
+            first_dir,
+            encoding="transition-anomaly",
+            estimation_check="none",
+            episodes=30,
+        )
+        second = self._gw_instance(
+            second_dir,
+            encoding="transition-anomaly",
+            estimation_check="none",
+            episodes=30,
+        )
+        task.estimation_only(first)
+        task.estimation_only(second)
+        first_entries = _strip_wall_clock(self._read_log(first_dir))
+        second_entries = _strip_wall_clock(self._read_log(second_dir))
+        assert first_entries == second_entries
+        # the record is non-trivial: the run fired within the cap
+        assert any(entry["reward_errors"] for entry in first_entries)
+
+
+def _strip_wall_clock(entries: list[dict]) -> list[dict]:
+    """Log entries without wall-clock fields, which no seeded run reproduces."""
+    stripped = []
+    for entry in entries:
+        info = entry.get("info") or {}
+        stripped.append(
+            {
+                "episode": entry["episode"],
+                "steps": entry["steps"],
+                "returns": entry["returns"],
+                "reward_errors": [
+                    {key: value for key, value in event.items() if key != "elapsed_s"}
+                    for event in info.get("reward_errors", [])
+                ],
+                "deferred_attempts": info.get("deferred_attempts", []),
+            }
+        )
+    return stripped

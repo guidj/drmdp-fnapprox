@@ -246,6 +246,33 @@ class TestPolicyControlEndToEnd:
             shaped_returns = _read_log_entries(shaped_dir)[0]["returns"]
             assert unshaped_returns != shaped_returns
 
+    def test_seeded_runs_reproduce_their_record(self):
+        """Same instance seed, same record: delay, noise, policy, estimator."""
+        records = []
+        for name in ("first", "second"):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                output_dir = os.path.join(tmpdir, name)
+                instance = _make_experiment_instance(
+                    output_dir=output_dir,
+                    episodes_per_run=8,
+                    log_episode_frequency=4,
+                    policy_type="drop-missing",
+                    delay_config={
+                        "name": "uniform",
+                        "args": {"min_delay": 2, "max_delay": 4},
+                    },
+                    env_args={
+                        "max_episode_steps": 200,
+                        "reward_noise": {
+                            "name": "relative-gaussian",
+                            "args": {"std_multiplier": 1.0, "reference_std": 2.0},
+                        },
+                    },
+                )
+                task.policy_control(instance)
+                records.append(_without_wall_clock(_read_log_entries(output_dir)))
+        assert records[0] == records[1]
+
 
 def _make_experiment_instance(
     output_dir: str,
@@ -256,6 +283,7 @@ def _make_experiment_instance(
     env_args: Mapping[str, Any] | None = None,
     export_model: bool = False,
     exp_id: str = "test-mc",
+    policy_type: str = "markovian",
 ) -> core.ExperimentInstance:
     if reward_mapper is None:
         reward_mapper = {"name": "identity", "args": None}
@@ -276,7 +304,7 @@ def _make_experiment_instance(
                 ],
             ),
             problem_spec=core.ProblemSpec(
-                policy_type="markovian",
+                policy_type=policy_type,
                 reward_mapper=reward_mapper,
                 delay_config=delay_config,
                 epsilon=0.2,
@@ -311,3 +339,16 @@ def _read_params(output_dir: str) -> dict[str, Any]:
     with open(param_path) as readable:
         params: dict[str, Any] = json.load(readable)
     return params
+
+
+def _without_wall_clock(value):
+    """Recursively drop `elapsed_s`, which no seeded run reproduces."""
+    if isinstance(value, dict):
+        return {
+            key: _without_wall_clock(item)
+            for key, item in value.items()
+            if key != "elapsed_s"
+        }
+    if isinstance(value, list):
+        return [_without_wall_clock(item) for item in value]
+    return value
