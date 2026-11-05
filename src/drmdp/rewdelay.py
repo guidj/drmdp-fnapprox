@@ -149,11 +149,16 @@ class DataBuffer:
         max_capacity: int | None = None,
         max_size_bytes: int | None = None,
         acc_mode: str = ACC_LATEST,
+        feature_dim: int | None = None,
     ):
         self.max_capacity = max_capacity
         self.max_size_bytes = max_size_bytes
         self.acc_mode = acc_mode
         self.buffer: list[Any] = []
+        self.feature_dim = feature_dim
+        self._col_nnz: np.ndarray | None = (
+            np.zeros(feature_dim, dtype=np.int32) if feature_dim else None
+        )
 
     def add(self, element: Any):
         if self.max_capacity and self.max_size_bytes:
@@ -162,13 +167,13 @@ class DataBuffer:
             if list_size(self.buffer + [element]) >= self.max_size_bytes:
                 if self.acc_mode == self.ACC_LATEST:
                     while list_size(self.buffer + [element]) >= self.max_size_bytes:
-                        self._pop_earliest()
+                        self._evict_one()
                 else:
                     safe_byte_limit = False
 
             if self.size() >= self.max_capacity:
                 if self.acc_mode == self.ACC_LATEST:
-                    self._pop_earliest()
+                    self._evict_one()
                 else:
                     safe_size_limit = False
 
@@ -179,7 +184,7 @@ class DataBuffer:
             if list_size(self.buffer + [element]) >= self.max_size_bytes:
                 if self.acc_mode == self.ACC_LATEST:
                     while list_size(self.buffer + [element]) >= self.max_size_bytes:
-                        self._pop_earliest()
+                        self._evict_one()
                     self._append(element)
                 # else acc_mode == ACC_FIRST - do not add
             else:
@@ -188,7 +193,7 @@ class DataBuffer:
         elif self.max_capacity:
             if self.size() >= self.max_capacity:
                 if self.acc_mode == self.ACC_LATEST:
-                    self._pop_earliest()
+                    self._evict_one()
                     self._append(element)
                 # else mode == ACC_FIRST - do not add
             else:
@@ -200,6 +205,8 @@ class DataBuffer:
 
     def clear(self):
         self.buffer = []
+        if self._col_nnz is not None:
+            self._col_nnz[:] = 0
 
     def size(self):
         return len(self.buffer)
@@ -207,11 +214,45 @@ class DataBuffer:
     def size_bytes(self):
         return list_size(self.buffer)
 
+    def _is_evictable(self, idx: int) -> bool:
+        if self._col_nnz is None:
+            return True
+        features = np.asarray(self.buffer[idx][0])
+        nonzero_cols = np.nonzero(features)[0]
+        return bool(np.all(self._col_nnz[nonzero_cols] > 1))
+
+    def _evict_one(self):
+        if self._col_nnz is None:
+            self._pop_at(0)
+            return
+        for idx in range(len(self.buffer)):
+            if self._is_evictable(idx):
+                self._pop_at(idx)
+                return
+        self._pop_at(0)
+
+    def _pop_at(self, idx: int):
+        element = self.buffer.pop(idx)
+        if self._col_nnz is not None:
+            features = np.asarray(element[0])
+            self._col_nnz[np.nonzero(features)[0]] -= 1
+
+    def _rebuild_col_nnz(self):
+        if self._col_nnz is None:
+            return
+        self._col_nnz[:] = 0
+        for element in self.buffer:
+            features = np.asarray(element[0])
+            self._col_nnz[np.nonzero(features)[0]] += 1
+
     def _pop_earliest(self):
-        self.buffer.pop(0)
+        self._pop_at(0)
 
     def _append(self, element: Any):
         self.buffer.append(element)
+        if self._col_nnz is not None:
+            features = np.asarray(element[0])
+            self._col_nnz[np.nonzero(features)[0]] += 1
 
 
 class WindowedTaskSchedule:
@@ -460,7 +501,8 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
         self.est_buffer = DataBuffer(
             max_capacity=self.mdim * estimation_buffer_mult
             if estimation_buffer_mult
-            else None
+            else None,
+            feature_dim=self.mdim,
         )
 
     def _validate_action_space(self):
@@ -652,13 +694,16 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
             self.get_env_name(),
             err,
         )
-        # Drop latest 5% of samples
         nexamples_dropped, (matrix, rewards) = drop_samples(
-            frac=0.05, arrays=[matrix, rewards], rng=self.rng
+            frac=0.05,
+            arrays=[matrix, rewards],
+            rng=self.rng,
+            col_nnz=self.est_buffer._col_nnz,
         )
         obs_buffer = matrix.tolist()
         rew_buffer = rewards.tolist()
         self.est_buffer.buffer = list(zip(obs_buffer, rew_buffer))
+        self.est_buffer._rebuild_col_nnz()
         logger.debug(
             "%s - Dropped %d samples",
             self.get_name(),
@@ -1333,19 +1378,43 @@ def list_size(xs: list[Any]) -> int:
 
 
 def drop_samples(
-    frac: float, arrays: Sequence[np.ndarray], rng: np.random.Generator
+    frac: float,
+    arrays: Sequence[np.ndarray],
+    rng: np.random.Generator,
+    col_nnz: np.ndarray | None = None,
 ) -> tuple[int, Sequence[np.ndarray]]:
     """
     Drops a fraction of examples of every arrays.
     Arrays are assumed to be of equal length in their
     most outer dimension.
+
+    When ``col_nnz`` is provided (per-column non-zero counts for
+    the first array treated as a feature matrix), only rows whose
+    columns all have count > 1 are eligible for dropping.
     """
     first = next(iter(arrays))
     nexamples = len(first)
     nexamples_to_drop = int(nexamples * frac)
+    if col_nnz is not None:
+        evictable = _evictable_indices(first, col_nnz)
+        nexamples_to_drop = min(nexamples_to_drop, len(evictable))
+        if nexamples_to_drop == 0:
+            return 0, tuple(arrays)
+        drop_indices = set(
+            rng.choice(evictable, nexamples_to_drop, replace=False).tolist()
+        )
+        keep = np.array([idx for idx in range(nexamples) if idx not in drop_indices])
+        return nexamples_to_drop, tuple(array[keep] for array in arrays)
     indices = rng.choice(
         np.arange(nexamples),
         nexamples - nexamples_to_drop,
         replace=False,
     )
     return nexamples_to_drop, tuple(array[indices] for array in arrays)
+
+
+def _evictable_indices(matrix: np.ndarray, col_nnz: np.ndarray) -> np.ndarray:
+    """Return row indices whose non-zero columns all have count > 1."""
+    sole_contributor = col_nnz <= 1
+    rows_touching_sole = matrix[:, sole_contributor].astype(bool).any(axis=1)
+    return np.where(~rows_touching_sole)[0]

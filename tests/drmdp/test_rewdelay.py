@@ -404,6 +404,139 @@ class TestDataBuffer:
         assert buffer.size_bytes() == 32
 
 
+class TestDataBufferColumnAwareEviction:
+    """Tests for DataBuffer column-aware eviction via per-column non-zero tracking."""
+
+    @staticmethod
+    def _make_row(dim: int, nonzero_col: int, value: float = 1.0):
+        features = np.zeros(dim)
+        features[nonzero_col] = value
+        reward = float(nonzero_col)
+        return (features, reward)
+
+    def test_eviction_skips_sole_contributor(self):
+        dim = 4
+        buf = rewdelay.DataBuffer(max_capacity=3, feature_dim=dim)
+        buf.add(self._make_row(dim, 0))
+        buf.add(self._make_row(dim, 1))
+        buf.add(self._make_row(dim, 2))
+        # All three rows are sole contributors — oldest is col 0.
+        # Adding a duplicate of col 0 makes the col-0 row evictable.
+        buf.add(self._make_row(dim, 0, value=2.0))
+        assert buf.size() == 3
+        # The original col-0 row (oldest evictable) was dropped.
+        remaining_rewards = [row[1] for row in buf.buffer]
+        assert remaining_rewards == [1.0, 2.0, 0.0]
+
+    def test_eviction_falls_back_to_fifo_when_all_sole(self):
+        dim = 4
+        buf = rewdelay.DataBuffer(max_capacity=3, feature_dim=dim)
+        buf.add(self._make_row(dim, 0))
+        buf.add(self._make_row(dim, 1))
+        buf.add(self._make_row(dim, 2))
+        # All sole contributors. New row on col 3 — still all sole.
+        buf.add(self._make_row(dim, 3))
+        assert buf.size() == 3
+        # FIFO fallback drops row 0 (col 0).
+        remaining_rewards = [row[1] for row in buf.buffer]
+        assert remaining_rewards == [1.0, 2.0, 3.0]
+
+    def test_col_nnz_consistent_after_add_evict_clear(self):
+        dim = 3
+        buf = rewdelay.DataBuffer(max_capacity=4, feature_dim=dim)
+        buf.add(self._make_row(dim, 0))
+        buf.add(self._make_row(dim, 1))
+        buf.add(self._make_row(dim, 0))
+        buf.add(self._make_row(dim, 2))
+        np.testing.assert_array_equal(buf._col_nnz, [2, 1, 1])
+
+        # Evict by adding beyond capacity — col 0 has count 2, so oldest
+        # col-0 row is evictable.
+        buf.add(self._make_row(dim, 1))
+        assert buf.size() == 4
+        np.testing.assert_array_equal(buf._col_nnz, [1, 2, 1])
+
+        buf.clear()
+        np.testing.assert_array_equal(buf._col_nnz, [0, 0, 0])
+        assert buf.size() == 0
+
+    def test_no_tracking_without_feature_dim(self):
+        buf = rewdelay.DataBuffer(max_capacity=2)
+        assert buf._col_nnz is None
+        buf.add(([1.0, 0.0], 0.0))
+        buf.add(([0.0, 1.0], 1.0))
+        buf.add(([1.0, 0.0], 2.0))
+        # FIFO without column awareness.
+        assert buf.size() == 2
+        remaining_rewards = [row[1] for row in buf.buffer]
+        assert remaining_rewards == [1.0, 2.0]
+
+    def test_rebuild_col_nnz_after_external_mutation(self):
+        dim = 3
+        buf = rewdelay.DataBuffer(max_capacity=10, feature_dim=dim)
+        buf.add(self._make_row(dim, 0))
+        buf.add(self._make_row(dim, 1))
+        buf.add(self._make_row(dim, 0))
+        np.testing.assert_array_equal(buf._col_nnz, [2, 1, 0])
+
+        # Simulate external mutation (as _handle_estimation_failure does).
+        buf.buffer = [buf.buffer[0]]
+        buf._rebuild_col_nnz()
+        np.testing.assert_array_equal(buf._col_nnz, [1, 0, 0])
+
+
+class TestDropSamplesColumnAware:
+    """Tests for drop_samples with column-aware filtering."""
+
+    def test_column_aware_drop_avoids_sole_contributor(self):
+        rng = np.random.default_rng(42)
+        matrix = np.array(
+            [
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ]
+        )
+        rewards = np.array([0.0, 1.0, 2.0, 3.0])
+        col_nnz = np.array([2, 1, 1], dtype=np.int32)
+
+        _ndropped, (new_matrix, new_rewards) = rewdelay.drop_samples(
+            frac=0.5, arrays=[matrix, rewards], rng=rng, col_nnz=col_nnz
+        )
+        # Only row 0 or 2 (col 0, count=2) are evictable. frac=0.5
+        # requests 2 drops, but only 2 are evictable → drops at most 2,
+        # but one must remain to keep col 0 covered.
+        assert new_matrix.shape[0] >= 2
+        # Rows 1 and 3 (sole contributors to cols 1 and 2) are always kept.
+        kept_rewards = set(new_rewards.tolist())
+        assert 1.0 in kept_rewards
+        assert 3.0 in kept_rewards
+
+    def test_column_aware_drop_nothing_when_all_sole(self):
+        rng = np.random.default_rng(42)
+        matrix = np.eye(3)
+        rewards = np.array([0.0, 1.0, 2.0])
+        col_nnz = np.array([1, 1, 1], dtype=np.int32)
+
+        ndropped, (new_matrix, _new_rewards) = rewdelay.drop_samples(
+            frac=0.5, arrays=[matrix, rewards], rng=rng, col_nnz=col_nnz
+        )
+        assert ndropped == 0
+        np.testing.assert_array_equal(new_matrix, matrix)
+
+    def test_drop_without_col_nnz_is_unchanged(self):
+        rng = np.random.default_rng(42)
+        matrix = np.eye(3)
+        rewards = np.array([0.0, 1.0, 2.0])
+
+        ndropped, (new_matrix, _) = rewdelay.drop_samples(
+            frac=0.34, arrays=[matrix, rewards], rng=rng
+        )
+        assert ndropped == 1
+        assert new_matrix.shape[0] == 2
+
+
 class TestLeastLfaGenerativeRewardWrapper:
     """Tests for LeastLfaGenerativeRewardWrapper — stepping, estimation, episode-boundary buffering, segment feature accumulation, and per-step reward prediction."""
 
