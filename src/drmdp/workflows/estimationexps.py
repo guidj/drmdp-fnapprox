@@ -2,9 +2,10 @@
 Experiment specifications for the estimation-only encoding campaign.
 
 One estimation experiment per (environment, encoding, method, delay, noise
-multiplier): the estimators receive aggregate window sums under a random
-policy and are scored against the true per-step rewards, without policy
-learning. The encodings are the ones measured in the 2026-10-28 encoding
+multiplier): the estimators receive aggregate window sums from the
+environment's task oracle mixed with a uniform action draw at the campaign's
+exploration rate, and are scored against the true per-step rewards, without
+policy learning. The encodings are the ones measured in the 2026-10-28 encoding
 analyses: reward-structure encodings, the general transition recipe, the
 production feature maps, and uniform-bin space partitions. Dynamics structure
 means that an encoding assumes an environment's transition rule, not its
@@ -17,7 +18,10 @@ from typing import Any
 from drmdp import rewardfeat, rewdelay
 from drmdp.workflows import controlexps
 
-EPSILON = 0.1
+# exploration rate of the behaviour policy: the oracle acts on all other
+# steps, so the occupancy is goal-directed with an exploration floor
+EXPLORATION_RATE = 0.2
+POLICY_TYPE = "oracle"
 GAMMA = 1.0
 LEARNING_RATE_SPEC = {
     "name": "constant",
@@ -46,14 +50,18 @@ NOISE_STD_MULTIPLIERS: Sequence[float] = (0.0, 1.0)
 REFERENCE_STD = 1.0
 
 
-def estimation_experiment_specs() -> Sequence[Mapping[str, Any]]:
+def estimation_experiment_specs(
+    exploration_rate: float = EXPLORATION_RATE,
+    policy_type: str = POLICY_TYPE,
+) -> Sequence[Mapping[str, Any]]:
     """
     Estimation-only experiment specs.
 
     One spec per (env, encoding, noise multiplier): the encoding label
     and knowledge class are recorded in the experiment metadata, and the
     problem specs hold the method and delay axes. `feats_specs` is empty:
-    no control pipeline runs in this campaign.
+    no control pipeline runs in this campaign. `policy_type` and
+    `exploration_rate` set the behaviour policy of every problem spec.
     """
     specs: list[Mapping[str, Any]] = []
     for env_name, template in _env_templates().items():
@@ -72,7 +80,9 @@ def estimation_experiment_specs() -> Sequence[Mapping[str, Any]]:
                         "name": env_name,
                         "args": env_args,
                         "feats_specs": [[]],
-                        "problem_specs": _problem_specs(transition_feats_spec),
+                        "problem_specs": _problem_specs(
+                            transition_feats_spec, exploration_rate, policy_type
+                        ),
                         "metadata": {
                             "encoding": label,
                             "knowledge": knowledge,
@@ -277,6 +287,8 @@ def _mapper_axis(
 
 def _problem_specs(
     transition_feats_spec: Mapping[str, Any],
+    exploration_rate: float,
+    policy_type: str,
 ) -> Sequence[Mapping[str, Any]]:
     """Estimator × check-mode × delay axis."""
     specs = []
@@ -284,10 +296,10 @@ def _problem_specs(
         for mapper_name, mapper_args in _mapper_axis(transition_feats_spec):
             specs.append(
                 {
-                    "policy_type": "markovian",
+                    "policy_type": policy_type,
                     "reward_mapper": {"name": mapper_name, "args": mapper_args},
                     "delay_config": delay_config,
-                    "epsilon": EPSILON,
+                    "epsilon": exploration_rate,
                     "gamma": GAMMA,
                     "learning_rate_config": LEARNING_RATE_SPEC,
                 }

@@ -2,9 +2,10 @@
 Bootstrap and run estimation-only distributed jobs.
 
 The estimation-only campaign measures reward-estimation encodings without
-control: every experiment runs `task.estimation_only`, the random-policy
-loop that exercises the production estimator stack and records
-true-reward errors per estimation event.
+control: every experiment runs `task.estimation_only`, the fixed-behaviour
+loop that exercises the production estimator stack and records true-reward
+errors per estimation event. The behaviour policy is the environment's task
+oracle mixed with a uniform action draw at the campaign's exploration rate.
 """
 
 import argparse
@@ -33,6 +34,7 @@ class EstimationPipelineArgs:
     log_episode_frequency: int
     task_prefix: str
     use_seed: bool
+    exploration_rate: float
     # ray args
     cluster_uri: str | None
 
@@ -43,6 +45,7 @@ def create_tasks(
     task_prefix: str,
     log_episode_frequency: int,
     use_seed: bool,
+    exploration_rate: float = estimationexps.EXPLORATION_RATE,
 ) -> Sequence[core.ExperimentInstance]:
     """
     Experiment instances of the estimation-only campaign.
@@ -54,7 +57,9 @@ def create_tasks(
     cells of one environment would collapse onto each other in the
     estimation-event dedup.
     """
-    specs = estimationexps.estimation_experiment_specs()
+    specs = estimationexps.estimation_experiment_specs(
+        exploration_rate=exploration_rate
+    )
     experiments = specutils.parse_experiment_specs(specs=specs)
 
     cells: dict[str, list[core.Experiment]] = {}
@@ -132,6 +137,7 @@ def main(args: EstimationPipelineArgs) -> None:
         task_prefix=args.task_prefix,
         log_episode_frequency=args.log_episode_frequency,
         use_seed=args.use_seed,
+        exploration_rate=args.exploration_rate,
     )
 
     with ray.init(args.cluster_uri) as context:
@@ -157,6 +163,9 @@ def parse_args() -> EstimationPipelineArgs:
     arg_parser.add_argument("--log-episode-frequency", type=int, required=True)
     arg_parser.add_argument("--task-prefix", type=str, required=True)
     arg_parser.add_argument("--use-seed", action="store_true")
+    arg_parser.add_argument(
+        "--exploration-rate", type=float, default=estimationexps.EXPLORATION_RATE
+    )
     arg_parser.add_argument("--cluster-uri", type=str, default=None)
     known_args, unknown_args = arg_parser.parse_known_args()
     logger.info("Unknown args: %s", unknown_args)

@@ -23,7 +23,7 @@ class FTOpHook:
 
     @property
     def feature_dim(self) -> int:
-        return self.features.feature_dim
+        return int(self.features.feature_dim)
 
     def __call__(self, transition: rewardfeat.Transition) -> np.ndarray:
-        return self.features(transition)
+        return np.asarray(self.features(transition))

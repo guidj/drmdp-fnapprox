@@ -14,6 +14,7 @@ from drmdp import (
     envs,
     logger,
     optsol,
+    oracle,
     rewardeval,
     rewardfeat,
     rewdelay,
@@ -364,6 +365,9 @@ ONE_SHOT_REWARD_MAPPERS = frozenset(
     }
 )
 
+ESTIMATION_ORACLE_POLICY = "oracle"
+ESTIMATION_RANDOM_POLICY = "uniform-random"
+
 
 def estimation_only(exp_instance: core.ExperimentInstance):
     """
@@ -372,11 +376,12 @@ def estimation_only(exp_instance: core.ExperimentInstance):
     The env stack matches `policy_control`: shaping and noise on the
     training env, aggregate window sums from `DelayedRewardWrapper`,
     and the reward mapper with its true-reward evaluator built from the
-    clean proxy. The action source is a seeded uniform-random policy;
-    no value function is learned, so the occupancy is exploration
-    alone. One-shot estimators stop at their first estimation event:
-    the freeze ends information collection, and the remaining episodes
-    would add no measurement.
+    clean proxy. The action source is a task oracle mixed with a
+    uniform action draw at the problem's epsilon, or a uniform draw
+    alone; no value function is learned, so the occupancy is the
+    behaviour policy's. One-shot estimators stop at their first
+    estimation event: the freeze ends information collection, and the
+    remaining episodes would add no measurement.
     """
     env_spec = exp_instance.experiment.env_spec
     problem_spec = exp_instance.experiment.problem_spec
@@ -398,6 +403,8 @@ def estimation_only(exp_instance: core.ExperimentInstance):
         exp_instance.instance_id if exp_instance.run_config.use_seed else None
     )
     num_actions = int(env.action_space.n)
+    task_oracle = _estimation_oracle(env_spec.name, env, problem_spec.policy_type)
+    exploration_rate = problem_spec.epsilon
 
     def log_episode(episode: int, returns: Sequence[float]) -> None:
         exp_logger.log(
@@ -416,11 +423,14 @@ def estimation_only(exp_instance: core.ExperimentInstance):
         episode = 0
         for episode in range(num_episodes):
             seed = seeder.get_seed(episode=episode)
-            env.reset(seed=seed)
+            observation, _ = env.reset(seed=seed)
             rng = np.random.default_rng(seed)
             while True:
-                action = int(rng.integers(num_actions))
-                _, _, term, trunc, _ = env.step(action)
+                if task_oracle is None or rng.random() < exploration_rate:
+                    action = int(rng.integers(num_actions))
+                else:
+                    action = int(task_oracle.action(observation))
+                observation, _, term, trunc, _ = env.step(action)
                 run_steps += 1
                 if term or trunc:
                     break
@@ -438,6 +448,23 @@ def estimation_only(exp_instance: core.ExperimentInstance):
         if last_logged_episode < episode:
             log_episode(episode, returns)
     env.close()
+
+
+def _estimation_oracle(
+    env_name: str, env: gym.Env, policy_type: str
+) -> oracle.TaskOracle | None:
+    """
+    Task oracle of an estimation run's behaviour policy.
+
+    Returns None for the exploration-only policy. Raises for an unknown
+    policy type so a misconfigured campaign fails instead of running the
+    wrong behaviour.
+    """
+    if policy_type == ESTIMATION_ORACLE_POLICY:
+        return oracle.task_oracle(env_name, env)
+    if policy_type == ESTIMATION_RANDOM_POLICY:
+        return None
+    raise ValueError(f"Unknown estimation policy type: {policy_type}")
 
 
 def _one_shot_estimated(env: gym.Env, mapper_name: str) -> bool:
