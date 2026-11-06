@@ -45,6 +45,7 @@ def run_config_row(params: Mapping[str, Any]) -> dict[str, Any]:
         "exp_id": params["exp_id"],
         "instance_id": params["instance_id"],
         "env": env_spec["name"],
+        "gamma": problem.get("gamma"),
         "encoding": metadata.get("encoding"),
         "knowledge": metadata.get("knowledge"),
         "method": mapper["name"],
