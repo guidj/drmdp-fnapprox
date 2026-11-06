@@ -17,7 +17,7 @@ from typing import Any
 import numpy as np
 import tensorflow as tf
 
-from drmdp import mathutils
+from drmdp import constants, mathutils
 from drmdp.workflows import controlexps
 from drmdp.workflows.grids import rewest_runner
 
@@ -37,7 +37,7 @@ METHOD_CONFIGS: dict[str, dict[str, Any]] = {
         "attempt_estimation_episode": 10,
         "intercept": False,
         "impute_value": 0,
-        "estimation_buffer_mult": 25,
+        "estimation_buffer_mult": constants.DEFAULT_ESTIMATION_BUFFER_MULT,
         "estimation_check": "factors",
     },
     "bayes-least-lfa": {
@@ -45,7 +45,7 @@ METHOD_CONFIGS: dict[str, dict[str, Any]] = {
         "mode": "exponential",
         "intercept": False,
         "impute_value": 0,
-        "estimation_buffer_mult": 25,
+        "estimation_buffer_mult": constants.DEFAULT_ESTIMATION_BUFFER_MULT,
     },
     "impute-missing": {
         "impute_value": 0,

@@ -2,6 +2,7 @@
 
 import gymnasium as gym
 
+from drmdp import constants
 from drmdp.workflows import rewest
 
 
@@ -17,7 +18,7 @@ class TestCreateExpInstance:
             rewest_args={
                 "attempt_estimation_episode": 10,
                 "feats_spec": [],
-                "estimation_buffer_mult": 25,
+                "estimation_buffer_mult": constants.DEFAULT_ESTIMATION_BUFFER_MULT,
             },
             reward_delay=3,
             num_episodes=100,

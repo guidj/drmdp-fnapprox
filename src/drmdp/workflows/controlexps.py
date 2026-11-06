@@ -6,8 +6,9 @@ from typing import Any
 
 import numpy as np
 
-from drmdp import rewardfeat
+from drmdp import constants, rewardfeat
 from drmdp.envs import gridutils
+from drmdp.workflows import estimationencodings
 
 EPSILON = 0.1
 MAX_STEPS_PER_EPISODE_GEM = 10_000
@@ -79,7 +80,9 @@ def least_specs(
                         "attempt_estimation_episode": attempt_estimation_episode,
                         "transition_feats_spec": transition_feats_spec,
                         "impute_value": impute_value,
-                        "estimation_buffer_mult": 25,
+                        "estimation_buffer_mult": (
+                            constants.DEFAULT_ESTIMATION_BUFFER_MULT
+                        ),
                         "intercept": False,
                         "estimation_check": estimation_check,
                     },
@@ -126,7 +129,9 @@ def bayes_least_specs(
                         "mode": "exponential",
                         "transition_feats_spec": transition_feats_spec,
                         "impute_value": impute_value,
-                        "estimation_buffer_mult": 25,
+                        "estimation_buffer_mult": (
+                            constants.DEFAULT_ESTIMATION_BUFFER_MULT
+                        ),
                         "intercept": False,
                         "sample_weights": sample_weights,
                     },
@@ -526,29 +531,13 @@ def gaussian_illustration_experiment_specs(
     and its reward estimate is fixed, as LEAST's.
     """
     mc_est_feats: Sequence[Mapping[str, Any]] = [
-        rewardfeat.current_and_successor_features_spec(
-            current_spec=[
-                {"name": "tile-observation-action-ft", "args": {"tiling_dim": 3}}
-            ],
-            successor_spec=[
-                {"name": "tile-observation-action-ft", "args": {"tiling_dim": 3}}
-            ],
-        )
+        estimationencodings.mc_structural_sine()
     ]
     acrobot_est_feats: Sequence[Mapping[str, Any]] = [
-        {"name": "action-and-termination-features", "args": {}}
+        estimationencodings.action_termination()
     ]
-    gw_dead_ohe = grid_dead_ohe_indices(MINES_GW_GRID)
     gw_est_feats: Sequence[Mapping[str, Any]] = [
-        rewardfeat.current_features_spec(
-            current_spec=[
-                {"name": "flat-grid-observation-action-ft", "args": {}},
-                {
-                    "name": "drop-observation-dims-ft",
-                    "args": {"axis_dims": {0: gw_dead_ohe}},
-                },
-            ]
-        )
+        estimationencodings.gridworld_transition_anomaly()
     ]
 
     env_templates: list[Mapping[str, Any]] = [

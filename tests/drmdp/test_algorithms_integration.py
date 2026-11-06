@@ -8,7 +8,16 @@ from typing import Any
 
 import numpy as np
 
-from drmdp import algorithms, core, envs, logger, rewdelay, task, transform
+from drmdp import (
+    algorithms,
+    constants,
+    core,
+    envs,
+    logger,
+    rewdelay,
+    task,
+    transform,
+)
 from drmdp.workflows import controlexps
 from tests.drmdp.testhelpers import assert_training_snapshots
 
@@ -186,7 +195,7 @@ class TestPolicyControlEndToEnd:
                     "args": {
                         "attempt_estimation_episode": 3,
                         "impute_value": 0,
-                        "estimation_buffer_mult": 25,
+                        "estimation_buffer_mult": constants.DEFAULT_ESTIMATION_BUFFER_MULT,
                         "estimation_check": "factors",
                         "transition_feats_spec": {
                             "name": "current-features",

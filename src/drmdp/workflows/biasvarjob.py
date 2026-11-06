@@ -38,7 +38,17 @@ import pandas as pd
 import ray
 import ray.data
 
-from drmdp import core, dataproc, envs, ioutils, metrics, rewdelay, task, transform
+from drmdp import (
+    constants,
+    core,
+    dataproc,
+    envs,
+    ioutils,
+    metrics,
+    rewdelay,
+    task,
+    transform,
+)
 from drmdp.workflows import raytasks
 
 logger = logging.getLogger(__name__)
@@ -225,7 +235,9 @@ def least_lfa_specs(
                         "name": "current-features",
                         "args": {"current_spec": feat_spec},
                     },
-                    "estimation_buffer_mult": 25,
+                    "estimation_buffer_mult": (
+                        constants.DEFAULT_ESTIMATION_BUFFER_MULT
+                    ),
                 },
             }
         )
@@ -251,7 +263,9 @@ def bayes_least_lfa_specs(
                         "name": "current-features",
                         "args": {"current_spec": feat_spec},
                     },
-                    "estimation_buffer_mult": 25,
+                    "estimation_buffer_mult": (
+                        constants.DEFAULT_ESTIMATION_BUFFER_MULT
+                    ),
                 },
             }
         )

@@ -1,4 +1,8 @@
-from drmdp.workflows import controlexps
+from collections.abc import Mapping, Sequence
+from typing import Any
+
+from drmdp import constants, task
+from drmdp.workflows import controlexps, estimationencodings, estimationexps
 
 
 class TestGridDeadOheIndices:
@@ -115,3 +119,88 @@ class TestBladeTdRewardSampling:
         assert bayes_args
         for args in bayes_args:
             assert args["sample_weights"] is False
+
+
+class TestEstimatorEncoding:
+    """The estimator encoding per environment is a campaign encoding."""
+
+    def test_encoding_is_the_selected_campaign_encoding(self):
+        expected = {
+            "MountainCar-v0": estimationencodings.mc_structural_sine(),
+            "Acrobot-v1": estimationencodings.action_termination(),
+            "GridWorld-MINES": estimationencodings.gridworld_transition_anomaly(),
+        }
+        for spec in controlexps.gaussian_illustration_experiment_specs():
+            for mapper_name in ("least-lfa", "bayes-least-lfa"):
+                for args in _estimator_args(spec, mapper_name):
+                    assert args["transition_feats_spec"] == expected[spec["name"]]
+
+    def test_encoding_is_a_campaign_cell(self):
+        # the selected encodings are campaign encodings, so a control run
+        # compares against a campaign cell rather than a third recipe
+        campaign: dict[str, list[Mapping[str, Any]]] = {}
+        for spec in estimationexps.estimation_experiment_specs():
+            for args in _estimator_args(spec, "least-lfa"):
+                campaign.setdefault(spec["name"], []).append(
+                    args["transition_feats_spec"]
+                )
+        for spec in controlexps.gaussian_illustration_experiment_specs():
+            for args in _estimator_args(spec, "least-lfa"):
+                assert args["transition_feats_spec"] in campaign[spec["name"]]
+
+    def test_feature_map_dimensions(self):
+        # constant and terminal-gated sine: 2; action-gated termination: 6;
+        # constant and anomaly indicator: 2
+        expected = {"MountainCar-v0": 2, "Acrobot-v1": 6, "GridWorld-MINES": 2}
+        measured: dict[str, int] = {}
+        for spec in controlexps.gaussian_illustration_experiment_specs():
+            if spec["name"] in measured:
+                continue
+            proxied = task.create_env(spec["name"], args=dict(spec["args"]), gamma=1.0)
+            try:
+                dims = {
+                    task.estimator_feats_fn(
+                        proxied.proxy, "least-lfa", dict(args)
+                    ).feature_dim
+                    for args in _estimator_args(spec, "least-lfa")
+                }
+                # every delay and check mode of a cell shares one encoding
+                assert len(dims) == 1
+                measured[spec["name"]] = dims.pop()
+            finally:
+                proxied.env.close()
+                proxied.proxy.close()
+        assert measured == expected
+
+
+class TestEstimatorConfiguration:
+    """The estimator configurations are unchanged by the encoding selection."""
+
+    def test_least_keeps_the_factors_gate(self):
+        for spec in controlexps.gaussian_illustration_experiment_specs():
+            for args in _estimator_args(spec, "least-lfa"):
+                assert args["estimation_check"] == "factors"
+                assert args["attempt_estimation_episode"] == 10
+                assert args["estimation_buffer_mult"] == (
+                    constants.DEFAULT_ESTIMATION_BUFFER_MULT
+                )
+
+    def test_bayes_keeps_the_absent_gate(self):
+        # no estimation_check key: the wrapper's default is no gate
+        for spec in controlexps.gaussian_illustration_experiment_specs():
+            for args in _estimator_args(spec, "bayes-least-lfa"):
+                assert "estimation_check" not in args
+                assert args["init_attempt_estimation_episode"] == 10
+                assert args["estimation_buffer_mult"] == (
+                    constants.DEFAULT_ESTIMATION_BUFFER_MULT
+                )
+
+
+def _estimator_args(
+    spec: Mapping[str, Any], mapper_name: str
+) -> Sequence[Mapping[str, Any]]:
+    return [
+        problem_spec["reward_mapper"]["args"]
+        for problem_spec in spec["problem_specs"]
+        if problem_spec["reward_mapper"]["name"] == mapper_name
+    ]

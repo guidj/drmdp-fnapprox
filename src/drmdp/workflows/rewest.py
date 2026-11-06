@@ -15,6 +15,7 @@ import numpy as np
 import ray
 
 from drmdp import (
+    constants,
     core,
     envs,
     ioutils,
@@ -135,7 +136,9 @@ class RewardStoreWrapper(gym.Wrapper):
 def discrete_least_specs(
     attempt_estimation_episodes: Sequence[int],
     feat_specs: Sequence[Sequence[Mapping[str, Any]]],
-    estimation_buffer_multiples: Sequence[int | None] = (25,),
+    estimation_buffer_multiples: Sequence[int | None] = (
+        constants.DEFAULT_ESTIMATION_BUFFER_MULT,
+    ),
 ):
     """
     Discretised Least Squares specs.
@@ -163,7 +166,9 @@ def discrete_least_specs(
 def least_specs(
     attempt_estimation_episodes: Sequence[int],
     feat_specs: Sequence[Sequence[Mapping[str, Any]]],
-    estimation_buffer_multiples: Sequence[int | None] = (25,),
+    estimation_buffer_multiples: Sequence[int | None] = (
+        constants.DEFAULT_ESTIMATION_BUFFER_MULT,
+    ),
 ):
     """
     Least Squares specs.
@@ -191,7 +196,9 @@ def least_specs(
 def bayes_least_specs(
     init_attempt_estimation_episodes: Sequence[int],
     feat_specs: Sequence[Sequence[Mapping[str, Any]]],
-    estimation_buffer_multiples: Sequence[int | None] = (25,),
+    estimation_buffer_multiples: Sequence[int | None] = (
+        constants.DEFAULT_ESTIMATION_BUFFER_MULT,
+    ),
 ):
     """
     Bayesian linear regression specs.
@@ -220,7 +227,9 @@ def bayes_least_specs(
 def cvlps_specs(
     attempt_estimation_episodes: Sequence[int],
     feat_specs: Sequence[Sequence[Mapping[str, Any]]],
-    estimation_buffer_multiples: Sequence[int | None] = (25,),
+    estimation_buffer_multiples: Sequence[int | None] = (
+        constants.DEFAULT_ESTIMATION_BUFFER_MULT,
+    ),
     constraints_buffer_limit: int | None = 100,
 ):
     """
@@ -250,7 +259,9 @@ def cvlps_specs(
 def recurring_cvlps(
     init_attempt_estimation_episodes: Sequence[int],
     feat_specs: Sequence[Sequence[Mapping[str, Any]]],
-    estimation_buffer_multiples: Sequence[int | None] = (25,),
+    estimation_buffer_multiples: Sequence[int | None] = (
+        constants.DEFAULT_ESTIMATION_BUFFER_MULT,
+    ),
     constraints_buffer_limit: int | None = 100,
 ):
     """

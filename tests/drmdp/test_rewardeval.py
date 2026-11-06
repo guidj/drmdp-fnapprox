@@ -8,7 +8,15 @@ import gymnasium as gym
 import numpy as np
 import pytest
 
-from drmdp import core, optsol, rewardeval, rewardfeat, task, transform
+from drmdp import (
+    constants,
+    core,
+    optsol,
+    rewardeval,
+    rewardfeat,
+    task,
+    transform,
+)
 from drmdp.envs import gympg, models
 from drmdp.workflows import controlexps
 from tests.drmdp.hookhelpers import FTOpHook
@@ -501,7 +509,7 @@ class TestPolicyControlRewardErrorLogging:
                                 },
                             },
                             "impute_value": 0,
-                            "estimation_buffer_mult": 25,
+                            "estimation_buffer_mult": constants.DEFAULT_ESTIMATION_BUFFER_MULT,
                         },
                     },
                     delay_config={

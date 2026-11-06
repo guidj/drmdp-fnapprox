@@ -5,7 +5,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-from drmdp import core, envs, rewdelay, task, transform
+from drmdp import constants, core, envs, rewdelay, task, transform
 from drmdp.envs import wrappers
 from drmdp.workflows import controlexps
 from tests.drmdp.testhelpers import assert_training_snapshots
@@ -344,7 +344,7 @@ class TestRewardMapper:
                 "args": {
                     "attempt_estimation_episode": 10,
                     "impute_value": 0,
-                    "estimation_buffer_mult": 25,
+                    "estimation_buffer_mult": constants.DEFAULT_ESTIMATION_BUFFER_MULT,
                     "estimation_check": "none",
                     "transition_feats_spec": {
                         "name": "current-features",
@@ -380,7 +380,7 @@ class TestRewardMapper:
                 "args": {
                     "init_attempt_estimation_episode": 10,
                     "impute_value": 0,
-                    "estimation_buffer_mult": 25,
+                    "estimation_buffer_mult": constants.DEFAULT_ESTIMATION_BUFFER_MULT,
                     "transition_feats_spec": {
                         "name": "current-features",
                         "args": {

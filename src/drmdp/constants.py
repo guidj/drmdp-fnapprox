@@ -33,6 +33,12 @@ SINGLE_STEP_POLICY = "single-step"
 
 DEFAULT_BATCH_SIZE = 1
 
+# estimation-buffer capacity as a multiple of the estimator's feature
+# dimension: the buffer retains DEFAULT_ESTIMATION_BUFFER_MULT * mdim completed
+# delay windows. Value shared by every experiment family that estimates rewards
+# from aggregate windows, so estimation error is compared at one sample budget.
+DEFAULT_ESTIMATION_BUFFER_MULT = 100
+
 SARSA = "sarsa"
 
 

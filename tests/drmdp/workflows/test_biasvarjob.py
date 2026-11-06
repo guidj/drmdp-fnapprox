@@ -1,6 +1,6 @@
 """Tests for biasvarjob.py — spec builders and job creation."""
 
-from drmdp import rewdelay
+from drmdp import constants, rewdelay
 from drmdp.workflows import biasvarjob
 
 
@@ -121,7 +121,7 @@ class TestCreateExpInstance:
             rewest_args={
                 "attempt_estimation_episode": 10,
                 "feats_spec": [],
-                "estimation_buffer_mult": 25,
+                "estimation_buffer_mult": constants.DEFAULT_ESTIMATION_BUFFER_MULT,
             },
             reward_delay=3,
             gamma=0.99,
