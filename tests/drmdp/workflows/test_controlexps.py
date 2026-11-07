@@ -82,6 +82,33 @@ class TestDefaultDelayConfig:
         assert within_budget == [True, False, False]
 
 
+class TestDiscountFactorGrid:
+    """The discount sweep, propagated from the shared default to the specs."""
+
+    def test_family_specs_carry_the_default_discount_sweep(self):
+        # the family passes no `discounts` argument, so the shared default
+        # alone sets its arm count
+        gammas = {
+            problem_spec["gamma"]
+            for spec in controlexps.gaussian_illustration_experiment_specs()
+            for problem_spec in spec["problem_specs"]
+        }
+        assert gammas == set(controlexps.DEFAULT_DISCOUNT_FACTORS)
+        assert gammas == {1.0, 0.99, 0.98}
+
+    def test_common_specs_one_no_delay_arm_per_discount(self):
+        # every discount contributes exactly one no-delay FR spec; a missing
+        # discount would also remove that method's reference for the gamma
+        no_delay = [
+            spec
+            for spec in controlexps.common_problem_specs(include_options=False)
+            if spec["delay_config"] is None
+        ]
+        assert [spec["gamma"] for spec in no_delay] == list(
+            controlexps.DEFAULT_DISCOUNT_FACTORS
+        )
+
+
 class TestGaussianIllustrationNoiseSpecs:
     def test_relative_noise_with_unit_magnitude(self):
         specs = controlexps.gaussian_illustration_experiment_specs()
