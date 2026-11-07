@@ -6,7 +6,7 @@ from typing import Any
 
 import numpy as np
 
-from drmdp import constants, rewardfeat
+from drmdp import constants, rewardfeat, rewdelay
 from drmdp.envs import gridutils
 from drmdp.workflows import estimationencodings
 
@@ -103,10 +103,21 @@ def bayes_least_specs(
     discounts: Sequence[float] = DEFAULT_DISCOUNT_FACTORS,
     impute_value: float = DEFAULT_IMPUTE_VALUE,
     sample_weights: bool = False,
+    error_variance: str = rewdelay.ERROR_VARIANCE_UNIT,
 ) -> Sequence[Mapping[str, Any]]:
     """
     Bayesian linear regression specs.
+
+    The mapper name carries the error-variance mode: aggregation labels a
+    run by its mapper name alone, so the NIG mode needs a name of its own
+    to stay apart from the unit-variance estimator.
     """
+    error_variance = rewdelay.resolve_error_variance(error_variance)
+    mapper_name = (
+        "blade-td-nig"
+        if error_variance == rewdelay.ERROR_VARIANCE_NIG
+        else "bayes-least-lfa"
+    )
     specs = []
     for (
         delay_config,
@@ -123,7 +134,7 @@ def bayes_least_specs(
             {
                 "policy_type": "markovian",
                 "reward_mapper": {
-                    "name": "bayes-least-lfa",
+                    "name": mapper_name,
                     "args": {
                         "init_attempt_estimation_episode": init_attempt_estimation_episode,
                         "mode": "exponential",
@@ -134,6 +145,7 @@ def bayes_least_specs(
                         ),
                         "intercept": False,
                         "sample_weights": sample_weights,
+                        "error_variance": error_variance,
                     },
                 },
                 "delay_config": delay_config,

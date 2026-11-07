@@ -1735,6 +1735,137 @@ class TestBayesLeastLfaGenerativeRewardWrapper:
             np.testing.assert_allclose(weights, wrapper.mv_normal_rewards.mean)
 
 
+class TestBayesErrorVariance:
+    """BLADE-TD error-variance modes: the fixed unit scale versus NIG."""
+
+    class _ObservationFeatures:
+        """Observation-driven features, so window sums vary across batches."""
+
+        @property
+        def feature_dim(self):
+            return 4
+
+        def __call__(self, transition):
+            return np.array([*transition.observation, 1.0])
+
+    class _VaryingEnv(gym.Env):
+        """Observation changes every episode; reward is constant."""
+
+        def __init__(self, term_steps=2):
+            self.observation_space = spaces.Box(low=-10.0, high=10.0, shape=(3,))
+            self.action_space = spaces.Discrete(3)
+            self.term_steps = term_steps
+            self.episode = 0
+            self.step_count = 0
+
+        def _observation(self):
+            return np.array(
+                [0.7 * self.episode, -0.3 * self.episode + self.step_count, 1.5]
+            )
+
+        def step(self, action):
+            del action
+            self.step_count += 1
+            terminated = self.step_count >= self.term_steps
+            return self._observation(), 1.0, terminated, False, {}
+
+        def reset(self, seed=None, options=None):
+            del seed
+            del options
+            self.step_count = 0
+            self.episode += 1
+            return self._observation(), {}
+
+    def _make_wrapper(self, **kwargs):
+        env = self._VaryingEnv(term_steps=2)
+        delayed = rewdelay.DelayedRewardWrapper(env, rewdelay.FixedDelay(delay=2))
+        return rewdelay.BayesLeastLfaGenerativeRewardWrapper(
+            delayed,
+            feats_fn=self._ObservationFeatures(),
+            init_attempt_estimation_episode=1,
+            estimation_check="none",
+            **kwargs,
+        )
+
+    def _force_estimate(self, wrapper):
+        while wrapper.est_buffer.size() < wrapper.mdim:
+            wrapper.reset()
+            done = False
+            while not done:
+                _, _, term, trunc, _ = wrapper.step(0)
+                done = term or trunc
+        wrapper.estimate_rewards()
+        assert wrapper._has_estimate()
+
+    def test_default_mode_is_the_fixed_unit_variance(self):
+        wrapper = self._make_wrapper()
+        assert wrapper.error_variance == rewdelay.ERROR_VARIANCE_UNIT
+        self._force_estimate(wrapper)
+        assert isinstance(wrapper.mv_normal_rewards, optsol.MultivariateNormal)
+        snapshot = wrapper.estimation_meta["snapshots"][0]
+        assert "sigma2_hat" not in snapshot["estimate"]
+        info = wrapper._get_estimator_info()
+        assert info["error_variance"] == rewdelay.ERROR_VARIANCE_UNIT
+        assert "sigma2_hat" not in info
+
+    def test_nig_mode_fits_a_normal_inverse_gamma_posterior(self):
+        wrapper = self._make_wrapper(error_variance=rewdelay.ERROR_VARIANCE_NIG)
+        self._force_estimate(wrapper)
+        posterior = wrapper.mv_normal_rewards
+        assert isinstance(posterior, optsol.NormalInverseGamma)
+        assert posterior.ig.variance > 0.0
+        assert posterior.ig.shape > 0.0
+
+    def test_nig_mode_reports_the_variance_estimate(self):
+        wrapper = self._make_wrapper(error_variance=rewdelay.ERROR_VARIANCE_NIG)
+        self._force_estimate(wrapper)
+        posterior = wrapper.mv_normal_rewards
+        expected = posterior.ig.variance
+        snapshot = wrapper.estimation_meta["snapshots"][0]
+        assert snapshot["estimate"]["sigma2_hat"] == pytest.approx(expected)
+        info = wrapper._get_estimator_info()
+        assert info["error_variance"] == rewdelay.ERROR_VARIANCE_NIG
+        assert info["sigma2_hat"] == pytest.approx(expected)
+
+    def test_nig_mode_leaves_the_posterior_mean_unchanged(self):
+        # identical batches: the variance scale multiplies the covariance and
+        # cancels from the mean recursion
+        unit = self._make_wrapper(error_variance=rewdelay.ERROR_VARIANCE_UNIT)
+        nig = self._make_wrapper(error_variance=rewdelay.ERROR_VARIANCE_NIG)
+        self._force_estimate(unit)
+        self._force_estimate(nig)
+        unit_posterior = unit.mv_normal_rewards
+        nig_posterior = nig.mv_normal_rewards
+        np.testing.assert_allclose(nig_posterior.mean, unit_posterior.mean, atol=1e-8)
+        np.testing.assert_allclose(
+            nig_posterior.cov,
+            nig_posterior.ig.variance * unit_posterior.cov,
+            rtol=1e-6,
+            atol=1e-10,
+        )
+
+    def test_nig_mode_estimates_zero_variance_on_representable_rewards(self):
+        # a constant feature vector represents the constant dummy reward
+        # exactly, leaving no residual for the variance to absorb
+        env = DummyEnv(term_steps=2)
+        delayed = rewdelay.DelayedRewardWrapper(env, rewdelay.FixedDelay(delay=2))
+        wrapper = rewdelay.BayesLeastLfaGenerativeRewardWrapper(
+            delayed,
+            feats_fn=FTOpHook(DummyFTOp(env)),
+            init_attempt_estimation_episode=1,
+            estimation_check="none",
+            error_variance=rewdelay.ERROR_VARIANCE_NIG,
+        )
+        self._force_estimate(wrapper)
+        posterior = wrapper.mv_normal_rewards
+        assert isinstance(posterior, optsol.NormalInverseGamma)
+        assert posterior.ig.variance < 1e-12
+
+    def test_unknown_error_variance_raises(self):
+        with pytest.raises(ValueError, match="unknown error_variance"):
+            self._make_wrapper(error_variance="heteroscedastic")
+
+
 class TestConvexSolverGenerativeRewardWrapper:
     """Tests for ConvexSolverGenerativeRewardWrapper — initialisation, stepping, and estimation."""
 

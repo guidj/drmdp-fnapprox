@@ -377,11 +377,14 @@ def delay_wrapper(env: gym.Env, reward_delay: rewdelay.RewardDelay | None) -> gy
     return env
 
 
+NIG_REWARD_MAPPERS = frozenset({"blade-td-nig", "nig-least-lfa"})
+BAYES_REWARD_MAPPERS = frozenset({"bayes-least-lfa", *NIG_REWARD_MAPPERS})
+
 ESTIMATOR_MAPPERS = frozenset(
     {
         "discrete-least-lfa",
         "least-lfa",
-        "bayes-least-lfa",
+        *BAYES_REWARD_MAPPERS,
         "cvlps",
         "recurring-cvlps",
     }
@@ -565,7 +568,17 @@ def reward_mapper(
             rng_seed=rng_seed,
             **m_args,
         )
-    elif name == "bayes-least-lfa":
+    elif name in BAYES_REWARD_MAPPERS:
+        if name in NIG_REWARD_MAPPERS:
+            error_variance = rewdelay.resolve_error_variance(
+                m_args.get("error_variance", rewdelay.ERROR_VARIANCE_NIG)
+            )
+            if error_variance != rewdelay.ERROR_VARIANCE_NIG:
+                raise ValueError(
+                    f"{name} selects the NIG error variance; got "
+                    f"error_variance={error_variance!r}"
+                )
+            m_args["error_variance"] = error_variance
         return rewdelay.BayesLeastLfaGenerativeRewardWrapper(
             env=env,
             feats_fn=feats_fn,

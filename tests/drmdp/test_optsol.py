@@ -325,6 +325,139 @@ class TestMultivariateNormal:
         assert mv._factor is factor
 
 
+class TestNormalInverseGamma:
+    """Conjugate variance estimation: mean invariance, pooled scale, t draws."""
+
+    def _batches(self, rng, dim, num_batches, rows, variance):
+        beta = rng.normal(size=dim)
+        batches = []
+        for _ in range(num_batches):
+            matrix = rng.normal(size=(rows, dim))
+            rhs = matrix @ beta + rng.normal(scale=np.sqrt(variance), size=rows)
+            batches.append((matrix, rhs))
+        return batches
+
+    def _sequential(self, batches):
+        posterior = optsol.NormalInverseGamma.least_squares(*batches[0])
+        for matrix, rhs in batches[1:]:
+            posterior = posterior.update(matrix, rhs)
+        return posterior
+
+    def test_least_squares_estimates_the_variance_scale(self):
+        rng = np.random.default_rng(0)
+        variance = 2.5
+        matrix, rhs = self._batches(
+            rng, dim=4, num_batches=1, rows=4000, variance=variance
+        )[0]
+        posterior = optsol.NormalInverseGamma.least_squares(matrix, rhs)
+        assert posterior.ig.variance == pytest.approx(variance, rel=0.1)
+        assert posterior.ig.degrees_of_freedom == pytest.approx(4000)
+
+    def test_sequential_updates_recover_the_variance_scale(self):
+        rng = np.random.default_rng(1)
+        variance = 4.0
+        posterior = self._sequential(
+            self._batches(rng, dim=5, num_batches=6, rows=600, variance=variance)
+        )
+        assert posterior.ig.variance == pytest.approx(variance, rel=0.1)
+
+    def test_posterior_mean_matches_the_fixed_variance_recursion(self):
+        # the variance scale cancels from the mean recursion, so the two
+        # posteriors differ only in their covariance
+        rng = np.random.default_rng(2)
+        batches = self._batches(rng, dim=3, num_batches=4, rows=250, variance=9.0)
+        posterior = self._sequential(batches)
+        reference = optsol.MultivariateNormal.least_squares(*batches[0])
+        for matrix, rhs in batches[1:]:
+            reference = reference.update(matrix, rhs)
+        np.testing.assert_allclose(posterior.mean, reference.mean, atol=1e-8)
+        assert not np.allclose(posterior.cov, reference.cov)
+
+    def test_scale_is_the_pooled_residual_sum_of_squares(self):
+        # the telescoping update identity makes 2b the pooled residual sum of
+        # squares at the final mean, and 2a the pooled row count
+        rng = np.random.default_rng(3)
+        batches = self._batches(rng, dim=3, num_batches=5, rows=120, variance=1.0)
+        posterior = self._sequential(batches)
+        pooled_matrix = np.vstack([matrix for matrix, _ in batches])
+        pooled_rhs = np.concatenate([rhs for _, rhs in batches])
+        residual = pooled_rhs - pooled_matrix @ posterior.mean
+        assert posterior.ig.degrees_of_freedom == pytest.approx(pooled_matrix.shape[0])
+        assert 2.0 * posterior.ig.scale == pytest.approx(residual @ residual)
+
+    def test_covariance_is_the_variance_scaled_information_inverse(self):
+        rng = np.random.default_rng(4)
+        matrix, rhs = self._batches(rng, dim=4, num_batches=1, rows=300, variance=2.0)[
+            0
+        ]
+        posterior = optsol.NormalInverseGamma.least_squares(matrix, rhs)
+        expected = posterior.ig.variance * np.linalg.pinv(matrix.T @ matrix)
+        np.testing.assert_allclose(posterior.cov, expected, atol=1e-10)
+
+    def test_samples_reproduce_the_student_t_variance(self):
+        rng = np.random.default_rng(5)
+        matrix, rhs = self._batches(rng, dim=3, num_batches=1, rows=20, variance=3.0)[0]
+        posterior = optsol.NormalInverseGamma.least_squares(matrix, rhs)
+        degrees_of_freedom = posterior.ig.degrees_of_freedom
+        draw_rng = np.random.default_rng(6)
+        num_samples = 40000
+        samples = np.array([posterior.sample(draw_rng) for _ in range(num_samples)])
+
+        np.testing.assert_allclose(samples.mean(axis=0), posterior.mean, atol=0.1)
+
+        # a Student-t has variance nu/(nu-2) times its scale matrix, so the
+        # scale alone under-predicts the dispersion of the draws
+        inflation = degrees_of_freedom / (degrees_of_freedom - 2.0)
+        for direction in (np.array([1.0, 0.0, 0.0]), np.array([1.0, -1.0, 0.5])):
+            direction = direction / np.linalg.norm(direction)
+            scale_variance = direction @ posterior.cov @ direction
+            sample_variance = np.var(samples @ direction, ddof=1)
+            assert sample_variance == pytest.approx(
+                scale_variance * inflation, rel=0.05
+            )
+            assert sample_variance > scale_variance
+
+    def test_zero_residual_gives_zero_variance_and_collapsed_draws(self):
+        beta = np.array([1.0, -2.0])
+        matrix = np.array([[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]])
+        rhs = matrix @ beta
+        posterior = optsol.NormalInverseGamma.least_squares(matrix, rhs)
+        assert posterior.ig.variance == pytest.approx(0.0, abs=1e-12)
+        draw_rng = np.random.default_rng(7)
+        draws = np.array([posterior.sample(draw_rng) for _ in range(20)])
+        np.testing.assert_allclose(draws, np.tile(posterior.mean, (20, 1)), atol=1e-6)
+
+    def test_rank_deficient_information_gives_finite_draws(self):
+        rng = np.random.default_rng(8)
+        column = rng.normal(size=30)
+        matrix = np.column_stack([column, column, 2.0 * column])
+        rhs = 3.0 * column + rng.normal(scale=0.5, size=30)
+        posterior = optsol.NormalInverseGamma.least_squares(matrix, rhs)
+        draw_rng = np.random.default_rng(9)
+        draws = np.array([posterior.sample(draw_rng) for _ in range(200)])
+        assert np.all(np.isfinite(draws))
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            for _ in range(20):
+                posterior.sample(draw_rng)
+
+    def test_inverse_gamma_requires_positive_shape(self):
+        with pytest.raises(ValueError, match="shape must be positive"):
+            assert optsol.InverseGamma(shape=0.0, scale=1.0).variance
+
+    def test_update_uses_self_as_prior(self):
+        rng = np.random.default_rng(10)
+        first, second = self._batches(rng, dim=2, num_batches=2, rows=80, variance=1.0)
+        posterior = optsol.NormalInverseGamma.least_squares(*first)
+        updated = posterior.update(*second)
+        expected = optsol.NormalInverseGamma.bayes_linear_regression(
+            *second, prior=posterior
+        )
+        np.testing.assert_allclose(updated.mean, expected.mean, atol=1e-12)
+        assert updated.ig.shape == expected.ig.shape
+        assert updated.ig.scale == expected.ig.scale
+
+
 class TestSolveConvexLeastSquares:
     def test_unconstrained(self):
         matrix = np.array([[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]])

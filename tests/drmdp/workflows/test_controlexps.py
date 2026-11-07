@@ -1,6 +1,8 @@
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+import pytest
+
 from drmdp import constants, task
 from drmdp.workflows import controlexps, estimationencodings, estimationexps
 
@@ -171,6 +173,42 @@ class TestEstimatorEncoding:
                 proxied.env.close()
                 proxied.proxy.close()
         assert measured == expected
+
+
+class TestBayesLeastSpecsMapperName:
+    """The mapper name carries the error-variance mode."""
+
+    _FEATS: tuple[Mapping[str, Any], ...] = ({"name": "current-features", "args": {}},)
+
+    def test_unit_variance_keeps_the_blade_td_name(self):
+        specs = controlexps.bayes_least_specs(
+            init_attempt_estimation_episodes=(10,), transition_feats_specs=self._FEATS
+        )
+        assert specs
+        for spec in specs:
+            assert spec["reward_mapper"]["name"] == "bayes-least-lfa"
+            assert spec["reward_mapper"]["args"]["error_variance"] == "unit"
+
+    def test_nig_mode_selects_the_nig_mapper_name(self):
+        # aggregation labels a run by its mapper name alone, so the NIG
+        # mode needs a name of its own to be separated from unit variance
+        specs = controlexps.bayes_least_specs(
+            init_attempt_estimation_episodes=(10,),
+            transition_feats_specs=self._FEATS,
+            error_variance="nig",
+        )
+        assert specs
+        for spec in specs:
+            assert spec["reward_mapper"]["name"] == "blade-td-nig"
+            assert spec["reward_mapper"]["args"]["error_variance"] == "nig"
+
+    def test_unknown_error_variance_is_rejected(self):
+        with pytest.raises(ValueError, match="error_variance"):
+            controlexps.bayes_least_specs(
+                init_attempt_estimation_episodes=(10,),
+                transition_feats_specs=self._FEATS,
+                error_variance="inverse-gamma",
+            )
 
 
 class TestEstimatorConfiguration:

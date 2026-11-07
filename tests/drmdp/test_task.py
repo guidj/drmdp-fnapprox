@@ -402,6 +402,74 @@ class TestRewardMapper:
         result.close()
         proxy.close()
 
+    @pytest.mark.parametrize("mapper_name", sorted(task.NIG_REWARD_MAPPERS))
+    def test_blade_td_nig_selects_the_nig_error_variance(self, mapper_name):
+        env, proxy = self._make_env()
+        env, _ = task.monitor_wrapper(env)
+        env = task.delay_wrapper(env, rewdelay.FixedDelay(delay=3))
+        result = task.reward_mapper(
+            env,
+            proxy_env=proxy,
+            mapping_spec={
+                "name": mapper_name,
+                "args": {
+                    "init_attempt_estimation_episode": 10,
+                    "estimation_buffer_mult": constants.DEFAULT_ESTIMATION_BUFFER_MULT,
+                    "transition_feats_spec": {
+                        "name": "current-features",
+                        "args": {
+                            "current_spec": [
+                                {
+                                    "name": "tile-observation-action-ft",
+                                    "args": {"tiling_dim": 2},
+                                }
+                            ]
+                        },
+                    },
+                },
+            },
+        )
+        assert isinstance(result, rewdelay.BayesLeastLfaGenerativeRewardWrapper)
+        assert result.get_wrapper_attr("error_variance") == (
+            rewdelay.ERROR_VARIANCE_NIG
+        )
+        result.close()
+        proxy.close()
+
+    def test_blade_td_nig_rejects_the_unit_error_variance(self):
+        # the name is the label aggregation separates the modes by, so it
+        # cannot be paired with the unit variance
+        env, proxy = self._make_env()
+        env = task.delay_wrapper(env, rewdelay.FixedDelay(delay=3))
+        with pytest.raises(ValueError, match="NIG error variance"):
+            task.reward_mapper(
+                env,
+                proxy_env=proxy,
+                mapping_spec={
+                    "name": "blade-td-nig",
+                    "args": {
+                        "init_attempt_estimation_episode": 10,
+                        "estimation_buffer_mult": (
+                            constants.DEFAULT_ESTIMATION_BUFFER_MULT
+                        ),
+                        "error_variance": rewdelay.ERROR_VARIANCE_UNIT,
+                        "transition_feats_spec": {
+                            "name": "current-features",
+                            "args": {
+                                "current_spec": [
+                                    {
+                                        "name": "tile-observation-action-ft",
+                                        "args": {"tiling_dim": 2},
+                                    }
+                                ]
+                            },
+                        },
+                    },
+                },
+            )
+        env.close()
+        proxy.close()
+
     def test_unknown_mapper_raises(self):
         env, proxy = self._make_env()
         with pytest.raises(ValueError, match="Unknown mapping_method"):

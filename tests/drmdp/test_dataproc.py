@@ -45,6 +45,30 @@ class TestProcessData:
         assert "experiment" not in meta
 
 
+class TestMapperLabels:
+    def _method_for(self, mapper_name):
+        meta = {
+            "experiment": {
+                "env_spec": {"name": "TestEnv", "args": {}},
+                "problem_spec": {
+                    "reward_mapper": {"name": mapper_name},
+                    "policy_type": "markovian",
+                },
+            }
+        }
+        df = pd.DataFrame({"meta": [meta], "returns": [[-1.0]]})
+        return dataproc.process_data(df).iloc[0]["method"]
+
+    def test_nig_run_is_labeled_apart_from_the_unit_variance_run(self):
+        # the label is the only thing aggregation and plots separate the
+        # two error-variance modes by
+        assert self._method_for("bayes-least-lfa") == "BLADE-TD"
+        assert self._method_for("blade-td-nig") == "BLADE-TD[NIG]"
+
+    def test_nig_alias_shares_the_nig_label(self):
+        assert self._method_for("nig-least-lfa") == "BLADE-TD[NIG]"
+
+
 class TestWideMetrics:
     def test_explodes_returns(self):
         df = pd.DataFrame(

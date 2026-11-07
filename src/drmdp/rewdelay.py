@@ -45,6 +45,21 @@ def resolve_estimation_check(estimation_check: str = ESTIMATION_CHECK_NONE) -> s
     return estimation_check
 
 
+ERROR_VARIANCE_UNIT = "unit"
+ERROR_VARIANCE_NIG = "nig"
+_VALID_ERROR_VARIANCES = frozenset({ERROR_VARIANCE_UNIT, ERROR_VARIANCE_NIG})
+
+
+def resolve_error_variance(error_variance: str = ERROR_VARIANCE_UNIT) -> str:
+    """Validate and return an error-variance model."""
+    if error_variance not in _VALID_ERROR_VARIANCES:
+        raise ValueError(
+            f"unknown error_variance {error_variance!r}; "
+            f"expected one of {sorted(_VALID_ERROR_VARIANCES)}"
+        )
+    return error_variance
+
+
 class RewardDelay(abc.ABC):
     """
     Abstract class for delayed reward config.
@@ -974,6 +989,7 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         reward_error_fn: Callable[[np.ndarray], Mapping[str, Any]] | None = None,
         intercept: bool = False,
         rng_seed: int | None = None,
+        error_variance: str = ERROR_VARIANCE_UNIT,
     ):
         super().__init__(
             env=env,
@@ -987,6 +1003,7 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         self.mode = mode
         self.init_attempt_estimation_episode = init_attempt_estimation_episode
         self.estimation_check = resolve_estimation_check(estimation_check)
+        self.error_variance = resolve_error_variance(error_variance)
         self.sample_weights = sample_weights
         self.windowed_task_schedule = WindowedTaskSchedule(
             mode=mode,
@@ -995,12 +1012,13 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         )
         self.update_episode = init_attempt_estimation_episode
         self.posterior_updates = 0
-        self.mv_normal_rewards: optsol.MultivariateNormal | None = None
+        self.mv_normal_rewards: optsol.WeightPosterior | None = None
         self._sampled_weights: np.ndarray | None = None
-        self._sampled_posterior: optsol.MultivariateNormal | None = None
+        self._sampled_posterior: optsol.WeightPosterior | None = None
         self.estimation_meta: dict[str, Any] = {
             "intercept": intercept,
             "estimation_check": self.estimation_check,
+            "error_variance": self.error_variance,
             "snapshots": [],
             "reward_errors": [],
             "deferred_attempts": [],
@@ -1052,10 +1070,28 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         self.windowed_task_schedule.set_state(succ=success)
 
     def _get_estimator_info(self) -> dict[str, Any]:
-        return {
+        info: dict[str, Any] = {
             "posterior_updates": self.posterior_updates,
             "sample_weights": self.sample_weights,
+            "error_variance": self.error_variance,
         }
+        info.update(self._posterior_scale_fields())
+        return info
+
+    def _solve_initial_posterior(
+        self, matrix: np.ndarray, rewards: np.ndarray
+    ) -> optsol.WeightPosterior | None:
+        """Fits the first posterior under the configured error-variance model."""
+        if self.error_variance == ERROR_VARIANCE_NIG:
+            return optsol.NormalInverseGamma.least_squares(matrix=matrix, rhs=rewards)
+        return optsol.MultivariateNormal.least_squares(matrix=matrix, rhs=rewards)
+
+    def _posterior_scale_fields(self) -> dict[str, Any]:
+        """Snapshot fields for an estimated error variance, empty when fixed."""
+        posterior = self.mv_normal_rewards
+        if isinstance(posterior, optsol.NormalInverseGamma):
+            return {"sigma2_hat": posterior.ig.variance}
+        return {}
 
     def estimate_rewards(self) -> bool:
         matrix, rewards, nexamples = self._extract_buffer_data()
@@ -1071,26 +1107,27 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
 
         try:
             if self.mv_normal_rewards is None:
-                # Frequentist prior
-                mv_normal = optsol.MultivariateNormal.least_squares(
-                    matrix=matrix, rhs=rewards
-                )
+                posterior = self._solve_initial_posterior(matrix, rewards)
             else:
-                mv_normal = optsol.MultivariateNormal.bayes_linear_regression(
-                    matrix=matrix, rhs=rewards, prior=self.mv_normal_rewards
-                )
-                self.posterior_updates += 1 if mv_normal is not None else 0
+                posterior = self.mv_normal_rewards.update(matrix, rewards)
+                self.posterior_updates += 1 if posterior is not None else 0
         except ValueError as err:
             self._handle_estimation_failure(err, matrix, rewards)
             return False
         else:
-            if mv_normal is not None:
-                weights = mv_normal.mean
+            if posterior is not None:
+                weights = posterior.mean
                 error = self._calculate_rmse(matrix, weights, rewards)
-                self.mv_normal_rewards = mv_normal
-                snapshot = self._create_snapshot(nexamples, matrix, weights, error)
+                self.mv_normal_rewards = posterior
+                snapshot = self._create_snapshot(
+                    nexamples,
+                    matrix,
+                    weights,
+                    error,
+                    **self._posterior_scale_fields(),
+                )
                 self.estimation_meta["snapshots"].append(snapshot)
-                self._record_reward_error(mv_normal.mean)
+                self._record_reward_error(posterior.mean)
 
                 logger.info(
                     "%s - %s rewards for %s. RMSE: %f; No. Samples: %d",
