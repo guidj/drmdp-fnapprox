@@ -8,6 +8,9 @@ from gymnasium import spaces
 from drmdp import optsol, rewdelay, transform
 from tests.drmdp.hookhelpers import FTOpHook
 
+# estimation is forced by hand after buffering windows of several lengths
+LATE_ESTIMATION = 10**6
+
 
 class TestDelayedRewardWrapper:
     """Tests for DelayedRewardWrapper — window boundaries, aggregation, and episode-boundary flushes."""
@@ -974,6 +977,72 @@ class TestLeastLfaGenerativeRewardWrapper:
 
         assert wrapper.weights is not None
         assert wrapper.estimation_meta["reward_errors"] == []
+
+    def test_constant_feature_reproduces_the_per_step_constant(self):
+        """A constant coordinate accumulates to the window length."""
+        constant, weight = -1.0, 0.5
+        env = ConstantPlusIndexEnv(constant=constant, weight=weight)
+        delayed = rewdelay.DelayedRewardWrapper(
+            env, reward_delay=rewdelay.UniformDelay(min_delay=2, max_delay=4, seed=7)
+        )
+        wrapper = rewdelay.LeastLfaGenerativeRewardWrapper(
+            delayed,
+            feats_fn=FTOpHook(constant_and_index_ftop(example_space(env))),
+            attempt_estimation_episode=LATE_ESTIMATION,
+            estimation_check="none",
+            intercept=False,
+        )
+        window_lengths = drive_windows(wrapper, num_episodes=6)
+        wrapper.estimate_rewards()
+
+        rows = np.stack([row for row, _ in wrapper.est_buffer.buffer])
+        assert len(window_lengths) == rows.shape[0]
+        assert min(window_lengths) < max(window_lengths)
+        # column order is [step index, constant]; the constant column holds
+        # the window length, not one per window row
+        np.testing.assert_array_equal(rows[:, 1], window_lengths)
+        np.testing.assert_allclose(wrapper.weights, [weight, constant], atol=1e-9)
+
+        errors = per_step_prediction_errors(
+            wrapper,
+            env,
+            num_episodes=3,
+            reward_fn=lambda index: constant + weight * index,
+        )
+        assert np.max(np.abs(errors)) < 1e-9
+
+    def test_row_intercept_misprices_the_per_step_constant(self):
+        """A fit-time intercept passes the row fit and fails the prediction."""
+        constant, weight, delay = -1.0, 0.5, 3
+        env = ConstantPlusIndexEnv(constant=constant, weight=weight, episode_steps=12)
+        delayed = rewdelay.DelayedRewardWrapper(
+            env, reward_delay=rewdelay.FixedDelay(delay=delay)
+        )
+        wrapper = rewdelay.LeastLfaGenerativeRewardWrapper(
+            delayed,
+            feats_fn=FTOpHook(index_ftop(example_space(env))),
+            attempt_estimation_episode=LATE_ESTIMATION,
+            estimation_check="none",
+            intercept=True,
+        )
+        drive_windows(wrapper, num_episodes=6)
+        wrapper.estimate_rewards()
+
+        # the rows are consistent: the intercept enters in window units
+        snapshot = wrapper.estimation_meta["snapshots"][-1]
+        assert snapshot["error"]["rmse"] < 1e-9
+        np.testing.assert_allclose(
+            wrapper.weights, [weight, constant * delay], atol=1e-9
+        )
+
+        # every per-step prediction carries the window offset
+        errors = per_step_prediction_errors(
+            wrapper,
+            env,
+            num_episodes=3,
+            reward_fn=lambda index: constant + weight * index,
+        )
+        np.testing.assert_allclose(errors, constant * (delay - 1), atol=1e-9)
 
 
 class TestLeastLfaDiscreteFeatures:
@@ -2186,3 +2255,90 @@ class DiscreteDummyFTOp(transform.FTOp):
 
     def reset_counter(self):
         self._call_count = 0
+
+
+class ConstantPlusIndexEnv(gym.Env):
+    """Pays $c + w s_t$ on the transition from step index $s_t$.
+
+    The observation is the index, so the per-step reward is affine in the
+    feature vector $[1, s_t]$.
+    """
+
+    def __init__(
+        self, constant: float = -1.0, weight: float = 0.5, episode_steps: int = 12
+    ):
+        self.observation_space = spaces.Box(
+            low=0.0, high=float(episode_steps), shape=(1,), dtype=np.float64
+        )
+        self.action_space = spaces.Discrete(1)
+        self.constant = constant
+        self.weight = weight
+        self.episode_steps = episode_steps
+        self.index = 0
+
+    def step(self, action):
+        del action
+        reward = self.constant + self.weight * self.index
+        self.index += 1
+        observation = np.array([float(self.index)])
+        terminated = self.index >= self.episode_steps
+        return observation, reward, terminated, False, {}
+
+    def reset(self, seed=None, options=None):
+        del seed
+        del options
+        self.index = 0
+        return np.array([0.0]), {}
+
+
+def example_space(env: gym.Env) -> transform.ExampleSpace:
+    """The space of an env, as the FTOps expect it."""
+    return transform.ExampleSpace(
+        observation_space=env.observation_space, action_space=env.action_space
+    )
+
+
+def index_ftop(input_space: transform.ExampleSpace) -> transform.FTOp:
+    """The step index alone: the identity pipeline over the raw observation."""
+    return transform.Pipeline(input_space=input_space)
+
+
+def constant_and_index_ftop(input_space: transform.ExampleSpace) -> transform.FTOp:
+    """The step index followed by the constant coordinate of the builder map."""
+    return transform.Pipeline.from_specs(
+        input_space=input_space, specs=[{"name": "constant-ft", "args": {}}]
+    )
+
+
+def drive_windows(wrapper, num_episodes: int) -> list[int]:
+    """Steps whole episodes, recording the step count of each buffered window."""
+    window_lengths = []
+    steps = 0
+    for _ in range(num_episodes):
+        wrapper.reset(seed=0)
+        done = False
+        while not done:
+            buffered = len(wrapper.est_buffer.buffer)
+            _, _, terminated, truncated, _ = wrapper.step(0)
+            steps += 1
+            if len(wrapper.est_buffer.buffer) > buffered:
+                window_lengths.append(steps)
+                steps = 0
+            done = terminated or truncated
+    return window_lengths
+
+
+def per_step_prediction_errors(
+    wrapper, env: gym.Env, num_episodes: int, reward_fn
+) -> np.ndarray:
+    """Differences between the emitted per-step rewards and ``reward_fn(index)``."""
+    errors = []
+    for _ in range(num_episodes):
+        wrapper.reset(seed=0)
+        done = False
+        while not done:
+            index = env.index
+            _, reward, terminated, truncated, _ = wrapper.step(0)
+            errors.append(reward - reward_fn(index))
+            done = terminated or truncated
+    return np.array(errors)

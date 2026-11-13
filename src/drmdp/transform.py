@@ -535,6 +535,44 @@ class ActionSegmentObservationFT(FTOp):
         return self._output_space
 
 
+class ConstantFT(FTOp):
+    """
+    Appends a constant 1 to the observation.
+
+    A per-step constant reward term must be a feature coordinate rather
+    than a fit-time intercept: the estimator fits window sums, so this
+    coordinate accumulates to the window length while a single step
+    carries one.
+    """
+
+    def __init__(self, input_space: ExampleSpace):
+        super().__init__(input_space=input_space)
+        if not isinstance(input_space.observation_space, gym.spaces.Box):
+            raise TypeError(f"Expected Box observation_space. Got: {input_space}")
+
+        observation_space = input_space.observation_space
+        ones = np.ones(shape=(1,), dtype=observation_space.dtype)
+        self._output_space = dataclasses.replace(
+            input_space,
+            observation_space=gym.spaces.Box(
+                low=np.concatenate([observation_space.low, ones]),
+                high=np.concatenate([observation_space.high, ones]),
+                dtype=observation_space.dtype,
+            ),
+        )
+
+    def apply(self, example: Example) -> Example:
+        observation = np.asarray(example.observation)
+        constant = np.ones(shape=(1,), dtype=observation.dtype)
+        return dataclasses.replace(
+            example, observation=np.concatenate([observation, constant])
+        )
+
+    @property
+    def output_space(self):
+        return self._output_space
+
+
 class DropObservationDimsFT(FTOp):
     """
     Drops certain dimensions in a specified axis
@@ -741,6 +779,7 @@ def transform_op(name: str, **kwargs) -> Callable[[ExampleSpace], FTOp]:
         "ohe-discrete-observation-action-ft": OHEDiscreteObservationActionFT,
         "action-segment-observation-ft": ActionSegmentObservationFT,
         "drop-observation-dims-ft": DropObservationDimsFT,
+        "constant-ft": ConstantFT,
         "ohe-action-ft": OHEActionFT,
         "concat-observation-action-ft": ConcatObservationActionFT,
     }

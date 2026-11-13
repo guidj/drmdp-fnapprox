@@ -63,6 +63,46 @@ def test_scaleobservationft():
     assert_batch(output, expected)
 
 
+def test_constantft():
+    input_space = space(
+        obs_space=spaces.Box(arr([-1.2, -0.07]), arr([0.6, 0.07])),
+        act_space=spaces.Discrete(3),
+    )
+    ftop = transform.ConstantFT(input_space=input_space)
+    assert ftop.input_space == input_space
+    assert ftop.output_space == space(
+        obs_space=spaces.Box(arr([-1.2, -0.07, 1.0]), arr([0.6, 0.07, 1.0])),
+        act_space=spaces.Discrete(3),
+    )
+
+    inputs = [
+        example(obs=arr([0.1, 0.03]), act=1),
+        example(obs=arr([0.0, -0.07]), act=2),
+    ]
+    expected = [
+        example(obs=arr([0.1, 0.03, 1.0]), act=1),
+        example(obs=arr([0.0, -0.07, 1.0]), act=2),
+    ]
+    assert_batch(ftop.batch(inputs), expected)
+
+    # the appended coordinate keeps the observation dtype
+    int_space = space(
+        obs_space=spaces.Box(arr([0, 0]), arr([10, 10])), act_space=spaces.Discrete(2)
+    )
+    int_output = transform.ConstantFT(input_space=int_space).apply(
+        example(obs=arr([3, 7]), act=0)
+    )
+    assert int_output.observation.dtype == arr([3, 7]).dtype
+    np.testing.assert_array_equal(int_output.observation, arr([3, 7, 1]))
+
+    # the operator is configurable, unlike FuncFT
+    pipeline = transform.Pipeline.from_specs(
+        input_space=input_space, specs=[{"name": "constant-ft", "args": {}}]
+    )
+    assert pipeline.output_space == ftop.output_space
+    assert_equal(pipeline.apply(example(obs=arr([0.1, 0.03]), act=1)), expected[0])
+
+
 def test_tileobservationactionft():
     input_space = space(
         obs_space=spaces.Box(arr([0, 0]), arr([1, 1])), act_space=spaces.Discrete(2)
