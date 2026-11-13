@@ -154,6 +154,26 @@ class TestCurrentAndSuccessorFeatures:
                 },
             )
 
+    def test_terminal_gate_zeroes_the_successor_block_on_termination(self):
+        env = _stub_env()
+        drop = {"name": "drop-observation-dims-ft", "args": {"axis_dims": {0: [0]}}}
+        spec = [drop, {"name": "constant-ft", "args": {}}]
+        hook = rewardfeat.transition_feature_fn(
+            env,
+            rewardfeat.current_and_successor_features_spec(
+                spec, spec, terminal_gate=True
+            ),
+        )
+        assert hook.feature_dim == 2
+        np.testing.assert_array_equal(
+            hook(_transition(terminated=True)),
+            [1.0, 0.0],
+        )
+        np.testing.assert_array_equal(
+            hook(_transition()),
+            [1.0, 1.0],
+        )
+
     def _hook(self, env: gym.Env):
         spec = [{"name": "tile-observation-action-ft", "args": {"tiling_dim": 3}}]
         return rewardfeat.transition_feature_fn(
@@ -163,6 +183,57 @@ class TestCurrentAndSuccessorFeatures:
                 "args": {"current_spec": spec, "successor_spec": spec},
             },
         )
+
+
+class TestNonterminalConstantFeatures:
+    """A unit on nonterminal steps, zero on the terminal one."""
+
+    def test_nonterminal_row_is_one_and_terminal_row_is_zero(self):
+        hook = rewardfeat.transition_feature_fn(
+            _stub_env(), {"name": "nonterminal-constant-features"}
+        )
+        assert hook.feature_dim == 1
+        np.testing.assert_array_equal(hook(_transition(terminated=False)), [1.0])
+        np.testing.assert_array_equal(hook(_transition(terminated=True)), [0.0])
+
+
+class TestConcatenatedFeatures:
+    """The concatenation of named transition-feature blocks."""
+
+    def test_blocks_are_concatenated_in_order(self):
+        drop = {"name": "drop-observation-dims-ft", "args": {"axis_dims": {0: [0]}}}
+        constant = {"name": "constant-ft", "args": {}}
+        hook = rewardfeat.transition_feature_fn(
+            _stub_env(),
+            rewardfeat.concatenated_features_spec(
+                [
+                    {"name": "nonterminal-constant-features", "args": {}},
+                    {
+                        "name": "current-and-successor-features",
+                        "args": {
+                            "current_spec": [drop, constant],
+                            "successor_spec": [drop, constant],
+                            "terminal_gate": True,
+                        },
+                    },
+                ]
+            ),
+        )
+        assert hook.feature_dim == 3
+        np.testing.assert_array_equal(
+            hook(_transition(terminated=True)),
+            [0.0, 1.0, 0.0],
+        )
+        np.testing.assert_array_equal(
+            hook(_transition()),
+            [1.0, 1.0, 1.0],
+        )
+
+    def test_empty_blocks_are_rejected(self):
+        with pytest.raises(ValueError, match="at least one block"):
+            rewardfeat.transition_feature_fn(
+                _stub_env(), rewardfeat.concatenated_features_spec([])
+            )
 
 
 class TestConstantAndSuccessorBasisFeatures:
