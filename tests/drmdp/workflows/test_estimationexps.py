@@ -7,7 +7,7 @@ from drmdp.workflows import estimationexps
 
 EXPECTED_LABELS = {
     "MountainCar-v0": {
-        "structural-sine",
+        "potential-curr-succ",
         "fourier-succ-o5",
         "succ-bins-54",
         "sa-bins-4x2",
@@ -15,8 +15,9 @@ EXPECTED_LABELS = {
         "current-tiles-td3",
         "currsucc-tiles-td3",
     },
-    "Acrobot-v1": {"action-termination", "nonterminal-action", "sa-bins-2x6"},
+    "Acrobot-v1": {"potential-curr-succ", "action-termination", "sa-bins-2x6"},
     "GridWorld-MINES": {
+        "potential-curr-succ",
         "transition-anomaly",
         "next-cell-ohe",
         "sa-ohe",
@@ -30,7 +31,7 @@ class TestEstimationExperimentSpecs:
 
     def test_one_spec_per_env_encoding_noise_combination(self):
         specs = estimationexps.estimation_experiment_specs()
-        assert len(specs) == 28  # 14 encodings x 2 noise multipliers
+        assert len(specs) == 30  # 15 encodings x 2 noise multipliers
         combos = {(spec["name"], spec["metadata"]["encoding"]) for spec in specs}
         for env_name, labels in EXPECTED_LABELS.items():
             for label in labels:
@@ -70,9 +71,9 @@ class TestEstimationExperimentSpecs:
             assert spec["feats_specs"] == [[]]
 
     def test_expected_run_count_matches_the_grid(self):
-        # 14 encodings x 6 methods x 2 delays x 2 noise = 336 per run
-        assert estimationexps.expected_run_count(num_runs=1) == 336
-        assert estimationexps.expected_run_count(num_runs=5) == 1680
+        # 15 encodings x 6 methods x 2 delays x 2 noise = 360 per run
+        assert estimationexps.expected_run_count(num_runs=1) == 360
+        assert estimationexps.expected_run_count(num_runs=5) == 1800
 
     def test_episode_cap(self):
         assert estimationexps.episode_cap("MountainCar-v0") == 500
@@ -80,6 +81,28 @@ class TestEstimationExperimentSpecs:
         assert estimationexps.episode_cap("GridWorld-MINES") == 500
         with pytest.raises(ValueError, match="no episode cap"):
             estimationexps.episode_cap("UnknownEnv-v0")
+
+    def test_potential_curr_succ_dims(self):
+        expected = {"MountainCar-v0": 3, "Acrobot-v1": 3, "GridWorld-MINES": 4}
+        specs = estimationexps.estimation_experiment_specs()
+        seen = set()
+        for spec in specs:
+            env_name = spec["name"]
+            if (
+                spec["metadata"]["encoding"] != "potential-curr-succ"
+                or env_name in seen
+            ):
+                continue
+            seen.add(env_name)
+            proxied = task.create_env(
+                env_name, args=spec["args"], gamma=estimationexps.GAMMA
+            )
+            mapper_args = dict(spec["problem_specs"][0]["reward_mapper"]["args"])
+            feats_fn = task.estimator_feats_fn(proxied.proxy, "least-lfa", mapper_args)
+            assert feats_fn.feature_dim == expected[env_name]
+            proxied.env.close()
+            proxied.proxy.close()
+        assert seen == set(expected)
 
 
 class TestSpecsBuildOnTheirEnvironments:

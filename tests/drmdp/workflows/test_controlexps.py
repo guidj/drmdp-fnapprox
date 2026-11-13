@@ -1,6 +1,7 @@
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+import numpy as np
 import pytest
 
 from drmdp import constants, task
@@ -133,6 +134,57 @@ class TestGaussianIllustrationNoiseSpecs:
             assert "noise_scale" not in (exp.get("metadata") or {})
 
 
+class TestGaussianIllustrationShapingSpecs:
+    """Every family env pays a potential-based reward and exposes its potential."""
+
+    _SHAPING: Mapping[str, str] = {
+        "MountainCar-v0": "mountain-car-height-pbrs",
+        "Acrobot-v1": "acrobot-tip-height-pbrs",
+        "GridWorld-MINES": "gridworld-distance-pbrs",
+    }
+
+    def test_shaping_and_potential_wrapper_per_env(self):
+        specs = controlexps.gaussian_illustration_experiment_specs()
+        assert {spec["name"] for spec in specs} == set(self._SHAPING)
+        for spec in specs:
+            shaping = self._SHAPING[spec["name"]]
+            assert spec["args"]["reward_shaping"]["name"] == shaping
+            assert spec["args"]["reward_obs"]["name"] == f"{shaping}-potential"
+
+    def test_discount_is_not_pinned_in_the_shaping_args(self):
+        # task.create_env injects the problem spec's gamma, so the shaping
+        # discount follows each arm
+        for spec in controlexps.gaussian_illustration_experiment_specs():
+            args = spec["args"]["reward_shaping"].get("args") or {}
+            assert "gamma" not in args
+
+    def test_gridworld_pins_the_quadratic_exponent(self):
+        # exponent 1 pays a constant reward on every step of a shortest
+        # path, which removes the signal the family estimates
+        for spec in controlexps.gaussian_illustration_experiment_specs():
+            if spec["name"] != "GridWorld-MINES":
+                continue
+            args = spec["args"]["reward_shaping"]["args"]
+            assert args["exponent"] == 2.0
+
+    def test_every_env_pays_more_than_one_shaped_reward(self):
+        configured = set()
+        for spec in controlexps.gaussian_illustration_experiment_specs():
+            if spec["name"] in configured:
+                continue
+            configured.add(spec["name"])
+            env_args = dict(spec["args"])
+            # the shaped reward, not its noisy version
+            env_args.pop("reward_noise", None)
+            proxied = task.create_env(spec["name"], args=env_args, gamma=1.0)
+            try:
+                rewards = _rollout_rewards(proxied.env, seed=0, steps=100)
+            finally:
+                proxied.env.close()
+                proxied.proxy.close()
+            assert len(rewards) >= 2, spec["name"]
+
+
 class TestBladeTdRewardSampling:
     def test_gaussian_illustration_consumes_posterior_mean(self):
         # the family compares reward estimators; a per-episode posterior
@@ -155,9 +207,9 @@ class TestEstimatorEncoding:
 
     def test_encoding_is_the_selected_campaign_encoding(self):
         expected = {
-            "MountainCar-v0": estimationencodings.mc_structural_sine(),
-            "Acrobot-v1": estimationencodings.action_termination(),
-            "GridWorld-MINES": estimationencodings.gridworld_transition_anomaly(),
+            "MountainCar-v0": estimationencodings.mc_potential_curr_succ(),
+            "Acrobot-v1": estimationencodings.acrobot_potential_curr_succ(),
+            "GridWorld-MINES": estimationencodings.gw_potential_curr_succ(),
         }
         for spec in controlexps.gaussian_illustration_experiment_specs():
             for mapper_name in ("least-lfa", "bayes-least-lfa"):
@@ -178,9 +230,9 @@ class TestEstimatorEncoding:
                 assert args["transition_feats_spec"] in campaign[spec["name"]]
 
     def test_feature_map_dimensions(self):
-        # constant and terminal-gated sine: 2; action-gated termination: 6;
-        # constant and anomaly indicator: 2
-        expected = {"MountainCar-v0": 2, "Acrobot-v1": 6, "GridWorld-MINES": 2}
+        # current potential entry and constant, gated successor entry, plus
+        # the per-env gated term: MountainCar 3, Acrobot 3, GridWorld 4
+        expected = {"MountainCar-v0": 3, "Acrobot-v1": 3, "GridWorld-MINES": 4}
         measured: dict[str, int] = {}
         for spec in controlexps.gaussian_illustration_experiment_specs():
             if spec["name"] in measured:
@@ -269,3 +321,17 @@ def _estimator_args(
         for problem_spec in spec["problem_specs"]
         if problem_spec["reward_mapper"]["name"] == mapper_name
     ]
+
+
+def _rollout_rewards(env, seed: int, steps: int) -> set[float]:
+    """Distinct rewards a seeded random policy collects."""
+    rng = np.random.default_rng(seed)
+    env.reset(seed=seed)
+    rewards = set()
+    for _ in range(steps):
+        action = int(rng.integers(0, env.action_space.n))
+        _, reward, terminated, truncated, _ = env.step(action)
+        rewards.add(round(float(reward), 12))
+        if terminated or truncated:
+            env.reset(seed=seed)
+    return rewards

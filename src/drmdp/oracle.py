@@ -51,6 +51,10 @@ class GridOracle:
     """
 
     def __init__(self, model: models.DiscreteTransitionModel):
+        observations = list(model.observations.values())
+        # an observation wrapper may append coordinates after the grid cell;
+        # the model's observations define how many coordinates identify a state
+        self._raw_dim = int(np.asarray(observations[0]).ravel().size)
         self._state_ids: dict[tuple[int, ...], int] = {
             tuple(int(coordinate) for coordinate in observation): state_id
             for state_id, observation in model.observations.items()
@@ -65,7 +69,8 @@ class GridOracle:
         return self._values[self._state_id(observation)]
 
     def _state_id(self, observation: Any) -> int:
-        key = tuple(int(coordinate) for coordinate in np.asarray(observation).ravel())
+        coordinates = np.asarray(observation).ravel()[: self._raw_dim]
+        key = tuple(int(coordinate) for coordinate in coordinates)
         return self._state_ids[key]
 
 

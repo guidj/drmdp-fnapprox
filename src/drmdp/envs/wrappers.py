@@ -300,14 +300,18 @@ class PotentialShapingWrapper(gym.Wrapper):
     def _shaped(self, potential: float) -> float:
         return self.scale * (potential - self.goal_potential)
 
+    def shaped_potential(self, obs: np.ndarray) -> float:
+        """Potential of a raw observation, with the configured scale."""
+        return self._shaped(self._potential(obs))
+
     def reset(self, **kwargs):
         obs, info = super().reset(**kwargs)
-        self._prev_potential = self._shaped(self._potential(obs))
+        self._prev_potential = self.shaped_potential(obs)
         return obs, info
 
     def step(self, action):
         obs, reward, term, trunc, info = super().step(action)
-        potential = 0.0 if term else self._shaped(self._potential(obs))
+        potential = 0.0 if term else self.shaped_potential(obs)
         reward = reward + self.gamma * potential - self._prev_potential
         self._prev_potential = potential
         return obs, reward, term, trunc, info
@@ -390,77 +394,49 @@ class GridWorldDistanceShaping(PotentialShapingWrapper):
         return float(-self.max_distance * relative**self.exponent)
 
 
-class AdditiveShapingWrapper(gym.Wrapper):
-    """Additive reward bonus: r' = r + scale * bonus(obs).
+class PotentialObsWrapper(gym.ObservationWrapper):
+    r"""Appends the shaped potential of the shaping wrapper below.
 
-    Unlike PBRS, this changes the optimal policy but creates
-    substantial state-dependent reward variation for testing
-    reward estimation quality.
+    Sits directly above a `PotentialShapingWrapper` and reads its
+    `shaped_potential`, so the appended entry is the state-only term the
+    shaping wrapper subtracts from every per-step reward,
 
-    The bonus is NOT applied on terminal steps so that
-    terminal-state zero-reward semantics are preserved.
+    $$r'(s, a) = r(s, a) + \gamma\Phi(s')\,\mathbf{1}[\neg t] - \Phi(s),$$
+
+    with the successor term zero on termination (`PotentialShapingWrapper.step`
+    sets the successor potential to $0$ when the episode ends). The
+    reward-estimator encodings read $\Phi(s)$ and $\Phi(s')$ from the
+    observation and the successor observation; the policy's features drop the
+    entry.
+
+    Layout: the raw observation first, then $\Phi(s)$.
     """
 
-    def __init__(self, env: gym.Env, scale: float = 1.0):
+    def __init__(self, env: gym.Env):
         super().__init__(env)
-        self.scale = scale
+        if not isinstance(env, PotentialShapingWrapper):
+            raise TypeError(
+                "potential observation requires a PotentialShapingWrapper "
+                f"directly below; got {type(env).__name__}"
+            )
+        if not isinstance(env.observation_space, gym.spaces.Box):
+            raise TypeError(
+                f"Expected Box observation_space. Got: {env.observation_space}"
+            )
+        self.shaping = env
+        self.raw_dim = int(np.prod(env.observation_space.shape))
+        raw_low = np.ravel(env.observation_space.low).astype(np.float64)
+        raw_high = np.ravel(env.observation_space.high).astype(np.float64)
+        self.observation_space = gym.spaces.Box(
+            low=np.concatenate([raw_low, np.full(shape=(1,), fill_value=-np.inf)]),
+            high=np.concatenate([raw_high, np.full(shape=(1,), fill_value=np.inf)]),
+            dtype=np.float64,
+        )
 
-    def _bonus(self, obs: np.ndarray) -> float:
-        raise NotImplementedError
-
-    def step(self, action):
-        obs, reward, term, trunc, info = super().step(action)
-        if not term:
-            reward = reward + self.scale * self._bonus(obs)
-        return obs, reward, term, trunc, info
-
-
-class MountainCarHeightBonus(AdditiveShapingWrapper):
-    """bonus(s) = sin(3 * position), scaled by constructor arg.
-
-    Creates position-dependent rewards: the car is rewarded for
-    being high on the hill.  Bounded to [-scale, +scale].
-    """
-
-    def _bonus(self, obs: np.ndarray) -> float:
-        return float(np.sin(3.0 * float(obs[0])))
-
-
-class AcrobotTipHeightBonus(AdditiveShapingWrapper):
-    """bonus(s) = -(cos(θ1) + cos(θ1+θ2)), scaled by constructor arg.
-
-    Rewards the tip being high.  Bounded to [-2·scale, +2·scale].
-    """
-
-    def _bonus(self, obs: np.ndarray) -> float:
-        cos_theta1 = float(obs[0])
-        sin_theta1 = float(obs[1])
-        cos_theta2 = float(obs[2])
-        sin_theta2 = float(obs[3])
-        cos_sum = cos_theta1 * cos_theta2 - sin_theta1 * sin_theta2
-        return float(-(cos_theta1 + cos_sum))
-
-
-class ActionCostShapingWrapper(gym.Wrapper):
-    """Action-dependent reward bonus: different actions incur different costs.
-
-    Creates non-constant, action-dependent rewards that any
-    action-aware count-based encoding (tile coding, OHE) can
-    represent exactly.
-
-    The bonus is NOT applied on terminal steps so that
-    terminal-state zero-reward semantics are preserved.
-    """
-
-    def __init__(self, env: gym.Env, action_costs: Sequence[float]):
-        super().__init__(env)
-        self.action_costs = np.array(action_costs, dtype=np.float64)
-
-    def step(self, action):
-        obs, reward, term, trunc, info = super().step(action)
-        if not term:
-            reward = reward + self.action_costs[action]
-        return obs, reward, term, trunc, info
+    def observation(self, observation: ObsType) -> np.ndarray:
+        raw = np.ravel(np.asarray(observation, dtype=np.float64))
+        potential = self.shaping.shaped_potential(observation)
+        return np.concatenate([raw, np.asarray([potential], dtype=np.float64)])
 
 
 class GaussianRewardNoiseWrapper(gym.Wrapper):

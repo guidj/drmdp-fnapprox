@@ -47,6 +47,16 @@ NOISE_STD_MULTIPLIERS: Sequence[float] = (0.0, 1.0)
 # the gaussian illustration family
 REFERENCE_STD = 1.0
 
+# observation dimensions of the coords wrapper: raw dimensions first, then the
+# shaped potential, one successor coordinate per action, and per-action
+# indicators (Acrobot: terminal; GridWorld: cliff)
+MC_RAW_DIM = 2
+MC_OBSERVATION_DIM = 3
+ACROBOT_RAW_DIM = 6
+ACROBOT_OBSERVATION_DIM = 7
+GW_RAW_DIM = 2
+GW_OBSERVATION_DIM = 3
+
 
 def estimation_experiment_specs(
     exploration_rate: float = EXPLORATION_RATE,
@@ -110,11 +120,6 @@ def expected_run_count(num_runs: int) -> int:
     return (
         encodings * methods * len(DELAY_CONFIGS) * len(NOISE_STD_MULTIPLIERS) * num_runs
     )
-
-
-def _gw_sa_ohe(grid: Sequence[str]) -> Mapping[str, Any]:
-    """One-hot over live state-action pairs, dead columns dropped."""
-    return estimationencodings.gridworld_sa_ohe(controlexps.grid_dead_ohe_indices(grid))
 
 
 ESTIMATION_CHECK_MODES: Sequence[str] = (
@@ -196,19 +201,35 @@ def _mc_encodings() -> Sequence[tuple[str, str, Mapping[str, Any]]]:
     """(label, knowledge class, transition-feature spec) for MountainCar."""
     return (
         (
-            "structural-sine",
+            "potential-curr-succ",
             "reward structure",
-            estimationencodings.mc_structural_sine(),
+            estimationencodings.mc_potential_curr_succ(),
         ),
         ("fourier-succ-o5", "general", estimationencodings.mc_fourier_succ()),
         ("succ-bins-54", "general", estimationencodings.mc_succ_bins()),
-        ("sa-bins-4x2", "general", estimationencodings.sa_bins((4, 2))),
-        ("sa-bins-18x4", "general", estimationencodings.sa_bins((18, 4))),
-        ("current-tiles-td3", "env-specific", estimationencodings.current_tiles(3)),
+        (
+            "sa-bins-4x2",
+            "general",
+            estimationencodings.sa_bins((4, 2), raw_dim=2),
+        ),
+        (
+            "sa-bins-18x4",
+            "general",
+            estimationencodings.sa_bins((18, 4), raw_dim=2),
+        ),
+        (
+            "current-tiles-td3",
+            "env-specific",
+            estimationencodings.current_tiles(
+                3, raw_dim=2, observation_dim=MC_OBSERVATION_DIM
+            ),
+        ),
         (
             "currsucc-tiles-td3",
             "env-specific",
-            estimationencodings.current_and_successor_tiles(3),
+            estimationencodings.current_and_successor_tiles(
+                3, raw_dim=2, observation_dim=MC_OBSERVATION_DIM
+            ),
         ),
     )
 
@@ -217,16 +238,20 @@ def _acrobot_encodings() -> Sequence[tuple[str, str, Mapping[str, Any]]]:
     """(label, knowledge class, transition-feature spec) for Acrobot."""
     return (
         (
+            "potential-curr-succ",
+            "reward structure",
+            estimationencodings.acrobot_potential_curr_succ(),
+        ),
+        (
             "action-termination",
             "general",
             estimationencodings.action_termination(),
         ),
         (
-            "nonterminal-action",
-            "reward structure",
-            estimationencodings.nonterminal_action(),
+            "sa-bins-2x6",
+            "general",
+            estimationencodings.sa_bins((2, 2, 2, 2, 2, 2), raw_dim=ACROBOT_RAW_DIM),
         ),
-        ("sa-bins-2x6", "general", estimationencodings.sa_bins((2, 2, 2, 2, 2, 2))),
     )
 
 
@@ -234,17 +259,36 @@ def _gw_encodings() -> Sequence[tuple[str, str, Mapping[str, Any]]]:
     """(label, knowledge class, transition-feature spec) for GridWorld-MINES."""
     return (
         (
+            "potential-curr-succ",
+            "reward structure",
+            estimationencodings.gw_potential_curr_succ(),
+        ),
+        (
             "transition-anomaly",
             "dynamics structure",
-            estimationencodings.gridworld_transition_anomaly(),
+            estimationencodings.gridworld_transition_anomaly(raw_dim=2),
         ),
         (
             "next-cell-ohe",
             "dynamics structure",
-            estimationencodings.gridworld_next_cell(),
+            estimationencodings.gridworld_next_cell(raw_dim=2),
         ),
-        ("sa-ohe", "env-specific", _gw_sa_ohe(controlexps.MINES_GW_GRID)),
-        ("tiles-td3", "env-specific", estimationencodings.current_tiles(3)),
+        (
+            "sa-ohe",
+            "env-specific",
+            estimationencodings.gridworld_sa_ohe(
+                controlexps.grid_dead_ohe_indices(controlexps.MINES_GW_GRID),
+                raw_dim=GW_RAW_DIM,
+                observation_dim=GW_OBSERVATION_DIM,
+            ),
+        ),
+        (
+            "tiles-td3",
+            "env-specific",
+            estimationencodings.current_tiles(
+                3, raw_dim=2, observation_dim=GW_OBSERVATION_DIM
+            ),
+        ),
     )
 
 
@@ -255,8 +299,12 @@ def _env_templates() -> Mapping[str, Any]:
             "base_args": {
                 "max_episode_steps": 2500,
                 "reward_shaping": {
-                    "name": "mountain-car-height",
+                    "name": "mountain-car-height-pbrs",
                     "args": {"scale": 1.0},
+                },
+                "reward_obs": {
+                    "name": "mountain-car-height-pbrs-potential",
+                    "args": {},
                 },
             },
             "encodings": _mc_encodings(),
@@ -265,9 +313,10 @@ def _env_templates() -> Mapping[str, Any]:
             "base_args": {
                 "max_episode_steps": 500,
                 "reward_shaping": {
-                    "name": "action-cost",
-                    "args": {"action_costs": [0.0, 0.5, 1.0]},
+                    "name": "acrobot-tip-height-pbrs",
+                    "args": {"scale": 1.0},
                 },
+                "reward_obs": {"name": "acrobot-tip-height-pbrs-potential", "args": {}},
             },
             "encodings": _acrobot_encodings(),
         },
@@ -275,6 +324,11 @@ def _env_templates() -> Mapping[str, Any]:
             "base_args": {
                 "grid": controlexps.MINES_GW_GRID,
                 "max_episode_steps": 200,
+                "reward_shaping": {
+                    "name": "gridworld-distance-pbrs",
+                    "args": {"scale": 1.0, "exponent": 2.0},
+                },
+                "reward_obs": {"name": "gridworld-distance-pbrs-potential", "args": {}},
             },
             "encodings": _gw_encodings(),
         },

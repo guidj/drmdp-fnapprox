@@ -96,40 +96,6 @@ class TestCreateEnv:
         result.env.close()
         result.proxy.close()
 
-    def test_reward_shaping_mountain_car(self):
-        result = task.create_env(
-            "MountainCar-v0",
-            {
-                "max_episode_steps": 200,
-                "reward_shaping": {
-                    "name": "mountain-car-height",
-                    "args": {"scale": 1.0},
-                },
-            },
-        )
-        _obs, _ = result.env.reset(seed=0)
-        _, rew, _, _, _ = result.env.step(0)
-        assert rew != -1.0
-        result.env.close()
-        result.proxy.close()
-
-    def test_reward_shaping_action_cost(self):
-        result = task.create_env(
-            "Acrobot-v1",
-            {
-                "max_episode_steps": 500,
-                "reward_shaping": {
-                    "name": "action-cost",
-                    "args": {"action_costs": [0.0, 0.5, 1.0]},
-                },
-            },
-        )
-        _obs, _ = result.env.reset(seed=0)
-        _, rew1, _, _, _ = result.env.step(1)
-        assert rew1 == pytest.approx(-0.5)
-        result.env.close()
-        result.proxy.close()
-
     def test_reward_shaping_pbrs_is_registered(self):
         result = task.create_env(
             "MountainCar-v0",
@@ -181,15 +147,42 @@ class TestCreateEnv:
         result.env.close()
         result.proxy.close()
 
-    def test_additive_shaping_ignores_learner_discount(self):
+    def test_create_env_applies_reward_obs_wrapper(self):
         args = {
             "max_episode_steps": 200,
-            "reward_shaping": {"name": "mountain-car-height", "args": {"scale": 1.0}},
+            "reward_shaping": {"name": "mountain-car-height-pbrs", "args": {}},
+            "reward_obs": {"name": "mountain-car-height-pbrs-potential", "args": {}},
         }
         result = task.create_env("MountainCar-v0", args, gamma=0.99)
-        assert isinstance(result.env, wrappers.MountainCarHeightBonus)
+        for env in (result.env, result.proxy):
+            assert isinstance(env, wrappers.PotentialObsWrapper)
+            assert isinstance(env.env, wrappers.MountainCarHeightShaping)
+            assert env.shaping.gamma == pytest.approx(0.99)
+            observation, _ = env.reset(seed=0)
+            assert observation.shape == (3,)
         result.env.close()
         result.proxy.close()
+
+    def test_reward_obs_runs_before_reward_noise(self):
+        args = {
+            "max_episode_steps": 200,
+            "reward_shaping": {"name": "mountain-car-height-pbrs", "args": {}},
+            "reward_obs": {"name": "mountain-car-height-pbrs-potential", "args": {}},
+            "reward_noise": {
+                "name": "relative-gaussian",
+                "args": {"std_multiplier": 0.0, "reference_std": 1.0},
+            },
+        }
+        result = task.create_env("MountainCar-v0", args, gamma=1.0)
+        assert isinstance(result.env, wrappers.RewardRangeGaussianNoiseReward)
+        assert isinstance(result.env.env, wrappers.PotentialObsWrapper)
+        result.env.close()
+        result.proxy.close()
+
+    def test_unknown_reward_obs_is_rejected(self):
+        args = {"reward_obs": {"name": "no-such-coords", "args": {}}}
+        with pytest.raises(ValueError):
+            task.create_env("MountainCar-v0", args)
 
     def test_reward_noise_relative_gaussian(self):
         result = task.create_env(

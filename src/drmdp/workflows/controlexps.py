@@ -541,15 +541,20 @@ def gaussian_illustration_experiment_specs(
     modal rewards of -1). BLADE-TD consumes the posterior mean: the sweep
     compares reward estimators, so the posterior weight draw is switched off
     and its reward estimate is fixed, as LEAST's.
+
+    Every environment carries a PBRS shaping whose discount follows the
+    problem spec's gamma through `task.create_env`, an observation wrapper
+    that appends the shaped potential, and control features computed on the
+    raw dimensions only.
     """
     mc_est_feats: Sequence[Mapping[str, Any]] = [
-        estimationencodings.mc_structural_sine()
+        estimationencodings.mc_potential_curr_succ()
     ]
     acrobot_est_feats: Sequence[Mapping[str, Any]] = [
-        estimationencodings.action_termination()
+        estimationencodings.acrobot_potential_curr_succ()
     ]
     gw_est_feats: Sequence[Mapping[str, Any]] = [
-        estimationencodings.gridworld_transition_anomaly()
+        estimationencodings.gw_potential_curr_succ()
     ]
 
     env_templates: list[Mapping[str, Any]] = [
@@ -558,20 +563,26 @@ def gaussian_illustration_experiment_specs(
             "base_args": {
                 "max_episode_steps": 2500,
                 "reward_shaping": {
-                    "name": "mountain-car-height",
+                    "name": "mountain-car-height-pbrs",
                     "args": {"scale": 1.0},
                 },
+                "reward_obs": {
+                    "name": "mountain-car-height-pbrs-potential",
+                    "args": {},
+                },
             },
-            # unit = modal per-step reward magnitude (base -1); the
-            # full post-shaping range [-2, 0] (base -1 plus the
-            # sin(3*position) bonus) is not the noise unit
+            # unit = modal per-step reward magnitude: the base reward is -1
+            # per step and the PBRS term r' = -1 + gamma*Phi(s') - Phi(s) is
+            # bounded by 0.21 at gamma = 1 (|x' - x| <= 0.07,
+            # |d sin(3x)/dx| <= 3)
             "reference_std": 1.0,
             "feats_specs": [
                 [
+                    estimationencodings.keep_raw_dims(raw_dim=2, observation_dim=3),
                     {
                         "name": "tile-observation-action-ft",
                         "args": {"tiling_dim": mc_tiling_dim},
-                    }
+                    },
                 ]
             ],
             "problem_specs_fn": lambda: (
@@ -593,23 +604,26 @@ def gaussian_illustration_experiment_specs(
             "base_args": {
                 "max_episode_steps": 500,
                 "reward_shaping": {
-                    "name": "action-cost",
-                    "args": {"action_costs": [0.0, 0.5, 1.0]},
+                    "name": "acrobot-tip-height-pbrs",
+                    "args": {"scale": 1.0},
                 },
+                "reward_obs": {"name": "acrobot-tip-height-pbrs-potential", "args": {}},
             },
-            # unit = modal per-step reward magnitude (base -1); the
-            # full post-shaping range [-2, 0] (base -1 plus the action
-            # cost) is not the noise unit
+            # unit = modal per-step reward magnitude: the base reward is -1 on
+            # non-terminal steps and 0 on the terminal one, and the PBRS term
+            # r' = -1*1[not term] + gamma*Phi(s') - Phi(s) is bounded by the
+            # potential's range
             "reference_std": 1.0,
             "feats_specs": [
                 [
+                    estimationencodings.keep_raw_dims(raw_dim=6, observation_dim=7),
                     {
                         "name": "tile-observation-action-ft",
                         "args": {
                             "tiling_dim": acrobot_tiling_dim,
                             "hash_dim": acrobot_hash_dim,
                         },
-                    }
+                    },
                 ]
             ],
             "problem_specs_fn": lambda: (
@@ -631,18 +645,23 @@ def gaussian_illustration_experiment_specs(
             "base_args": {
                 "grid": MINES_GW_GRID,
                 "max_episode_steps": 200,
+                "reward_shaping": {
+                    "name": "gridworld-distance-pbrs",
+                    "args": {"scale": 1.0, "exponent": 2.0},
+                },
+                "reward_obs": {"name": "gridworld-distance-pbrs-potential", "args": {}},
             },
-            # unit = modal per-step reward magnitude (step -1); the
-            # full range [-100, 0] is dominated by the -100 cliff and
-            # would scale noise std to 25-200 against modal rewards
-            # of -1
+            # unit = modal per-step reward magnitude: the base reward is -1 per
+            # move and -100 on a cliff entry, so the modal magnitude is 1 and
+            # the cliff carries a separate indicator coordinate
             "reference_std": 1.0,
             "feats_specs": [
                 [
+                    estimationencodings.keep_raw_dims(raw_dim=2, observation_dim=3),
                     {
                         "name": "tile-observation-action-ft",
                         "args": {"tiling_dim": gw_tiling_dim},
-                    }
+                    },
                 ]
             ],
             "problem_specs_fn": lambda: (

@@ -33,12 +33,15 @@ REWARD_ERROR_SAMPLING_SEED = 0
 POLICY_EVAL_EPISODES = 25
 
 REWARD_SHAPING_BUILDERS: Mapping[str, type] = {
-    "mountain-car-height": wrappers.MountainCarHeightBonus,
     "mountain-car-height-pbrs": wrappers.MountainCarHeightShaping,
-    "acrobot-tip-height": wrappers.AcrobotTipHeightBonus,
     "acrobot-tip-height-pbrs": wrappers.AcrobotTipHeightShaping,
     "gridworld-distance-pbrs": wrappers.GridWorldDistanceShaping,
-    "action-cost": wrappers.ActionCostShapingWrapper,
+}
+
+REWARD_OBS_BUILDERS: Mapping[str, type] = {
+    "mountain-car-height-pbrs-potential": wrappers.PotentialObsWrapper,
+    "acrobot-tip-height-pbrs-potential": wrappers.PotentialObsWrapper,
+    "gridworld-distance-pbrs-potential": wrappers.PotentialObsWrapper,
 }
 
 REWARD_NOISE_BUILDERS: Mapping[str, type] = {
@@ -214,9 +217,16 @@ def create_env(
     return; other shaping classes ignore it. ``seed`` seeds the reward
     noise wrapper when one is configured; the proxy carries no noise and
     stays clean regardless.
+
+    ``reward_obs`` names an observation wrapper applied above the shaping
+    wrapper on the env and the proxy alike, so the estimator reads the shaped
+    potential from the observation and its successor while the policy's
+    features drop the entry. It runs before the noise wrapper, which needs the
+    clean shaped reward.
     """
     env_args = dict(args) if args else {}
     shaping_config = env_args.pop("reward_shaping", None)
+    obs_config = env_args.pop("reward_obs", None)
     noise_config = env_args.pop("reward_noise", None)
 
     env = envs.make(env_name=name, **env_args)
@@ -233,6 +243,15 @@ def create_env(
             shaping_args["gamma"] = gamma
         env = shaping_cls(env, **shaping_args)
         proxy = shaping_cls(proxy, **shaping_args)
+
+    if obs_config:
+        obs_name = obs_config["name"]
+        obs_args = dict(obs_config.get("args", {}) or {})
+        if obs_name not in REWARD_OBS_BUILDERS:
+            raise ValueError(f"Unknown reward observation wrapper: {obs_name}")
+        obs_cls = REWARD_OBS_BUILDERS[obs_name]
+        env = obs_cls(env, **obs_args)
+        proxy = obs_cls(proxy, **obs_args)
 
     if noise_config:
         noise_name = noise_config["name"]

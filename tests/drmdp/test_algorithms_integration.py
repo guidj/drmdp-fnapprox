@@ -243,7 +243,7 @@ class TestPolicyControlEndToEnd:
                 env_args={
                     "max_episode_steps": 200,
                     "reward_shaping": {
-                        "name": "mountain-car-height",
+                        "name": "mountain-car-height-pbrs",
                         "args": {"scale": 1.0},
                     },
                 },
