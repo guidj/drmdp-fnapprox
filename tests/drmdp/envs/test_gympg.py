@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 from rlplg.environments import gridworld
 
-from drmdp import constants
-from drmdp.envs import gympg
+from drmdp import constants, task
+from drmdp.envs import gympg, lunar_lander
 from drmdp.workflows.controlexps import MINES_GW_GRID
 
 # Start 's' at (0, 0); cliffs (1, 0)..(1, 4); exit 'g' at (2, 5).
@@ -275,3 +275,64 @@ def seed_for_start(env, start_pos: tuple[int, int]) -> int:
         for seed in range(300)
         if tuple(env.reset(seed=seed)[0].tolist()) == start_pos
     )
+
+
+class TestMakeLunarLander:
+    def test_discrete_actions_and_reward_observation(self):
+        env = gympg.make("LunarLander-v3", wrapper=constants.LUNAR_LANDER_REWARD_OBS)
+        try:
+            assert env.action_space.n == 4
+            assert env.observation_space.shape == (13,)
+            observation, _ = env.reset(seed=0)
+            assert observation.shape == (13,)
+            assert np.all(np.isfinite(observation))
+        finally:
+            env.close()
+
+    def test_step_info_carries_the_awake_bit(self):
+        env = gympg.make("LunarLander-v3", wrapper=constants.LUNAR_LANDER_REWARD_OBS)
+        try:
+            env.reset(seed=0)
+            _, _, _, _, info = env.step(0)
+            assert isinstance(info[lunar_lander.AWAKE_INFO_KEY], bool)
+        finally:
+            env.close()
+
+    def test_episode_step_limit_is_carried_by_the_time_limit(self):
+        env = gympg.make("LunarLander-v3", max_episode_steps=17)
+        try:
+            assert env.spec is not None
+            assert env.spec.max_episode_steps == 17
+            env.reset(seed=0)
+            steps = 0
+            truncated = False
+            while not truncated:
+                _, _, _, truncated, _ = env.step(0)
+                steps += 1
+            assert steps == 17
+        finally:
+            env.close()
+
+    def test_create_env_wraps_both_env_and_proxy_without_shaping(self):
+        proxied = task.create_env(
+            "LunarLander-v3",
+            args={
+                "max_episode_steps": 50,
+                "wrapper": constants.LUNAR_LANDER_REWARD_OBS,
+            },
+            gamma=0.99,
+        )
+        try:
+            assert proxied.env.observation_space.shape == (13,)
+            assert proxied.proxy.observation_space.shape == (13,)
+            # No shaping wrapper sits below either: the reward is the
+            # environment's own.
+            for env in (proxied.env, proxied.proxy):
+                assert not hasattr(env.unwrapped, "reward_shaping")
+                raw_env = env
+                while hasattr(raw_env, "env"):
+                    assert type(raw_env).__name__ != "PotentialShapingWrapper"
+                    raw_env = raw_env.env
+        finally:
+            proxied.env.close()
+            proxied.proxy.close()

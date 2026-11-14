@@ -8,7 +8,7 @@ from gymnasium.core import ObsType
 from sklearn import cluster, mixture, model_selection
 
 from drmdp import constants, dataproc, mathutils, tiles
-from drmdp.envs import gridutils
+from drmdp.envs import gridutils, lunar_lander
 
 
 class RandomBinaryObsWrapper(gym.ObservationWrapper):
@@ -583,6 +583,8 @@ def wrap(env: gym.Env, wrapper: str | None = None, **kwargs):
     if wrapper == constants.FLAT_GRID_COORD:
         ohe = kwargs.get("ohe", False)
         return FlatGridCoordObsWrapper(env, ohe=ohe)
+    if wrapper == constants.LUNAR_LANDER_REWARD_OBS:
+        return lunar_lander.LunarLanderRewardObs(env)
     raise ValueError(f"Wrapper `{wrapper}` unknown")
 
 

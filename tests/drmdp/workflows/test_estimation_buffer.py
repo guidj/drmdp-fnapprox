@@ -97,7 +97,12 @@ class TestBufferCapacity:
             finally:
                 proxied.env.close()
                 proxied.proxy.close()
-        assert seen == {"MountainCar-v0", "Acrobot-v1", "GridWorld-MINES"}
+        assert seen == {
+            "MountainCar-v0",
+            "Acrobot-v1",
+            "GridWorld-MINES",
+            "LunarLander-v3",
+        }
 
 
 def _estimator_args(

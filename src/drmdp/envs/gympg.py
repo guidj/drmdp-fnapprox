@@ -8,7 +8,7 @@ from gymnasium.core import ObsType
 from rlplg.core import InitState
 from rlplg.environments import gridworld, iceworld, redgreen
 
-from drmdp.envs import gridutils, models, wrappers
+from drmdp.envs import gridutils, lunar_lander, models, wrappers
 
 DEFAULT_GW_GRID = ["oooooooooooo", "oooooooooooo", "oooooooooooo", "sxxxxxxxxxxg"]
 DEFAULT_RG_CURE = ["red", "green", "red", "green", "wait", "green"]
@@ -217,6 +217,17 @@ def make(env_name: str, wrapper: str | None = None, **kwargs) -> gym.Env:
             "max_episode_steps", DEFAULT_ACROBOT_MAX_EPISODE_STEPS
         )
         env = gym.make("Acrobot-v1", max_episode_steps=max_episode_steps)
+    elif env_name == "LunarLander-v3":
+        env = gym.make(
+            "LunarLander-v3",
+            max_episode_steps=kwargs.get(
+                "max_episode_steps", lunar_lander.DEFAULT_MAX_EPISODE_STEPS
+            ),
+            gravity=kwargs.get("gravity", -10.0),
+            enable_wind=kwargs.get("enable_wind", False),
+            render_mode=None,
+        )
+        env = lunar_lander.LunarLanderAwakeInfoWrapper(env)
     else:
         raise ValueError(f"Environment `{env_name}` unknown")
     return wrappers.wrap(env, wrapper=wrapper, **kwargs)

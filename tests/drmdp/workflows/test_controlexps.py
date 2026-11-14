@@ -145,8 +145,14 @@ class TestGaussianIllustrationShapingSpecs:
 
     def test_shaping_and_potential_wrapper_per_env(self):
         specs = controlexps.gaussian_illustration_experiment_specs()
-        assert {spec["name"] for spec in specs} == set(self._SHAPING)
+        unshaped = {"LunarLander-v3"}
+        assert {spec["name"] for spec in specs} == set(self._SHAPING) | unshaped
         for spec in specs:
+            if spec["name"] in unshaped:
+                # the environment's own reward, with no shaping wrapper
+                assert "reward_shaping" not in spec["args"]
+                assert "reward_obs" not in spec["args"]
+                continue
             shaping = self._SHAPING[spec["name"]]
             assert spec["args"]["reward_shaping"]["name"] == shaping
             assert spec["args"]["reward_obs"]["name"] == f"{shaping}-potential"
@@ -155,6 +161,8 @@ class TestGaussianIllustrationShapingSpecs:
         # task.create_env injects the problem spec's gamma, so the shaping
         # discount follows each arm
         for spec in controlexps.gaussian_illustration_experiment_specs():
+            if "reward_shaping" not in spec["args"]:
+                continue
             args = spec["args"]["reward_shaping"].get("args") or {}
             assert "gamma" not in args
 
@@ -167,14 +175,14 @@ class TestGaussianIllustrationShapingSpecs:
             args = spec["args"]["reward_shaping"]["args"]
             assert args["exponent"] == 2.0
 
-    def test_every_env_pays_more_than_one_shaped_reward(self):
+    def test_every_env_runs_at_least_two_steps(self):
         configured = set()
         for spec in controlexps.gaussian_illustration_experiment_specs():
             if spec["name"] in configured:
                 continue
             configured.add(spec["name"])
             env_args = dict(spec["args"])
-            # the shaped reward, not its noisy version
+            # the reward without the noise the sweep adds
             env_args.pop("reward_noise", None)
             proxied = task.create_env(spec["name"], args=env_args, gamma=1.0)
             try:
@@ -210,6 +218,7 @@ class TestEstimatorEncoding:
             "MountainCar-v0": estimationencodings.mc_potential_curr_succ(),
             "Acrobot-v1": estimationencodings.acrobot_potential_curr_succ(),
             "GridWorld-MINES": estimationencodings.gw_potential_curr_succ(),
+            "LunarLander-v3": estimationencodings.lunar_lander_reward(),
         }
         for spec in controlexps.gaussian_illustration_experiment_specs():
             for mapper_name in ("least-lfa", "bayes-least-lfa"):
@@ -226,13 +235,24 @@ class TestEstimatorEncoding:
                     args["transition_feats_spec"]
                 )
         for spec in controlexps.gaussian_illustration_experiment_specs():
+            # LunarLander is not an environment of the estimation campaign, so
+            # its encoding has no campaign cell to match.
+            if spec["name"] not in campaign:
+                continue
             for args in _estimator_args(spec, "least-lfa"):
                 assert args["transition_feats_spec"] in campaign[spec["name"]]
 
     def test_feature_map_dimensions(self):
         # current potential entry and constant, gated successor entry, plus
-        # the per-env gated term: MountainCar 3, Acrobot 3, GridWorld 4
-        expected = {"MountainCar-v0": 3, "Acrobot-v1": 3, "GridWorld-MINES": 4}
+        # the per-env gated term: MountainCar 3, Acrobot 3, GridWorld 4.
+        # LunarLander carries the basis on both sides of the transition plus a
+        # fuel column per action and the two terminal columns.
+        expected = {
+            "MountainCar-v0": 3,
+            "Acrobot-v1": 3,
+            "GridWorld-MINES": 4,
+            "LunarLander-v3": 16,
+        }
         measured: dict[str, int] = {}
         for spec in controlexps.gaussian_illustration_experiment_specs():
             if spec["name"] in measured:
@@ -335,3 +355,158 @@ def _rollout_rewards(env, seed: int, steps: int) -> set[float]:
         if terminated or truncated:
             env.reset(seed=seed)
     return rewards
+
+
+class TestLearningRateRules:
+    def test_dimension_rule_divides_by_the_observation_width(self):
+        assert controlexps.learning_rate_from_dimension(0.1, 13) == pytest.approx(
+            0.1 / 13
+        )
+        assert controlexps.learning_rate_from_dimension(0.1, 26) == pytest.approx(
+            0.5 * controlexps.learning_rate_from_dimension(0.1, 13)
+        )
+
+    def test_active_feature_rule_divides_by_the_tiling_count(self):
+        assert controlexps.learning_rate_from_active_features(0.1, 32) == pytest.approx(
+            0.003125
+        )
+        assert controlexps.learning_rate_from_active_features(0.1, 64) == pytest.approx(
+            0.5 * controlexps.learning_rate_from_active_features(0.1, 32)
+        )
+
+    def test_fixed_rule_ignores_the_dimension(self):
+        first = controlexps.learning_rate_fixed(0.1, 13)
+        second = controlexps.learning_rate_fixed(0.1, 4096)
+        assert first == second == controlexps.LEARNING_RATE_SPEC["args"]["initial_lr"]
+
+    def test_every_rule_rejects_a_nonpositive_dimension(self):
+        with pytest.raises(ValueError, match="positive"):
+            controlexps.learning_rate_from_dimension(0.1, 0)
+        with pytest.raises(ValueError, match="positive"):
+            controlexps.learning_rate_from_active_features(0.1, 0)
+
+
+class TestLunarLanderLearningRate:
+    def test_selected_rule_resolves_against_the_emitted_observation_width(self):
+        config, provenance = controlexps.lunar_lander_learning_rate_config()
+        assert provenance["learning_rate_rule"] == "dim"
+        assert provenance["observation_dim"] == 13
+        assert provenance["dimension_used"] == 13
+        assert config["args"]["initial_lr"] == pytest.approx(0.1 / 13)
+        assert provenance["learning_rate"] == pytest.approx(0.1 / 13)
+
+    def test_active_feature_rule_resolves_against_the_tiling_count(self):
+        config, provenance = controlexps.lunar_lander_learning_rate_config(
+            rule="actives"
+        )
+        assert provenance["dimension_used"] == controlexps.LUNAR_LANDER_NUM_TILINGS
+        assert config["args"]["initial_lr"] == pytest.approx(0.1 / 32)
+
+    def test_unknown_rule_raises(self):
+        with pytest.raises(ValueError, match="Unknown lunar learning-rate rule"):
+            controlexps.lunar_lander_learning_rate_config(rule="nope")
+
+
+class TestGaussianIllustrationIncludesLunarLander:
+    def test_lunar_lander_is_a_peer_env_of_the_illustration_family(self):
+        specs = controlexps.gaussian_illustration_experiment_specs(
+            noise_std_multipliers=(0.0,)
+        )
+        names = [spec["name"] for spec in specs]
+        assert "LunarLander-v3" in names
+        # One spec per (env, multiplier): the family, not a set of its own.
+        assert len(names) == len(set(names))
+
+    def test_lunar_spec_carries_no_shaping_and_the_reward_observation(self):
+        spec = _lunar_spec()
+        assert "reward_shaping" not in spec["args"]
+        assert "reward_obs" not in spec["args"]
+        assert spec["args"]["wrapper"] == constants.LUNAR_LANDER_REWARD_OBS
+        assert spec["args"]["max_episode_steps"] == 1000
+
+    def test_lunar_spec_uses_the_derived_rate_for_every_arm(self):
+        spec = _lunar_spec()
+        np.testing.assert_allclose(sorted(_rates(spec["problem_specs"])), [0.1 / 13])
+        assert spec["metadata"]["learning_rate_rule"] == "dim"
+        assert spec["metadata"]["learning_rate"] == pytest.approx(0.1 / 13)
+
+    def test_lunar_spec_selects_a_different_rule_without_touching_the_env(self):
+        family_spec = _lunar_spec()
+        actives_template = controlexps._lunar_lander_template(
+            learning_rate_rule="actives"
+        )
+        np.testing.assert_allclose(
+            sorted(_rates(actives_template["problem_specs_fn"]())), [0.1 / 32]
+        )
+        assert (
+            actives_template["base_args"]["wrapper"] == family_spec["args"]["wrapper"]
+        )
+        assert actives_template["feats_specs"] == family_spec["feats_specs"]
+
+    def test_lunar_spec_runs_ten_thousand_episodes_per_run(self):
+        # 1000 episodes per epoch, the job script's --num-episodes.
+        assert _lunar_spec()["epochs"] == 10
+
+    def test_lunar_estimator_arms_use_the_reward_encoding(self):
+        spec = _lunar_spec()
+        mappers = [problem["reward_mapper"] for problem in spec["problem_specs"]]
+        estimator_arms = [
+            mapper for mapper in mappers if mapper["name"] in _ESTIMATOR_MAPPERS
+        ]
+        assert estimator_arms
+        expected = estimationencodings.lunar_lander_reward()
+        for mapper in estimator_arms:
+            assert mapper["args"]["transition_feats_spec"] == expected
+
+    def test_other_envs_keep_the_control_rate(self):
+        specs = controlexps.gaussian_illustration_experiment_specs(
+            noise_std_multipliers=(0.0,)
+        )
+        others = [spec for spec in specs if spec["name"] != "LunarLander-v3"]
+        assert others
+        for spec in others:
+            for problem in spec["problem_specs"]:
+                assert (
+                    problem["learning_rate_config"]["args"]["initial_lr"]
+                    == controlexps.LEARNING_RATE_SPEC["args"]["initial_lr"]
+                )
+
+    def test_custom_rate_reaches_every_helper_spec(self):
+        config = {"name": "constant", "args": {"initial_lr": 0.123}}
+        specs = (
+            controlexps.common_problem_specs(learning_rate_config=config)
+            + controlexps.least_specs(
+                attempt_estimation_episodes=(1,),
+                transition_feats_specs=[{"name": "current-features", "args": {}}],
+                learning_rate_config=config,
+            )
+            + controlexps.bayes_least_specs(
+                init_attempt_estimation_episodes=(1,),
+                transition_feats_specs=[{"name": "current-features", "args": {}}],
+                learning_rate_config=config,
+            )
+        )
+        assert specs
+        for problem in specs:
+            assert problem["learning_rate_config"] is config
+
+
+_ESTIMATOR_MAPPERS = ("least-lfa", "bayes-least-lfa")
+
+
+def _rates(problem_specs: Sequence[Mapping[str, Any]]) -> list[float]:
+    """The learning rates a set of problem specs carries, one per distinct value."""
+    return sorted(
+        {
+            problem["learning_rate_config"]["args"]["initial_lr"]
+            for problem in problem_specs
+        }
+    )
+
+
+def _lunar_spec() -> Mapping[str, Any]:
+    """The illustration family's single LunarLander-v3 spec."""
+    specs = controlexps.gaussian_illustration_experiment_specs(
+        noise_std_multipliers=(0.0,)
+    )
+    return next(spec for spec in specs if spec["name"] == "LunarLander-v3")

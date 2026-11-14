@@ -189,6 +189,17 @@ def _observation_dim(raw_dim: int, observation_dim: int | None) -> int:
     return raw_dim if observation_dim is None else observation_dim
 
 
+def lunar_lander_reward() -> Mapping[str, Any]:
+    r"""Transition features linear in the LunarLander-v3 reward.
+
+    The row carries the current and successor reward basis, the action's fuel
+    column, and the two terminal columns, so the environment's potential
+    difference, fuel cost and terminal reward are all representable as one
+    weight vector.
+    """
+    return {"name": "lunar-lander-reward-features", "args": {}}
+
+
 def action_termination() -> Mapping[str, Any]:
     """Action indicators split by the termination flag."""
     return {"name": "action-and-termination-features", "args": {}}

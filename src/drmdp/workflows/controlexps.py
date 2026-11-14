@@ -7,15 +7,27 @@ from typing import Any
 import numpy as np
 
 from drmdp import constants, rewardfeat, rewdelay
-from drmdp.envs import gridutils
+from drmdp.envs import gridutils, lunar_lander
 from drmdp.workflows import estimationencodings
 
 EPSILON = 0.1
 MAX_STEPS_PER_EPISODE_GEM = 10_000
-LEARNING_RATE_SPEC = {
+LEARNING_RATE_SPEC: Mapping[str, Any] = {
     "name": "constant",
     "args": {"initial_lr": 0.01},
 }
+# Numerator of the dimension-derived learning-rate rules. The rate is the head
+# divided by the representation's size, so a larger representation takes
+# proportionally smaller steps.
+LUNAR_LANDER_BASE_STEP_SIZE = 0.1
+# Rule the lunar template resolves into its learning rate. The options are the
+# keys of LUNAR_LANDER_LEARNING_RATE_RULES and their relative performance is
+# measured in agents/plans/2026-11-08-lunar-lander-illustration.md.
+LUNAR_LANDER_LEARNING_RATE_RULE: str = "dim"
+LUNAR_LANDER_TILING_DIM = 8
+LUNAR_LANDER_NUM_TILINGS = 32
+LUNAR_LANDER_HASH_DIM = 2048
+LUNAR_LANDER_MAX_EPISODE_STEPS = 1000
 MINES_GW_GRID = [
     "ooooxooooooo",
     "oooooooooxoo",
@@ -51,6 +63,72 @@ def _delay_min(delay_config: Mapping[str, Any]) -> int:
     return int(args["min_delay"])
 
 
+def learning_rate_from_dimension(base_step_size: float, observation_dim: int) -> float:
+    """Step size divided by the observation width."""
+    if observation_dim < 1:
+        raise ValueError(f"observation_dim must be positive. Got: {observation_dim}")
+    return base_step_size / observation_dim
+
+
+def learning_rate_from_active_features(
+    base_step_size: float, num_tilings: int
+) -> float:
+    """Step size divided by the number of active binary features.
+
+    A tile-coded state-action row activates one tile per tiling, so the count of
+    active features is the number of tilings and the squared feature norm is that
+    same number.
+    """
+    if num_tilings < 1:
+        raise ValueError(f"num_tilings must be positive. Got: {num_tilings}")
+    return base_step_size / num_tilings
+
+
+def learning_rate_fixed(base_step_size: float, dimension: int) -> float:
+    """The control families' constant rate, independent of the dimension."""
+    del base_step_size, dimension
+    return float(LEARNING_RATE_SPEC["args"]["initial_lr"])
+
+
+LUNAR_LANDER_LEARNING_RATE_RULES = {
+    "dim": learning_rate_from_dimension,
+    "actives": learning_rate_from_active_features,
+    "fixed": learning_rate_fixed,
+}
+
+
+def lunar_lander_learning_rate_config(
+    rule: str | None = None,
+    num_tilings: int = LUNAR_LANDER_NUM_TILINGS,
+    base_step_size: float = LUNAR_LANDER_BASE_STEP_SIZE,
+) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
+    """Resolves the lunar rule into a learning-rate config and its provenance.
+
+    Returns the config a problem spec carries and the record of the rule that
+    produced it: the rule name, the dimension it resolved against and the
+    resulting rate.
+    """
+    selected = LUNAR_LANDER_LEARNING_RATE_RULE if rule is None else rule
+    if selected not in LUNAR_LANDER_LEARNING_RATE_RULES:
+        raise ValueError(
+            f"Unknown lunar learning-rate rule {selected!r}. "
+            f"Must be one of: {sorted(LUNAR_LANDER_LEARNING_RATE_RULES)}"
+        )
+    observation_dim = lunar_lander.OBSERVATION_SIZE
+    dimension = num_tilings if selected == "actives" else observation_dim
+    rate = LUNAR_LANDER_LEARNING_RATE_RULES[selected](base_step_size, dimension)
+    config = {"name": "constant", "args": {"initial_lr": rate}}
+    provenance = {
+        "learning_rate_rule": selected,
+        "learning_rate": rate,
+        "observation_dim": observation_dim,
+        "dimension_used": dimension,
+        "num_tilings": num_tilings,
+        "base_step_size": base_step_size,
+    }
+    return config, provenance
+
+
 def least_specs(
     attempt_estimation_episodes: Sequence[int],
     transition_feats_specs: Sequence[Mapping[str, Any]],
@@ -58,6 +136,7 @@ def least_specs(
     discounts: Sequence[float] = DEFAULT_DISCOUNT_FACTORS,
     estimation_check: str = "none",
     impute_value: float = DEFAULT_IMPUTE_VALUE,
+    learning_rate_config: Mapping[str, Any] = LEARNING_RATE_SPEC,
 ) -> Sequence[Mapping[str, Any]]:
     """
     Least Squares specs.
@@ -90,7 +169,7 @@ def least_specs(
                 "delay_config": delay_config,
                 "epsilon": EPSILON,
                 "gamma": gamma,
-                "learning_rate_config": LEARNING_RATE_SPEC,
+                "learning_rate_config": learning_rate_config,
             },
         )
     return tuple(specs)
@@ -104,6 +183,7 @@ def bayes_least_specs(
     impute_value: float = DEFAULT_IMPUTE_VALUE,
     sample_weights: bool = False,
     error_variance: str = rewdelay.ERROR_VARIANCE_UNIT,
+    learning_rate_config: Mapping[str, Any] = LEARNING_RATE_SPEC,
 ) -> Sequence[Mapping[str, Any]]:
     """
     Bayesian linear regression specs.
@@ -151,7 +231,7 @@ def bayes_least_specs(
                 "delay_config": delay_config,
                 "epsilon": EPSILON,
                 "gamma": gamma,
-                "learning_rate_config": LEARNING_RATE_SPEC,
+                "learning_rate_config": learning_rate_config,
             },
         )
     return tuple(specs)
@@ -162,6 +242,7 @@ def common_problem_specs(
     discounts: Sequence[float] = DEFAULT_DISCOUNT_FACTORS,
     impute_value: float = DEFAULT_IMPUTE_VALUE,
     include_options: bool = True,
+    learning_rate_config: Mapping[str, Any] = LEARNING_RATE_SPEC,
 ):
     """
     Specs that apply to every env.
@@ -175,7 +256,7 @@ def common_problem_specs(
                 "delay_config": None,
                 "epsilon": EPSILON,
                 "gamma": gamma,
-                "learning_rate_config": LEARNING_RATE_SPEC,
+                "learning_rate_config": learning_rate_config,
             },
         )
         for delay_config in delay_configs:
@@ -187,7 +268,7 @@ def common_problem_specs(
                         "delay_config": delay_config,
                         "epsilon": EPSILON,
                         "gamma": gamma,
-                        "learning_rate_config": LEARNING_RATE_SPEC,
+                        "learning_rate_config": learning_rate_config,
                     },
                     {
                         "policy_type": "markovian",
@@ -198,7 +279,7 @@ def common_problem_specs(
                         "delay_config": delay_config,
                         "epsilon": EPSILON,
                         "gamma": gamma,
-                        "learning_rate_config": LEARNING_RATE_SPEC,
+                        "learning_rate_config": learning_rate_config,
                     },
                 ]
             )
@@ -222,7 +303,7 @@ def common_problem_specs(
                             "delay_config": delay_config,
                             "epsilon": EPSILON,
                             "gamma": gamma,
-                            "learning_rate_config": LEARNING_RATE_SPEC,
+                            "learning_rate_config": learning_rate_config,
                         },
                         {
                             "policy_type": "single-action-options",
@@ -233,7 +314,7 @@ def common_problem_specs(
                             "delay_config": fixed_delay_config,
                             "epsilon": EPSILON,
                             "gamma": gamma,
-                            "learning_rate_config": LEARNING_RATE_SPEC,
+                            "learning_rate_config": learning_rate_config,
                         },
                     ]
                 )
@@ -678,6 +759,7 @@ def gaussian_illustration_experiment_specs(
             ),
             "epochs": 5,
         },
+        _lunar_lander_template(),
     ]
 
     specs: list[Mapping[str, Any]] = []
@@ -697,11 +779,83 @@ def gaussian_illustration_experiment_specs(
                     "args": env_args,
                     "feats_specs": template["feats_specs"],
                     "problem_specs": template["problem_specs_fn"](),
-                    "metadata": None,
+                    "metadata": template.get("metadata"),
                     "epochs": template["epochs"],
                 }
             )
     return tuple(specs)
+
+
+def _lunar_lander_template(
+    learning_rate_rule: str | None = None,
+) -> Mapping[str, Any]:
+    """The illustration family's LunarLander-v3 template.
+
+    The reward is the environment's own, with no shaping wrapper, and the
+    observation carries the reward basis so the per-step reward is a linear
+    function of the emitted features. The estimator fits the family's
+    transition encoding, which reads that basis, under the ``factors`` gate.
+
+    The gate admits a fit only once every column is nonzero. The landing column
+    is nonzero only after a transition in which the policy came to rest, so the
+    first fit is deferred until a landing occurs; deferred attempts are recorded
+    in the run's estimation events.
+    """
+    learning_rate_config, provenance = lunar_lander_learning_rate_config(
+        rule=learning_rate_rule
+    )
+    encoding: Sequence[Mapping[str, Any]] = [estimationencodings.lunar_lander_reward()]
+
+    def problem_specs_fn() -> Sequence[Mapping[str, Any]]:
+        specs: list[Mapping[str, Any]] = list(
+            common_problem_specs(
+                include_options=False,
+                learning_rate_config=learning_rate_config,
+            )
+        )
+        specs += list(
+            least_specs(
+                attempt_estimation_episodes=(10,),
+                estimation_check="factors",
+                transition_feats_specs=encoding,
+                learning_rate_config=learning_rate_config,
+            )
+        )
+        specs += list(
+            bayes_least_specs(
+                init_attempt_estimation_episodes=(10,),
+                transition_feats_specs=encoding,
+                learning_rate_config=learning_rate_config,
+            )
+        )
+        return specs
+
+    return {
+        "name": "LunarLander-v3",
+        "base_args": {
+            "max_episode_steps": LUNAR_LANDER_MAX_EPISODE_STEPS,
+            "wrapper": constants.LUNAR_LANDER_REWARD_OBS,
+        },
+        # unit = modal per-step reward magnitude: the potential difference and
+        # the fuel cost are of order 1 per step, and the +/-100 terminal reward
+        # is a separate branch the terminal columns carry
+        "reference_std": 1.0,
+        "feats_specs": [
+            [
+                {
+                    "name": "splice-tile-observation-action-ft",
+                    "args": {
+                        "tiling_dim": LUNAR_LANDER_TILING_DIM,
+                        "num_tilings": LUNAR_LANDER_NUM_TILINGS,
+                        "hash_dim": LUNAR_LANDER_HASH_DIM,
+                    },
+                }
+            ]
+        ],
+        "problem_specs_fn": problem_specs_fn,
+        "metadata": provenance,
+        "epochs": 10,
+    }
 
 
 def load_solvable_grids(

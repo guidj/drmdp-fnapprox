@@ -19,6 +19,7 @@ import gymnasium as gym
 import numpy as np
 
 from drmdp import transform
+from drmdp.envs import lunar_lander
 
 # rlplg's grid environments order actions LEFT, RIGHT, UP, DOWN
 # (`rlplg/environments/gridworld.py:31-34`) and move one cell in that
@@ -186,6 +187,62 @@ class NonterminalConstantFeatures:
 
     def __call__(self, transition: Transition) -> np.ndarray:
         return np.array([0.0 if transition.terminated else 1.0], dtype=np.float64)
+
+
+class LunarLanderRewardFeatures:
+    r"""Transition features linear in the LunarLander-v3 per-step reward.
+
+    The environment's reward is a difference of the potential $\Phi$ carried by
+    the reward basis, plus a per-action fuel cost, replaced outright on the
+    terminal step. The row is
+
+    $$x_t = \big((1-\tau_t)\psi(s_{t+1}),\ -(1-\tau_t)\psi(s_t),\
+    (1-\tau_t)\mathrm{OHE}(a_t),\ \ell_t,\ c_t\big),$$
+
+    with the potential blocks and the fuel columns gated by the nonterminal flag
+    because a terminal step discards both. The two terminal columns are
+    exclusive: ``crash`` is the terminal flag minus ``landing``, so the terminal
+    reward is a signed weight rather than a shared one.
+
+    ``landing`` is read from the ``awake`` bit that
+    `lunar_lander.LunarLanderAwakeInfoWrapper` publishes in the step info, so the
+    map is exactly linear on terminal transitions as well as nonterminal ones.
+    The bit is not a coordinate of the observation, so a transition from an
+    environment without the wrapper raises rather than guessing the branch.
+    """
+
+    def __init__(self, num_actions: int = lunar_lander.ACTION_COUNT) -> None:
+        if num_actions < 1:
+            raise ValueError(f"num_actions must be positive. Got: {num_actions}")
+        self.num_actions = num_actions
+
+    @property
+    def feature_dim(self) -> int:
+        return 2 * lunar_lander.REWARD_BLOCK_SIZE + self.num_actions + 2
+
+    def __call__(self, transition: Transition) -> np.ndarray:
+        gate = 0.0 if transition.terminated else 1.0
+        successor_basis = lunar_lander.reward_basis(
+            _raw_observation(transition.next_observation)
+        )
+        current_basis = lunar_lander.reward_basis(
+            _raw_observation(transition.observation)
+        )
+        features = np.zeros(self.feature_dim, dtype=np.float64)
+        basis_size = lunar_lander.REWARD_BLOCK_SIZE
+        features[0:basis_size] = gate * successor_basis
+        features[basis_size : 2 * basis_size] = -gate * current_basis
+        if not transition.terminated:
+            if not 0 <= transition.action < self.num_actions:
+                raise ValueError(
+                    f"action {transition.action} is outside the {self.num_actions} "
+                    "action encoding"
+                )
+            features[2 * basis_size + transition.action] = 1.0
+        landing = transition.terminated and _is_landing(transition)
+        features[-2] = 1.0 if landing else 0.0
+        features[-1] = 1.0 if (transition.terminated and not landing) else 0.0
+        return features
 
 
 class ConcatenatedFeatures:
@@ -548,6 +605,18 @@ def _num_actions(env: gym.Env) -> int:
     return int(env.action_space.n)
 
 
+def _lunar_lander_reward_features(env: gym.Env) -> TransitionFeatureFn:
+    """Validates the observation layout the encoding reads."""
+    space = _box_observation_space(env)
+    if space.shape != (lunar_lander.OBSERVATION_SIZE,):
+        raise ValueError(
+            f"LunarLander reward features require a "
+            f"{(lunar_lander.OBSERVATION_SIZE,)} observation space, got {space.shape}; "
+            "apply the reward-observation wrapper"
+        )
+    return LunarLanderRewardFeatures(_num_actions(env))
+
+
 def _constant_and_successor_basis_features(
     env: gym.Env, basis_spec: Mapping[str, Any]
 ) -> TransitionFeatureFn:
@@ -709,6 +778,40 @@ def _basis(
     )
 
 
+def _raw_observation(observation: Any) -> np.ndarray:
+    """The raw state the reward basis is computed from.
+
+    A reward-observation wrapper prefixes the basis block to the raw
+    observation; without one the observation is already raw.
+    """
+    state = np.asarray(observation, dtype=np.float64)
+    if state.shape == (lunar_lander.OBSERVATION_SIZE,):
+        return state[lunar_lander.RAW_OBSERVATION_OFFSET :]
+    if state.shape == (lunar_lander.RAW_OBSERVATION_SIZE,):
+        return state
+    raise ValueError(
+        "expected a LunarLander observation of shape "
+        f"{(lunar_lander.OBSERVATION_SIZE,)} or "
+        f"{(lunar_lander.RAW_OBSERVATION_SIZE,)}, got {state.shape}"
+    )
+
+
+def _is_landing(transition: Transition) -> bool:
+    r"""Whether a terminal transition ended on the environment's sleep branch.
+
+    The environment pays $+100$ exactly when the lander is asleep and $-100$
+    otherwise, and that bit is not a coordinate of the observation, so the label
+    is read from the step info.
+    """
+    key = lunar_lander.AWAKE_INFO_KEY
+    if key not in transition.info:
+        raise KeyError(
+            f"info has no {key!r} entry; the terminal label requires "
+            "lunar_lander.LunarLanderAwakeInfoWrapper"
+        )
+    return not bool(transition.info[key])
+
+
 _BUILDERS: dict[str, Callable[..., TransitionFeatureFn]] = {
     "current-features": _current_features,
     "current-and-successor-features": _current_and_successor_features,
@@ -723,4 +826,5 @@ _BUILDERS: dict[str, Callable[..., TransitionFeatureFn]] = {
         _gridworld_nominal_transition_anomaly_features
     ),
     "gridworld-nominal-next-cell-features": _gridworld_nominal_next_cell_features,
+    "lunar-lander-reward-features": _lunar_lander_reward_features,
 }
