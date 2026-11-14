@@ -1011,8 +1011,13 @@ class TestLeastLfaGenerativeRewardWrapper:
         )
         assert np.max(np.abs(errors)) < 1e-9
 
-    def test_row_intercept_misprices_the_per_step_constant(self):
-        """A fit-time intercept passes the row fit and fails the prediction."""
+    def test_row_intercept_biases_per_step_predictions_by_window_length(self):
+        """
+        A fit-time intercept passes the row fit and biases every per-step
+        prediction by $c(L-1)$, where $L$ is the window length: the
+        intercept absorbs the per-step constant at window scale
+        ($\\hat{b} = cL$ per row).
+        """
         constant, weight, delay = -1.0, 0.5, 3
         env = ConstantPlusIndexEnv(constant=constant, weight=weight, episode_steps=12)
         delayed = rewdelay.DelayedRewardWrapper(

@@ -10,8 +10,11 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from drmdp import constants, task
-from drmdp.workflows import biasvarjob, controlexps, estimationexps, rewest
-from drmdp.workflows.grids import validate_least_coverage
+from drmdp.workflows.control import exps
+from drmdp.workflows.reward_estimation.bias_variance import exps as bias_variance_exps
+from drmdp.workflows.reward_estimation.encodings import exps as encodings_exps
+from drmdp.workflows.reward_estimation.methods import exps as methods_exps
+from drmdp.workflows.reward_estimation.methods import validate_least
 
 CONTROL_FEATS: Sequence[Mapping[str, Any]] = [
     {"name": "tile-observation-action-ft", "args": {"tiling_dim": 2}}
@@ -23,7 +26,7 @@ class TestSpecFamilies:
     """Every family that derives estimator arguments emits the shared multiple."""
 
     def test_control_family(self):
-        for spec in controlexps.gaussian_illustration_experiment_specs():
+        for spec in exps.gaussian_illustration_experiment_specs():
             for mapper_name in ESTIMATOR_MAPPERS:
                 for args in _estimator_args(spec, mapper_name):
                     assert args["estimation_buffer_mult"] == (
@@ -31,7 +34,7 @@ class TestSpecFamilies:
                     )
 
     def test_estimation_campaign(self):
-        for spec in estimationexps.estimation_experiment_specs():
+        for spec in encodings_exps.experiment_specs():
             for problem_spec in spec["problem_specs"]:
                 args = problem_spec["reward_mapper"]["args"]
                 assert args["estimation_buffer_mult"] == (
@@ -40,11 +43,11 @@ class TestSpecFamilies:
 
     def test_rewest_factories(self):
         specs = (
-            list(rewest.discrete_least_specs((10,), [CONTROL_FEATS]))
-            + list(rewest.least_specs((10,), [CONTROL_FEATS]))
-            + list(rewest.bayes_least_specs((10,), [CONTROL_FEATS]))
-            + list(rewest.cvlps_specs((10,), [CONTROL_FEATS]))
-            + list(rewest.recurring_cvlps((10,), [CONTROL_FEATS]))
+            list(methods_exps.discrete_least_specs((10,), [CONTROL_FEATS]))
+            + list(methods_exps.least_specs((10,), [CONTROL_FEATS]))
+            + list(methods_exps.bayes_least_specs((10,), [CONTROL_FEATS]))
+            + list(methods_exps.cvlps_specs((10,), [CONTROL_FEATS]))
+            + list(methods_exps.recurring_cvlps((10,), [CONTROL_FEATS]))
         )
         assert specs
         for spec in specs:
@@ -52,9 +55,9 @@ class TestSpecFamilies:
                 constants.DEFAULT_ESTIMATION_BUFFER_MULT
             )
 
-    def test_biasvarjob_factories(self):
-        specs = list(biasvarjob.least_lfa_specs((10,), [CONTROL_FEATS])) + list(
-            biasvarjob.bayes_least_lfa_specs((10,), [CONTROL_FEATS])
+    def test_bias_variance_factories(self):
+        specs = list(bias_variance_exps.least_lfa_specs((10,), [CONTROL_FEATS])) + list(
+            bias_variance_exps.bayes_least_lfa_specs((10,), [CONTROL_FEATS])
         )
         assert specs
         for spec in specs:
@@ -64,7 +67,7 @@ class TestSpecFamilies:
 
     def test_grid_validation_method_configs(self):
         for mapper_name in ESTIMATOR_MAPPERS:
-            config = validate_least_coverage.METHOD_CONFIGS[mapper_name]
+            config = validate_least.METHOD_CONFIGS[mapper_name]
             assert config["estimation_buffer_mult"] == (
                 constants.DEFAULT_ESTIMATION_BUFFER_MULT
             )
@@ -75,7 +78,7 @@ class TestBufferCapacity:
 
     def test_capacity_is_the_multiple_times_the_feature_dim(self):
         seen: set[str] = set()
-        for spec in controlexps.gaussian_illustration_experiment_specs():
+        for spec in exps.gaussian_illustration_experiment_specs():
             if spec["name"] in seen:
                 continue
             seen.add(spec["name"])
