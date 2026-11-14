@@ -1,23 +1,16 @@
 """
-Bias-Variance Decomposition Experiment for Reward Estimators.
+Ray job for the bias-variance campaign.
 
-This module runs experiments to empirically measure the bias and variance
-of reward estimators (least-lfa and bayes-least-lfa) compared to true rewards.
-
-Methodology
-1. Train reward estimator models with different seeds
-2. Collect one fixed dataset of (state, action, true_reward) samples
-3. Apply all models to predict rewards for each sample
-4. Compute bias/variance across the predictions for the same sample
-
-This ensures all predictions target the same true reward value, making the
-bias-variance decomposition mathematically valid.
-
-Mathematical Background:
-For predictions {ŷ₁, ŷ₂, ..., ŷₙ} for the same sample with true value y:
-- Bias = mean(ŷ) - y
-- Variance = var(ŷ)
-- MSE = mean((ŷ - y)²) = Bias² + Variance
+Decomposes reward estimators' prediction error into bias and variance
+across seeds on one fixed sample dataset: phase 1 trains least-lfa and
+bayes-least-lfa models and extracts their parameters, phase 2 collects a
+fixed dataset of (observation, action, true reward) samples, phase 3
+applies every model to the same samples, and phase 4 aggregates the
+per-sample error decomposition into sample-level and summary Parquet
+tables. All predictions target the same true reward, which makes the
+decomposition $\text{MSE} = \text{bias}^2 + \text{variance}$ valid.
+Launch with
+`python src/drmdp/workflows/reward_estimation/bias_variance/job.py`.
 """
 
 import argparse
@@ -39,7 +32,6 @@ import ray
 import ray.data
 
 from drmdp import (
-    constants,
     core,
     dataproc,
     envs,
@@ -50,10 +42,10 @@ from drmdp import (
     transform,
 )
 from drmdp.workflows import raytasks
+from drmdp.workflows.reward_estimation.bias_variance import exps
 
 logger = logging.getLogger(__name__)
 
-MAX_STEPS_PER_EPISODE_GEM = 10_000
 SAMPLES_PER_ENV = 100_000
 DATASET_SEED = 42
 
@@ -103,7 +95,7 @@ class BiasVarianceAggregator(ray.data.aggregate.AggregateFn):
             new_acc["metadata"] = {
                 "sample_id": int(row["sample_id"]),
                 "env_name": row["env_name"],
-                "rewest_method": row["rewest_method"],
+                "method": row["method"],
                 "estimation_episode": int(row["estimation_episode"]),
                 "delay": int(row["delay"]),
                 "gamma": float(row["gamma"]),
@@ -171,7 +163,7 @@ class BiasVarianceAggregator(ray.data.aggregate.AggregateFn):
 
 
 @dataclasses.dataclass(frozen=True)
-class Args:
+class BiasVariancePipelineArgs:
     """Task arguments."""
 
     num_runs: int
@@ -186,8 +178,8 @@ class JobSpec:
     env_name: str
     env_args: Mapping[str, Any]
     control_feats_spec: Sequence[Mapping[str, Any]]
-    rewest_method: str
-    rewest_args: Mapping[str, Any]
+    method: str
+    method_args: Mapping[str, Any]
     reward_delay: int
     gamma: float
     estimation_episode: int
@@ -204,7 +196,7 @@ class RewardModelArtifact:
     model_id: str
     run_id: int
     env_name: str
-    rewest_method: str
+    method: str
     estimation_episode: int
     reward_delay: int
     gamma: float
@@ -215,277 +207,6 @@ class RewardModelArtifact:
     mv_normal_mean: np.ndarray | None = None
     mv_normal_cov: np.ndarray | None = None
     estimation_meta: dict[str, Any] | None = None
-
-
-def least_lfa_specs(
-    attempt_estimation_episodes: Sequence[int],
-    feat_specs: Sequence[Sequence[Mapping[str, Any]]],
-) -> list[Mapping[str, Any]]:
-    """Generate specs for least-lfa estimator."""
-    specs: list[Mapping[str, Any]] = []
-    for attempt_episode, feat_spec in itertools.product(
-        attempt_estimation_episodes, feat_specs
-    ):
-        specs.append(
-            {
-                "name": "least-lfa",
-                "args": {
-                    "attempt_estimation_episode": attempt_episode,
-                    "transition_feats_spec": {
-                        "name": "current-features",
-                        "args": {"current_spec": feat_spec},
-                    },
-                    "estimation_buffer_mult": (
-                        constants.DEFAULT_ESTIMATION_BUFFER_MULT
-                    ),
-                },
-            }
-        )
-    return specs
-
-
-def bayes_least_lfa_specs(
-    init_attempt_estimation_episodes: Sequence[int],
-    feat_specs: Sequence[Sequence[Mapping[str, Any]]],
-) -> list[Mapping[str, Any]]:
-    """Generate specs for bayes-least-lfa estimator."""
-    specs: list[Mapping[str, Any]] = []
-    for init_attempt_episode, feat_spec in itertools.product(
-        init_attempt_estimation_episodes, feat_specs
-    ):
-        specs.append(
-            {
-                "name": "bayes-least-lfa",
-                "args": {
-                    "init_attempt_estimation_episode": init_attempt_episode,
-                    "mode": "exponential",
-                    "transition_feats_spec": {
-                        "name": "current-features",
-                        "args": {"current_spec": feat_spec},
-                    },
-                    "estimation_buffer_mult": (
-                        constants.DEFAULT_ESTIMATION_BUFFER_MULT
-                    ),
-                },
-            }
-        )
-    return specs
-
-
-def experiment_specs() -> Sequence[Mapping[str, Any]]:
-    """
-    Returns experiment configurations.
-    """
-    return (
-        {
-            "name": "Finite-CC-PermExDc-v0",
-            "args": {
-                "reward_fn": "pos-enf",
-                "penalty_gamma": 1.0,
-                "constraint_violation_reward": -10,
-                "max_episode_steps": MAX_STEPS_PER_EPISODE_GEM,
-                "emit_state": False,
-            },
-            "feats_specs": [
-                [
-                    {
-                        "name": "splice-tile-observation-action-ft",
-                        "args": {"tiling_dim": 4},
-                    }
-                ]
-            ],
-            "rewest": least_lfa_specs(
-                attempt_estimation_episodes=(10,),
-                feat_specs=[
-                    [
-                        {"name": "scale-observation-ft", "args": None},
-                        {"name": "action-segment-observation-ft", "args": None},
-                    ],
-                ],
-            )
-            + bayes_least_lfa_specs(
-                init_attempt_estimation_episodes=(10,),
-                feat_specs=[
-                    [
-                        {"name": "scale-observation-ft", "args": None},
-                        {"name": "action-segment-observation-ft", "args": None},
-                    ],
-                ],
-            ),
-            "epochs": 1,
-        },
-        {
-            "name": "Finite-CC-ShuntDc-v0",
-            "args": {
-                "reward_fn": "pos-enf",
-                "penalty_gamma": 1.0,
-                "constraint_violation_reward": -10,
-                "max_episode_steps": MAX_STEPS_PER_EPISODE_GEM,
-                "emit_state": False,
-            },
-            "feats_specs": [
-                [{"name": "tile-observation-action-ft", "args": {"tiling_dim": 3}}]
-            ],
-            "rewest": least_lfa_specs(
-                attempt_estimation_episodes=(10,),
-                feat_specs=[
-                    [
-                        {"name": "scale-observation-ft", "args": None},
-                        {"name": "action-segment-observation-ft", "args": None},
-                    ],
-                ],
-            )
-            + bayes_least_lfa_specs(
-                init_attempt_estimation_episodes=(10,),
-                feat_specs=[
-                    [
-                        {"name": "scale-observation-ft", "args": None},
-                        {"name": "action-segment-observation-ft", "args": None},
-                    ],
-                ],
-            ),
-            "epochs": 1,
-        },
-        {
-            "name": "Finite-SC-PermExDc-v0",
-            "args": {
-                "reward_fn": "pos-enf",
-                "penalty_gamma": 1.0,
-                "constraint_violation_reward": -10,
-                "max_episode_steps": MAX_STEPS_PER_EPISODE_GEM,
-                "emit_state": False,
-            },
-            "feats_specs": [
-                [
-                    {
-                        "name": "splice-tile-observation-action-ft",
-                        "args": {"tiling_dim": 3},
-                    }
-                ]
-            ],
-            "rewest": least_lfa_specs(
-                attempt_estimation_episodes=(10,),
-                feat_specs=[
-                    [
-                        {"name": "scale-observation-ft", "args": None},
-                        {"name": "action-segment-observation-ft", "args": None},
-                    ],
-                ],
-            )
-            + bayes_least_lfa_specs(
-                init_attempt_estimation_episodes=(10,),
-                feat_specs=[
-                    [
-                        {"name": "scale-observation-ft", "args": None},
-                        {"name": "action-segment-observation-ft", "args": None},
-                    ],
-                ],
-            ),
-            "epochs": 1,
-        },
-        {
-            "name": "Finite-SC-ShuntDc-v0",
-            "args": {
-                "reward_fn": "pos-enf",
-                "penalty_gamma": 1.0,
-                "constraint_violation_reward": -10,
-                "max_episode_steps": MAX_STEPS_PER_EPISODE_GEM,
-                "emit_state": True,
-            },
-            "feats_specs": [
-                [
-                    {"name": "scale-observation-ft", "args": None},
-                    {"name": "action-segment-observation-ft", "args": None},
-                ],
-            ],
-            "rewest": least_lfa_specs(
-                attempt_estimation_episodes=(10,),
-                feat_specs=[
-                    [
-                        {"name": "scale-observation-ft", "args": None},
-                        {"name": "action-segment-observation-ft", "args": None},
-                    ],
-                ],
-            )
-            + bayes_least_lfa_specs(
-                init_attempt_estimation_episodes=(10,),
-                feat_specs=[
-                    [
-                        {"name": "scale-observation-ft", "args": None},
-                        {"name": "action-segment-observation-ft", "args": None},
-                    ],
-                ],
-            ),
-            "epochs": 1,
-        },
-        {
-            "name": "Finite-TC-PermExDc-v0",
-            "args": {
-                "reward_fn": "pos-enf",
-                "penalty_gamma": 1.0,
-                "constraint_violation_reward": -10,
-                "max_episode_steps": MAX_STEPS_PER_EPISODE_GEM,
-                "emit_state": False,
-            },
-            "feats_specs": [
-                [{"name": "tile-observation-action-ft", "args": {"tiling_dim": 3}}]
-            ],
-            "rewest": least_lfa_specs(
-                attempt_estimation_episodes=(10,),
-                feat_specs=[
-                    [
-                        {"name": "scale-observation-ft", "args": None},
-                        {"name": "action-segment-observation-ft", "args": None},
-                    ],
-                ],
-            )
-            + bayes_least_lfa_specs(
-                init_attempt_estimation_episodes=(10,),
-                feat_specs=[
-                    [
-                        {"name": "scale-observation-ft", "args": None},
-                        {"name": "action-segment-observation-ft", "args": None},
-                    ],
-                ],
-            ),
-            "epochs": 1,
-        },
-        {
-            "name": "Finite-TC-ShuntDc-v0",
-            "args": {
-                "reward_fn": "pos-enf",
-                "penalty_gamma": 1.0,
-                "constraint_violation_reward": -10,
-                "max_episode_steps": MAX_STEPS_PER_EPISODE_GEM,
-                "emit_state": True,
-            },
-            "feats_specs": [
-                [
-                    {"name": "scale-observation-ft", "args": None},
-                    {"name": "action-segment-observation-ft", "args": None},
-                ]
-            ],
-            "rewest": least_lfa_specs(
-                attempt_estimation_episodes=(10,),
-                feat_specs=[
-                    [
-                        {"name": "scale-observation-ft", "args": None},
-                        {"name": "action-segment-observation-ft", "args": None},
-                    ],
-                ],
-            )
-            + bayes_least_lfa_specs(
-                init_attempt_estimation_episodes=(10,),
-                feat_specs=[
-                    [
-                        {"name": "scale-observation-ft", "args": None},
-                        {"name": "action-segment-observation-ft", "args": None},
-                    ],
-                ],
-            ),
-            "epochs": 1,
-        },
-    )
 
 
 def create_all_job_specs(
@@ -508,14 +229,14 @@ def create_all_job_specs(
     """
     jobs = []
     for spec in specs:
-        for feats_spec, rewest_spec in itertools.product(
-            spec["feats_specs"], spec["rewest"]
+        for feats_spec, method_spec in itertools.product(
+            spec["feats_specs"], spec["methods"]
         ):
             # Extract estimation episode parameter
-            if rewest_spec["name"] == "least-lfa":
-                est_episode = rewest_spec["args"]["attempt_estimation_episode"]
-            elif rewest_spec["name"] == "bayes-least-lfa":
-                est_episode = rewest_spec["args"]["init_attempt_estimation_episode"]
+            if method_spec["name"] == "least-lfa":
+                est_episode = method_spec["args"]["attempt_estimation_episode"]
+            elif method_spec["name"] == "bayes-least-lfa":
+                est_episode = method_spec["args"]["init_attempt_estimation_episode"]
             else:
                 continue
 
@@ -530,8 +251,8 @@ def create_all_job_specs(
                     reward_delay=delay,
                     gamma=gamma,
                     estimation_episode=est_episode,
-                    rewest_method=rewest_spec["name"],
-                    rewest_args=rewest_spec["args"],
+                    method=method_spec["name"],
+                    method_args=method_spec["args"],
                     intercept=False,
                     epochs=spec["epochs"],
                     run_id=run_id,
@@ -555,8 +276,8 @@ def create_exp_instance(job_spec: JobSpec) -> core.ExperimentInstance:
     problem_spec = core.ProblemSpec(
         policy_type="markovian",
         reward_mapper={
-            "name": job_spec.rewest_method,
-            "args": job_spec.rewest_args,
+            "name": job_spec.method,
+            "args": job_spec.method_args,
         },
         delay_config=fixed_delay_config(job_spec.reward_delay),
         epsilon=0.1,
@@ -599,9 +320,9 @@ def extract_reward_model_from_wrapper(
         RewardModelArtifact if estimation succeeded, None otherwise
     """
     # Get ft_op_spec from job_spec
-    ft_op_spec = list(job_spec.rewest_args.get("feats_spec", []))
+    ft_op_spec = list(job_spec.method_args.get("feats_spec", []))
 
-    model_id = f"{job_spec.env_name}_{job_spec.rewest_method}_d{job_spec.reward_delay}_g{job_spec.gamma}_e{job_spec.estimation_episode}_r{job_spec.run_id}"
+    model_id = f"{job_spec.env_name}_{job_spec.method}_d{job_spec.reward_delay}_g{job_spec.gamma}_e{job_spec.estimation_episode}_r{job_spec.run_id}"
 
     if isinstance(wrapper, rewdelay.LeastLfaGenerativeRewardWrapper):
         if wrapper.weights is None:
@@ -612,7 +333,7 @@ def extract_reward_model_from_wrapper(
             model_id=model_id,
             run_id=job_spec.run_id,
             env_name=job_spec.env_name,
-            rewest_method=job_spec.rewest_method,
+            method=job_spec.method,
             estimation_episode=job_spec.estimation_episode,
             reward_delay=job_spec.reward_delay,
             gamma=job_spec.gamma,
@@ -635,7 +356,7 @@ def extract_reward_model_from_wrapper(
             model_id=model_id,
             run_id=job_spec.run_id,
             env_name=job_spec.env_name,
-            rewest_method=job_spec.rewest_method,
+            method=job_spec.method,
             estimation_episode=job_spec.estimation_episode,
             reward_delay=job_spec.reward_delay,
             gamma=job_spec.gamma,
@@ -853,7 +574,7 @@ def predict_on_dataset(
                 "pred_reward": pred_reward,
                 "true_reward": true_reward,
                 "env_name": model_artifact.env_name,
-                "rewest_method": model_artifact.rewest_method,
+                "method": model_artifact.method,
                 "estimation_episode": model_artifact.estimation_episode,
                 "delay": model_artifact.reward_delay,
                 "gamma": model_artifact.gamma,
@@ -896,7 +617,7 @@ def compute_bias_variance_from_predictions(
     group_cols = [
         "sample_id",
         "env_name",
-        "rewest_method",
+        "method",
         "delay",
         "gamma",
         "estimation_episode",
@@ -928,7 +649,7 @@ def compute_bias_variance_from_predictions(
     logger.info("Computing summary statistics...")
     summary_group_cols = [
         "env_name",
-        "rewest_method",
+        "method",
         "delay",
         "gamma",
         "estimation_episode",
@@ -985,7 +706,7 @@ def main():
     args = parse_args()
 
     # Create all job specifications
-    specs = experiment_specs()
+    specs = exps.experiment_specs()
     job_specs = create_all_job_specs(
         specs=specs,
         num_runs=args.num_runs,
@@ -1067,7 +788,7 @@ def main():
         )
 
 
-def parse_args() -> Args:
+def parse_args() -> BiasVariancePipelineArgs:
     """Parse command line arguments."""
     arg_parser = argparse.ArgumentParser(
         description="Run bias-variance decomposition experiments"
@@ -1091,7 +812,7 @@ def parse_args() -> Args:
         help="Output directory path",
     )
     known_args, _ = arg_parser.parse_known_args()
-    return Args(**vars(known_args))
+    return BiasVariancePipelineArgs(**vars(known_args))
 
 
 if __name__ == "__main__":
