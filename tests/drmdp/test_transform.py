@@ -591,6 +591,36 @@ def test_pipeline():
     assert_batch(output, expected)
 
 
+def test_pipeline_records_the_ops_in_application_order():
+    input_space = space(
+        obs_space=spaces.Box(arr([0, 0]), arr([10, 100])), act_space=spaces.Discrete(2)
+    )
+    pipeline = transform.Pipeline.from_specs(
+        input_space=input_space,
+        specs=[
+            {"name": "scale-observation-ft", "args": None},
+            {"name": "tile-observation-action-ft", "args": {"tiling_dim": 2}},
+        ],
+    )
+    assert len(pipeline.ops) == 2
+    scale_op, tile_op = pipeline.ops
+    assert isinstance(scale_op, transform.ScaleObservationFT)
+    assert isinstance(tile_op, transform.TileObservationActionFT)
+    # the tile op's resolved tiling count is readable off the recorded instance
+    assert tile_op.num_tilings == 8
+    chained = pipeline.map(transform.ScaleObservationFT.builder())
+    assert len(chained.ops) == 3
+    assert chained.ops[:2] == pipeline.ops
+
+
+def test_pipeline_without_maps_records_no_ops():
+    input_space = space(
+        obs_space=spaces.Box(arr([0, 0]), arr([10, 100])), act_space=spaces.Discrete(2)
+    )
+    pipeline = transform.Pipeline(input_space)
+    assert pipeline.ops == ()
+
+
 class TestTileIndices:
     def test_tile_no_hash(self):
         input_space = space(

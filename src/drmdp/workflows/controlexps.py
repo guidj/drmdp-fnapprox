@@ -4,10 +4,11 @@ import math
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+import gymnasium as gym
 import numpy as np
 
-from drmdp import constants, rewardfeat, rewdelay
-from drmdp.envs import gridutils, lunar_lander
+from drmdp import constants, rewardfeat, rewdelay, task, transform
+from drmdp.envs import gridutils
 from drmdp.workflows import estimationencodings
 
 EPSILON = 0.1
@@ -19,11 +20,7 @@ LEARNING_RATE_SPEC: Mapping[str, Any] = {
 # Numerator of the dimension-derived learning-rate rules. The rate is the head
 # divided by the representation's size, so a larger representation takes
 # proportionally smaller steps.
-LUNAR_LANDER_BASE_STEP_SIZE = 0.1
-# Rule the lunar template resolves into its learning rate. The options are the
-# keys of LUNAR_LANDER_LEARNING_RATE_RULES and their relative performance is
-# measured in agents/plans/2026-11-08-lunar-lander-illustration.md.
-LUNAR_LANDER_LEARNING_RATE_RULE: str = "dim"
+LEARNING_RATE_BASE_STEP_SIZE = 0.1
 LUNAR_LANDER_TILING_DIM = 8
 LUNAR_LANDER_NUM_TILINGS = 32
 LUNAR_LANDER_HASH_DIM = 2048
@@ -90,43 +87,111 @@ def learning_rate_fixed(base_step_size: float, dimension: int) -> float:
     return float(LEARNING_RATE_SPEC["args"]["initial_lr"])
 
 
-LUNAR_LANDER_LEARNING_RATE_RULES = {
+# The options for the rule argument of derived_learning_rate_config; the
+# dim/actives rules' relative performance is measured in
+# agents/plans/2026-11-08-lunar-lander-illustration.md.
+LEARNING_RATE_RULES = {
     "dim": learning_rate_from_dimension,
     "actives": learning_rate_from_active_features,
     "fixed": learning_rate_fixed,
 }
 
+_TILE_OP_NAMES = ("tile-observation-action-ft", "splice-tile-observation-action-ft")
+_TILE_OP_TYPES = (
+    transform.TileObservationActionFT,
+    transform.SpliceTileObservationActionFT,
+)
 
-def lunar_lander_learning_rate_config(
-    rule: str | None = None,
-    num_tilings: int = LUNAR_LANDER_NUM_TILINGS,
-    base_step_size: float = LUNAR_LANDER_BASE_STEP_SIZE,
+
+def _wrapped_observation_width(observation_space: gym.spaces.Space) -> int:
+    """The number of components the wrapped observation carries.
+
+    A Box observation counts its components; a Discrete observation is one.
+    """
+    if isinstance(observation_space, gym.spaces.Box):
+        return math.prod(observation_space.shape)
+    if isinstance(observation_space, gym.spaces.Discrete):
+        return 1
+    raise TypeError(
+        "Dimension-derived learning-rate rules need a Box or Discrete "
+        f"observation space. Got: {observation_space}"
+    )
+
+
+def _effective_num_tilings(
+    env: gym.Env,
+    feats_specs: Sequence[Sequence[Mapping[str, Any]]],
+) -> int:
+    """The tiling count of the first tile op in the feats pipelines.
+
+    The count is read off the built op, so the default tiling count for an
+    unset num_tilings stays defined in transform.py.
+    """
+    for feats_spec in feats_specs:
+        if not any(spec["name"] in _TILE_OP_NAMES for spec in feats_spec):
+            continue
+        pipeline = transform.transform_pipeline(env, feats_spec)
+        for op in pipeline.ops:
+            if isinstance(op, _TILE_OP_TYPES):
+                return op.num_tilings
+    raise ValueError(
+        "The actives rule needs a tile op "
+        f"({', '.join(_TILE_OP_NAMES)}) in feats_specs. Got none."
+    )
+
+
+def derived_learning_rate_config(
+    env_name: str,
+    env_args: Mapping[str, Any],
+    feats_specs: Sequence[Sequence[Mapping[str, Any]]],
+    rule: str,
+    base_step_size: float = LEARNING_RATE_BASE_STEP_SIZE,
 ) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
-    """Resolves the lunar rule into a learning-rate config and its provenance.
+    """Resolves a learning-rate rule into a config and its provenance.
 
     Returns the config a problem spec carries and the record of the rule that
     produced it: the rule name, the dimension it resolved against and the
-    resulting rate.
+    resulting rate. The wrapped observation width is probed through
+    ``task.create_env``, so wrapper-extended observations are counted; the
+    fixed rule resolves without constructing an env. A provenance key a rule
+    did not consume is None.
     """
-    selected = LUNAR_LANDER_LEARNING_RATE_RULE if rule is None else rule
-    if selected not in LUNAR_LANDER_LEARNING_RATE_RULES:
+    if rule not in LEARNING_RATE_RULES:
         raise ValueError(
-            f"Unknown lunar learning-rate rule {selected!r}. "
-            f"Must be one of: {sorted(LUNAR_LANDER_LEARNING_RATE_RULES)}"
+            f"Unknown learning-rate rule {rule!r}. "
+            f"Must be one of: {sorted(LEARNING_RATE_RULES)}"
         )
-    observation_dim = lunar_lander.OBSERVATION_SIZE
-    dimension = num_tilings if selected == "actives" else observation_dim
-    rate = LUNAR_LANDER_LEARNING_RATE_RULES[selected](base_step_size, dimension)
-    config = {"name": "constant", "args": {"initial_lr": rate}}
+    if rule == "fixed":
+        rate = LEARNING_RATE_RULES[rule](base_step_size, 1)
+        provenance: dict[str, Any] = {
+            "env_name": env_name,
+            "learning_rate_rule": rule,
+            "learning_rate": rate,
+            "base_step_size": base_step_size,
+            "observation_dim": None,
+            "dimension_used": None,
+            "num_tilings": None,
+        }
+        return {"name": "constant", "args": {"initial_lr": rate}}, provenance
+    probe = task.create_env(env_name, env_args, gamma=None, seed=None)
+    observation_dim = _wrapped_observation_width(probe.env.observation_space)
+    if rule == "actives":
+        num_tilings = _effective_num_tilings(probe.env, feats_specs)
+        dimension = num_tilings
+    else:
+        num_tilings = None
+        dimension = observation_dim
+    rate = LEARNING_RATE_RULES[rule](base_step_size, dimension)
     provenance = {
-        "learning_rate_rule": selected,
+        "env_name": env_name,
+        "learning_rate_rule": rule,
         "learning_rate": rate,
+        "base_step_size": base_step_size,
         "observation_dim": observation_dim,
         "dimension_used": dimension,
         "num_tilings": num_tilings,
-        "base_step_size": base_step_size,
     }
-    return config, provenance
+    return {"name": "constant", "args": {"initial_lr": rate}}, provenance
 
 
 def least_specs(
@@ -319,6 +384,40 @@ def common_problem_specs(
                     ]
                 )
     return tuple(specs)
+
+
+def _illustration_problem_specs(
+    learning_rate_config: Mapping[str, Any],
+    transition_feats_specs: Sequence[Mapping[str, Any]],
+) -> Sequence[Mapping[str, Any]]:
+    """The illustration family's problem specs under one learning rate.
+
+    The identity-mapper arm plus the least-squares and Bayesian estimator
+    arms, all carrying the same learning-rate config.
+    """
+    return (
+        tuple(
+            common_problem_specs(
+                include_options=False,
+                learning_rate_config=learning_rate_config,
+            )
+        )
+        + tuple(
+            least_specs(
+                attempt_estimation_episodes=(10,),
+                estimation_check="factors",
+                transition_feats_specs=transition_feats_specs,
+                learning_rate_config=learning_rate_config,
+            )
+        )
+        + tuple(
+            bayes_least_specs(
+                init_attempt_estimation_episodes=(10,),
+                transition_feats_specs=transition_feats_specs,
+                learning_rate_config=learning_rate_config,
+            )
+        )
+    )
 
 
 def electric_motor_experiment_specs() -> Sequence[Mapping[str, Any]]:
@@ -628,135 +727,135 @@ def gaussian_illustration_experiment_specs(
     that appends the shaped potential, and control features computed on the
     raw dimensions only.
     """
+    mc_base_args: Mapping[str, Any] = {
+        "max_episode_steps": 2500,
+        "reward_shaping": {
+            "name": "mountain-car-height-pbrs",
+            "args": {"scale": 1.0},
+        },
+        "reward_obs": {
+            "name": "mountain-car-height-pbrs-potential",
+            "args": {},
+        },
+    }
+    mc_feats_specs: Sequence[Sequence[Mapping[str, Any]]] = [
+        [
+            estimationencodings.keep_raw_dims(raw_dim=2, observation_dim=3),
+            {
+                "name": "tile-observation-action-ft",
+                "args": {"tiling_dim": mc_tiling_dim},
+            },
+        ]
+    ]
     mc_est_feats: Sequence[Mapping[str, Any]] = [
         estimationencodings.mc_potential_curr_succ()
+    ]
+    mc_learning_rate_config, mc_provenance = derived_learning_rate_config(
+        env_name="MountainCar-v0",
+        env_args=mc_base_args,
+        feats_specs=mc_feats_specs,
+        rule="fixed",
+    )
+    acrobot_base_args: Mapping[str, Any] = {
+        "max_episode_steps": 500,
+        "reward_shaping": {
+            "name": "acrobot-tip-height-pbrs",
+            "args": {"scale": 1.0},
+        },
+        "reward_obs": {"name": "acrobot-tip-height-pbrs-potential", "args": {}},
+    }
+    acrobot_feats_specs: Sequence[Sequence[Mapping[str, Any]]] = [
+        [
+            estimationencodings.keep_raw_dims(raw_dim=6, observation_dim=7),
+            {
+                "name": "tile-observation-action-ft",
+                "args": {
+                    "tiling_dim": acrobot_tiling_dim,
+                    "hash_dim": acrobot_hash_dim,
+                },
+            },
+        ]
     ]
     acrobot_est_feats: Sequence[Mapping[str, Any]] = [
         estimationencodings.acrobot_potential_curr_succ()
     ]
+    acrobot_learning_rate_config, acrobot_provenance = derived_learning_rate_config(
+        env_name="Acrobot-v1",
+        env_args=acrobot_base_args,
+        feats_specs=acrobot_feats_specs,
+        rule="fixed",
+    )
+    gw_base_args: Mapping[str, Any] = {
+        "grid": MINES_GW_GRID,
+        "max_episode_steps": 200,
+        "reward_shaping": {
+            "name": "gridworld-distance-pbrs",
+            "args": {"scale": 1.0, "exponent": 2.0},
+        },
+        "reward_obs": {"name": "gridworld-distance-pbrs-potential", "args": {}},
+    }
+    gw_feats_specs: Sequence[Sequence[Mapping[str, Any]]] = [
+        [
+            estimationencodings.keep_raw_dims(raw_dim=2, observation_dim=3),
+            {
+                "name": "tile-observation-action-ft",
+                "args": {"tiling_dim": gw_tiling_dim},
+            },
+        ]
+    ]
     gw_est_feats: Sequence[Mapping[str, Any]] = [
         estimationencodings.gw_potential_curr_succ()
     ]
+    gw_learning_rate_config, gw_provenance = derived_learning_rate_config(
+        env_name="GridWorld-MINES",
+        env_args=gw_base_args,
+        feats_specs=gw_feats_specs,
+        rule="fixed",
+    )
 
     env_templates: list[Mapping[str, Any]] = [
         {
             "name": "MountainCar-v0",
-            "base_args": {
-                "max_episode_steps": 2500,
-                "reward_shaping": {
-                    "name": "mountain-car-height-pbrs",
-                    "args": {"scale": 1.0},
-                },
-                "reward_obs": {
-                    "name": "mountain-car-height-pbrs-potential",
-                    "args": {},
-                },
-            },
+            "base_args": mc_base_args,
             # unit = modal per-step reward magnitude: the base reward is -1
             # per step and the PBRS term r' = -1 + gamma*Phi(s') - Phi(s) is
             # bounded by 0.21 at gamma = 1 (|x' - x| <= 0.07,
             # |d sin(3x)/dx| <= 3)
             "reference_std": 1.0,
-            "feats_specs": [
-                [
-                    estimationencodings.keep_raw_dims(raw_dim=2, observation_dim=3),
-                    {
-                        "name": "tile-observation-action-ft",
-                        "args": {"tiling_dim": mc_tiling_dim},
-                    },
-                ]
-            ],
-            "problem_specs_fn": lambda: (
-                common_problem_specs(include_options=False)
-                + least_specs(
-                    attempt_estimation_episodes=(10,),
-                    estimation_check="factors",
-                    transition_feats_specs=mc_est_feats,
-                )
-                + bayes_least_specs(
-                    init_attempt_estimation_episodes=(10,),
-                    transition_feats_specs=mc_est_feats,
-                )
+            "feats_specs": mc_feats_specs,
+            "problem_specs_fn": lambda: _illustration_problem_specs(
+                mc_learning_rate_config, mc_est_feats
             ),
+            "metadata": mc_provenance,
             "epochs": 10,
         },
         {
             "name": "Acrobot-v1",
-            "base_args": {
-                "max_episode_steps": 500,
-                "reward_shaping": {
-                    "name": "acrobot-tip-height-pbrs",
-                    "args": {"scale": 1.0},
-                },
-                "reward_obs": {"name": "acrobot-tip-height-pbrs-potential", "args": {}},
-            },
+            "base_args": acrobot_base_args,
             # unit = modal per-step reward magnitude: the base reward is -1 on
             # non-terminal steps and 0 on the terminal one, and the PBRS term
             # r' = -1*1[not term] + gamma*Phi(s') - Phi(s) is bounded by the
             # potential's range
             "reference_std": 1.0,
-            "feats_specs": [
-                [
-                    estimationencodings.keep_raw_dims(raw_dim=6, observation_dim=7),
-                    {
-                        "name": "tile-observation-action-ft",
-                        "args": {
-                            "tiling_dim": acrobot_tiling_dim,
-                            "hash_dim": acrobot_hash_dim,
-                        },
-                    },
-                ]
-            ],
-            "problem_specs_fn": lambda: (
-                common_problem_specs(include_options=False)
-                + least_specs(
-                    attempt_estimation_episodes=(10,),
-                    estimation_check="factors",
-                    transition_feats_specs=acrobot_est_feats,
-                )
-                + bayes_least_specs(
-                    init_attempt_estimation_episodes=(10,),
-                    transition_feats_specs=acrobot_est_feats,
-                )
+            "feats_specs": acrobot_feats_specs,
+            "problem_specs_fn": lambda: _illustration_problem_specs(
+                acrobot_learning_rate_config, acrobot_est_feats
             ),
+            "metadata": acrobot_provenance,
             "epochs": 10,
         },
         {
             "name": "GridWorld-MINES",
-            "base_args": {
-                "grid": MINES_GW_GRID,
-                "max_episode_steps": 200,
-                "reward_shaping": {
-                    "name": "gridworld-distance-pbrs",
-                    "args": {"scale": 1.0, "exponent": 2.0},
-                },
-                "reward_obs": {"name": "gridworld-distance-pbrs-potential", "args": {}},
-            },
+            "base_args": gw_base_args,
             # unit = modal per-step reward magnitude: the base reward is -1 per
             # move and -100 on a cliff entry, so the modal magnitude is 1 and
             # the cliff carries a separate indicator coordinate
             "reference_std": 1.0,
-            "feats_specs": [
-                [
-                    estimationencodings.keep_raw_dims(raw_dim=2, observation_dim=3),
-                    {
-                        "name": "tile-observation-action-ft",
-                        "args": {"tiling_dim": gw_tiling_dim},
-                    },
-                ]
-            ],
-            "problem_specs_fn": lambda: (
-                common_problem_specs(include_options=False)
-                + least_specs(
-                    attempt_estimation_episodes=(10,),
-                    estimation_check="factors",
-                    transition_feats_specs=gw_est_feats,
-                )
-                + bayes_least_specs(
-                    init_attempt_estimation_episodes=(10,),
-                    transition_feats_specs=gw_est_feats,
-                )
+            "feats_specs": gw_feats_specs,
+            "problem_specs_fn": lambda: _illustration_problem_specs(
+                gw_learning_rate_config, gw_est_feats
             ),
+            "metadata": gw_provenance,
             "epochs": 5,
         },
         _lunar_lander_template(),
@@ -786,9 +885,7 @@ def gaussian_illustration_experiment_specs(
     return tuple(specs)
 
 
-def _lunar_lander_template(
-    learning_rate_rule: str | None = None,
-) -> Mapping[str, Any]:
+def _lunar_lander_template(rule: str = "dim") -> Mapping[str, Any]:
     """The illustration family's LunarLander-v3 template.
 
     The reward is the environment's own, with no shaping wrapper, and the
@@ -801,58 +898,40 @@ def _lunar_lander_template(
     first fit is deferred until a landing occurs; deferred attempts are recorded
     in the run's estimation events.
     """
-    learning_rate_config, provenance = lunar_lander_learning_rate_config(
-        rule=learning_rate_rule
-    )
+    base_args: Mapping[str, Any] = {
+        "max_episode_steps": LUNAR_LANDER_MAX_EPISODE_STEPS,
+        "wrapper": constants.LUNAR_LANDER_REWARD_OBS,
+    }
+    feats_specs: Sequence[Sequence[Mapping[str, Any]]] = [
+        [
+            {
+                "name": "splice-tile-observation-action-ft",
+                "args": {
+                    "tiling_dim": LUNAR_LANDER_TILING_DIM,
+                    "num_tilings": LUNAR_LANDER_NUM_TILINGS,
+                    "hash_dim": LUNAR_LANDER_HASH_DIM,
+                },
+            }
+        ]
+    ]
     encoding: Sequence[Mapping[str, Any]] = [estimationencodings.lunar_lander_reward()]
-
-    def problem_specs_fn() -> Sequence[Mapping[str, Any]]:
-        specs: list[Mapping[str, Any]] = list(
-            common_problem_specs(
-                include_options=False,
-                learning_rate_config=learning_rate_config,
-            )
-        )
-        specs += list(
-            least_specs(
-                attempt_estimation_episodes=(10,),
-                estimation_check="factors",
-                transition_feats_specs=encoding,
-                learning_rate_config=learning_rate_config,
-            )
-        )
-        specs += list(
-            bayes_least_specs(
-                init_attempt_estimation_episodes=(10,),
-                transition_feats_specs=encoding,
-                learning_rate_config=learning_rate_config,
-            )
-        )
-        return specs
-
+    learning_rate_config, provenance = derived_learning_rate_config(
+        env_name="LunarLander-v3",
+        env_args=base_args,
+        feats_specs=feats_specs,
+        rule=rule,
+    )
     return {
         "name": "LunarLander-v3",
-        "base_args": {
-            "max_episode_steps": LUNAR_LANDER_MAX_EPISODE_STEPS,
-            "wrapper": constants.LUNAR_LANDER_REWARD_OBS,
-        },
+        "base_args": base_args,
         # unit = modal per-step reward magnitude: the potential difference and
         # the fuel cost are of order 1 per step, and the +/-100 terminal reward
         # is a separate branch the terminal columns carry
         "reference_std": 1.0,
-        "feats_specs": [
-            [
-                {
-                    "name": "splice-tile-observation-action-ft",
-                    "args": {
-                        "tiling_dim": LUNAR_LANDER_TILING_DIM,
-                        "num_tilings": LUNAR_LANDER_NUM_TILINGS,
-                        "hash_dim": LUNAR_LANDER_HASH_DIM,
-                    },
-                }
-            ]
-        ],
-        "problem_specs_fn": problem_specs_fn,
+        "feats_specs": feats_specs,
+        "problem_specs_fn": lambda: _illustration_problem_specs(
+            learning_rate_config, encoding
+        ),
         "metadata": provenance,
         "epochs": 10,
     }

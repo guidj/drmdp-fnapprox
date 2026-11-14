@@ -11,7 +11,22 @@ from drmdp.workflows import controlexps
 
 class TestLunarLanderControlRun:
     def test_logged_returns_and_evaluations_are_finite(self, tmp_path):
-        learning_rate_config, _ = controlexps.lunar_lander_learning_rate_config()
+        learning_rate_config, _ = controlexps.derived_learning_rate_config(
+            env_name="LunarLander-v3",
+            env_args={
+                "max_episode_steps": 1000,
+                "wrapper": constants.LUNAR_LANDER_REWARD_OBS,
+            },
+            feats_specs=[
+                [
+                    {
+                        "name": "splice-tile-observation-action-ft",
+                        "args": {"tiling_dim": 8, "hash_dim": 2048},
+                    }
+                ]
+            ],
+            rule="dim",
+        )
         exp_instance = core.ExperimentInstance(
             exp_id="lunar-lander-smoke",
             instance_id=0,

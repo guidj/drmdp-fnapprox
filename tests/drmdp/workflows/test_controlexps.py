@@ -386,25 +386,85 @@ class TestLearningRateRules:
             controlexps.learning_rate_from_active_features(0.1, 0)
 
 
-class TestLunarLanderLearningRate:
-    def test_selected_rule_resolves_against_the_emitted_observation_width(self):
-        config, provenance = controlexps.lunar_lander_learning_rate_config()
+class TestDerivedLearningRateConfig:
+    def test_dim_rule_resolves_against_the_wrapped_observation_width(self):
+        config, provenance = controlexps.derived_learning_rate_config(
+            env_name="LunarLander-v3",
+            env_args=_LUNAR_BASE_ARGS,
+            feats_specs=_LUNAR_FEATS_SPECS,
+            rule="dim",
+        )
+        assert provenance["env_name"] == "LunarLander-v3"
         assert provenance["learning_rate_rule"] == "dim"
+        assert provenance["base_step_size"] == 0.1
         assert provenance["observation_dim"] == 13
         assert provenance["dimension_used"] == 13
+        assert provenance["num_tilings"] is None
         assert config["args"]["initial_lr"] == pytest.approx(0.1 / 13)
         assert provenance["learning_rate"] == pytest.approx(0.1 / 13)
 
-    def test_active_feature_rule_resolves_against_the_tiling_count(self):
-        config, provenance = controlexps.lunar_lander_learning_rate_config(
-            rule="actives"
+    def test_actives_rule_resolves_against_the_tiling_count(self):
+        config, provenance = controlexps.derived_learning_rate_config(
+            env_name="LunarLander-v3",
+            env_args=_LUNAR_BASE_ARGS,
+            feats_specs=_LUNAR_FEATS_SPECS,
+            rule="actives",
         )
-        assert provenance["dimension_used"] == controlexps.LUNAR_LANDER_NUM_TILINGS
+        assert provenance["observation_dim"] == 13
+        assert provenance["dimension_used"] == 32
+        assert provenance["num_tilings"] == 32
         assert config["args"]["initial_lr"] == pytest.approx(0.1 / 32)
 
+    def test_dim_rule_counts_the_wrapped_observation_not_the_tile_input(self):
+        config, provenance = controlexps.derived_learning_rate_config(
+            env_name="MountainCar-v0",
+            env_args=_MC_BASE_ARGS,
+            feats_specs=_MC_FEATS_SPECS,
+            rule="dim",
+        )
+        # the tile op receives 2 dims (the potential column is dropped); the
+        # wrapped observation carries 3 components
+        assert provenance["observation_dim"] == 3
+        assert config["args"]["initial_lr"] == pytest.approx(0.1 / 3)
+
+    def test_actives_rule_reads_the_default_tiling_count_through_the_pipeline(self):
+        config, provenance = controlexps.derived_learning_rate_config(
+            env_name="MountainCar-v0",
+            env_args=_MC_BASE_ARGS,
+            feats_specs=_MC_FEATS_SPECS,
+            rule="actives",
+        )
+        assert provenance["num_tilings"] == 8
+        assert config["args"]["initial_lr"] == pytest.approx(0.1 / 8)
+
+    def test_fixed_rule_resolves_without_constructing_an_env(self, monkeypatch):
+        def fail_create_env(*args, **kwargs):
+            raise AssertionError("the fixed rule must not construct an env")
+
+        monkeypatch.setattr(controlexps.task, "create_env", fail_create_env)
+        config, provenance = controlexps.derived_learning_rate_config(
+            env_name="MountainCar-v0",
+            env_args={},
+            feats_specs=[],
+            rule="fixed",
+        )
+        assert (
+            config["args"]["initial_lr"]
+            == (controlexps.LEARNING_RATE_SPEC["args"]["initial_lr"])
+        )
+        assert provenance["learning_rate_rule"] == "fixed"
+        assert provenance["observation_dim"] is None
+        assert provenance["dimension_used"] is None
+        assert provenance["num_tilings"] is None
+
     def test_unknown_rule_raises(self):
-        with pytest.raises(ValueError, match="Unknown lunar learning-rate rule"):
-            controlexps.lunar_lander_learning_rate_config(rule="nope")
+        with pytest.raises(ValueError, match="Unknown learning-rate rule"):
+            controlexps.derived_learning_rate_config(
+                env_name="MountainCar-v0",
+                env_args={},
+                feats_specs=[],
+                rule="nope",
+            )
 
 
 class TestGaussianIllustrationIncludesLunarLander:
@@ -432,9 +492,7 @@ class TestGaussianIllustrationIncludesLunarLander:
 
     def test_lunar_spec_selects_a_different_rule_without_touching_the_env(self):
         family_spec = _lunar_spec()
-        actives_template = controlexps._lunar_lander_template(
-            learning_rate_rule="actives"
-        )
+        actives_template = controlexps._lunar_lander_template(rule="actives")
         np.testing.assert_allclose(
             sorted(_rates(actives_template["problem_specs_fn"]())), [0.1 / 32]
         )
@@ -469,6 +527,28 @@ class TestGaussianIllustrationIncludesLunarLander:
                 assert (
                     problem["learning_rate_config"]["args"]["initial_lr"]
                     == controlexps.LEARNING_RATE_SPEC["args"]["initial_lr"]
+                )
+
+    def test_every_env_spec_records_its_learning_rate_provenance(self):
+        specs = controlexps.gaussian_illustration_experiment_specs(
+            noise_std_multipliers=(0.0,)
+        )
+        for spec in specs:
+            metadata = spec["metadata"]
+            assert metadata["env_name"] == spec["name"]
+            for problem in spec["problem_specs"]:
+                assert (
+                    problem["learning_rate_config"]["args"]["initial_lr"]
+                    == metadata["learning_rate"]
+                )
+            if spec["name"] == "LunarLander-v3":
+                assert metadata["learning_rate_rule"] == "dim"
+                assert metadata["learning_rate"] == pytest.approx(0.1 / 13)
+            else:
+                assert metadata["learning_rate_rule"] == "fixed"
+                assert (
+                    metadata["learning_rate"]
+                    == (controlexps.LEARNING_RATE_SPEC["args"]["initial_lr"])
                 )
 
     def test_custom_rate_reaches_every_helper_spec(self):
@@ -510,3 +590,41 @@ def _lunar_spec() -> Mapping[str, Any]:
         noise_std_multipliers=(0.0,)
     )
     return next(spec for spec in specs if spec["name"] == "LunarLander-v3")
+
+
+_LUNAR_BASE_ARGS = {
+    "max_episode_steps": 1000,
+    "wrapper": constants.LUNAR_LANDER_REWARD_OBS,
+}
+_LUNAR_FEATS_SPECS = [
+    [
+        {
+            "name": "splice-tile-observation-action-ft",
+            "args": {
+                "tiling_dim": 8,
+                "num_tilings": 32,
+                "hash_dim": 2048,
+            },
+        }
+    ]
+]
+_MC_BASE_ARGS = {
+    "max_episode_steps": 2500,
+    "reward_shaping": {
+        "name": "mountain-car-height-pbrs",
+        "args": {"scale": 1.0},
+    },
+    "reward_obs": {
+        "name": "mountain-car-height-pbrs-potential",
+        "args": {},
+    },
+}
+_MC_FEATS_SPECS = [
+    [
+        estimationencodings.keep_raw_dims(raw_dim=2, observation_dim=3),
+        {
+            "name": "tile-observation-action-ft",
+            "args": {"tiling_dim": 4},
+        },
+    ]
+]

@@ -704,6 +704,10 @@ class Pipeline(FTOp):
             transform_fn=lambda ex: ex,
             output_space=input_space,
         )
+        # The composed FuncFT retains only the chained apply, so the op
+        # instances are recorded here for callers that read resolved op
+        # parameters (e.g. a tile op's num_tilings).
+        self.ops: tuple[FTOp, ...] = ()
 
     @classmethod
     def from_specs(
@@ -731,6 +735,7 @@ class Pipeline(FTOp):
         )
         pipeline = Pipeline(input_space=self.input_space)
         pipeline.ft_op = chained_ftops
+        pipeline.ops = (*self.ops, next_ft_op)
         return pipeline
 
     def apply(self, example: Example) -> Example:
