@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from drmdp import envs, oracle
-from drmdp.workflows import controlexps
+from drmdp.workflows import grids
 
 CLIFF_REWARD = -100.0
 OPEN_GRID = ["ooog", "oxxo", "sooo"]
@@ -32,7 +32,7 @@ class TestGridOracle:
         assert CLIFF_REWARD not in realised.rewards
 
     def test_reaches_the_exit_from_every_sampled_start(self):
-        env = make_env("GridWorld-MINES", grid=controlexps.MINES_GW_GRID)
+        env = make_env("GridWorld-MINES", grid=grids.MINES_GW_GRID)
         grid_oracle = oracle.task_oracle("GridWorld-MINES", env)
         for seed in range(5):
             observation, _ = env.reset(seed=seed)

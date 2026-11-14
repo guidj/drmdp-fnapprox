@@ -6,12 +6,12 @@ import os
 import numpy as np
 
 from drmdp import constants, core, task
-from drmdp.workflows import controlexps
+from drmdp.workflows.control import exps
 
 
 class TestLunarLanderControlRun:
     def test_logged_returns_and_evaluations_are_finite(self, tmp_path):
-        learning_rate_config, _ = controlexps.derived_learning_rate_config(
+        learning_rate_config, _ = exps.derived_learning_rate_config(
             env_name="LunarLander-v3",
             env_args={
                 "max_episode_steps": 1000,

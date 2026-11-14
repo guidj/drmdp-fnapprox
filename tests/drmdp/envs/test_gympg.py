@@ -6,7 +6,7 @@ from rlplg.environments import gridworld
 
 from drmdp import constants, task
 from drmdp.envs import gympg, lunar_lander
-from drmdp.workflows.controlexps import MINES_GW_GRID
+from drmdp.workflows.grids import MINES_GW_GRID
 
 # Start 's' at (0, 0); cliffs (1, 0)..(1, 4); exit 'g' at (2, 5).
 # BFS distances to the exit over the 12 start-eligible cells have

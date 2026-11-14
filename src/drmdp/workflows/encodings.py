@@ -1,14 +1,12 @@
 """
-Transition-feature encodings of the reward-estimation campaign.
+Named transition-feature encodings and observation-layout constants.
 
-The builders describe the map from a transition $(s, a, s')$ to the
-feature row the estimator regresses aggregate window sums against. Each
-builder returns a `transition_feats_spec` dict consumed by
-`task.estimator_feats_fn`.
-
-Encodings differ in the knowledge they assume: reward structure (the
-functional form of the per-step reward), dynamics structure (the nominal
-transition rule), general basis expansions, and the production tile maps.
+A builder maps the name of an encoding to the `transition_feats_spec`
+dict consumed by `task.estimator_feats_fn`: the row an estimator
+regresses aggregate window sums against, as a function of the transition
+$(s, a, s')$. The module is shared: the control families consume the
+production maps, and the reward-estimation campaigns sweep the spectrum
+from reward-structure encodings to the production tile maps.
 """
 
 from collections.abc import Mapping, Sequence
@@ -16,10 +14,22 @@ from typing import Any
 
 from drmdp import rewardfeat
 
+# observation dimensions of the coords wrapper: raw dimensions first, then the
+# shaped potential, one successor coordinate per action, and per-action
+# indicators (Acrobot: terminal; GridWorld: cliff)
+MOUNTAIN_CAR_RAW_DIM = 2
+MOUNTAIN_CAR_OBSERVATION_DIM = 3
+ACROBOT_RAW_DIM = 6
+ACROBOT_OBSERVATION_DIM = 7
+GRIDWORLD_RAW_DIM = 2
+GRIDWORLD_OBSERVATION_DIM = 3
+
 
 def mc_potential_curr_succ() -> Mapping[str, Any]:
     """Current and terminal-gated successor potential of the shaped MountainCar reward."""
-    return potential_curr_succ(raw_dim=2, observation_dim=3)
+    return potential_curr_succ(
+        raw_dim=MOUNTAIN_CAR_RAW_DIM, observation_dim=MOUNTAIN_CAR_OBSERVATION_DIM
+    )
 
 
 def acrobot_potential_curr_succ() -> Mapping[str, Any]:
@@ -31,7 +41,11 @@ def acrobot_potential_curr_succ() -> Mapping[str, Any]:
     """
     return rewardfeat.concatenated_features_spec(
         [
-            potential_curr_succ(raw_dim=6, observation_dim=7, constant=False),
+            potential_curr_succ(
+                raw_dim=ACROBOT_RAW_DIM,
+                observation_dim=ACROBOT_OBSERVATION_DIM,
+                constant=False,
+            ),
             {"name": "nonterminal-constant-features", "args": {}},
         ]
     )
@@ -47,8 +61,12 @@ def gw_potential_curr_succ() -> Mapping[str, Any]:
     """
     return rewardfeat.concatenated_features_spec(
         [
-            potential_curr_succ(raw_dim=2, observation_dim=3, constant=False),
-            gridworld_transition_anomaly(raw_dim=2),
+            potential_curr_succ(
+                raw_dim=GRIDWORLD_RAW_DIM,
+                observation_dim=GRIDWORLD_OBSERVATION_DIM,
+                constant=False,
+            ),
+            gridworld_transition_anomaly(raw_dim=GRIDWORLD_RAW_DIM),
         ]
     )
 

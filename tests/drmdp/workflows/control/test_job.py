@@ -1,12 +1,13 @@
-"""Tests for controljob.py — experiment parsing without Ray."""
+"""Tests for job.py — experiment parsing without Ray."""
 
 from drmdp import core
-from drmdp.workflows import controlexps, controljob, specutils
+from drmdp.workflows import specutils
+from drmdp.workflows.control import exps, job
 
 
 class TestParseExperiments:
     def test_gaussian_illustration_specs(self):
-        specs = controlexps.gaussian_illustration_experiment_specs()
+        specs = exps.gaussian_illustration_experiment_specs()
         experiments = specutils.parse_experiment_specs(specs)
         assert len(experiments) > 0
         assert all(isinstance(exp, core.Experiment) for exp in experiments)
@@ -55,7 +56,7 @@ class TestParseExperiments:
                         "delay_config": None,
                         "epsilon": 0.1,
                         "gamma": 0.99,
-                        "learning_rate_config": controlexps.LEARNING_RATE_SPEC,
+                        "learning_rate_config": exps.LEARNING_RATE_SPEC,
                     }
                 ],
                 "epochs": 3,
@@ -68,12 +69,12 @@ class TestParseExperiments:
 
 class TestCreateTasks:
     def test_gaussian_illustration_creates_instances(self):
-        instances = controljob.create_tasks(
+        instances = job.create_tasks(
             problem_set="gaussian-illustration",
             config_args={},
             num_runs=2,
             num_episodes=50,
-            output_dir="/tmp/test-controljob",
+            output_dir="/tmp/test-control",
             task_prefix="test",
             log_episode_frequency=10,
             use_seed=True,
@@ -83,15 +84,15 @@ class TestCreateTasks:
         assert all(isinstance(inst, core.ExperimentInstance) for inst in instances)
 
     def test_instance_count_matches_runs(self):
-        specs = controlexps.gaussian_illustration_experiment_specs()
+        specs = exps.gaussian_illustration_experiment_specs()
         experiments = specutils.parse_experiment_specs(specs)
         num_runs = 3
-        instances = controljob.create_tasks(
+        instances = job.create_tasks(
             problem_set="gaussian-illustration",
             config_args={},
             num_runs=num_runs,
             num_episodes=50,
-            output_dir="/tmp/test-controljob",
+            output_dir="/tmp/test-control",
             task_prefix="test",
             log_episode_frequency=10,
             use_seed=True,

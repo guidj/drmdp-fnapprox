@@ -1,7 +1,9 @@
 """
-Data aggregation pipeline to compute.
-Aggregates results from multiple
-instances from each experiment.
+Log aggregation for the control campaigns.
+
+Reads `experiment-params.json` and `experiment-logs.jsonl` from every
+run directory under the input root, joins the records, and writes one
+Parquet table per log key for the analysis notebooks.
 """
 
 import argparse

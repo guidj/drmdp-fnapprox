@@ -1,15 +1,23 @@
+"""
+Control spec families.
+
+One experiment spec per (environment, feature map, method, delay, discount,
+hyperparameter) cell for the control campaigns: the gaussian illustration
+family (MountainCar, Acrobot, GridWorld-MINES, LunarLander-v3), the electric
+motor family, and the grid-search family over solvable GridWorlds. Each
+family defines its problem specs and feature maps; the learning-rate
+derivation resolves a family's step size from its representation.
+"""
+
 import itertools
-import json
 import math
 from collections.abc import Mapping, Sequence
 from typing import Any
 
 import gymnasium as gym
-import numpy as np
 
 from drmdp import constants, rewardfeat, rewdelay, task, transform
-from drmdp.envs import gridutils
-from drmdp.workflows import estimationencodings
+from drmdp.workflows import encodings, grids
 
 EPSILON = 0.1
 MAX_STEPS_PER_EPISODE_GEM = 10_000
@@ -25,14 +33,6 @@ LUNAR_LANDER_TILING_DIM = 8
 LUNAR_LANDER_NUM_TILINGS = 32
 LUNAR_LANDER_HASH_DIM = 2048
 LUNAR_LANDER_MAX_EPISODE_STEPS = 1000
-MINES_GW_GRID = [
-    "ooooxooooooo",
-    "oooooooooxoo",
-    "oxoooooxoooo",
-    "oooooxoooooo",
-    "ooxooooooxoo",
-    "sxxxxxxxxxxg",
-]
 MAX_OPTIONS_DELAY = 4
 DEFAULT_UNIFORM_DELAY_RANGE = 5
 DEFAULT_IMPUTE_VALUE = 0
@@ -679,26 +679,6 @@ def electric_motor_experiment_specs() -> Sequence[Mapping[str, Any]]:
     return tuple(specs)
 
 
-def grid_dead_ohe_indices(grid: Sequence[str], nactions: int = 4) -> list[int]:
-    """
-    Returns OHE indices of dead state-action columns.
-
-    Dead states are cliffs, terminal/goal cells, and cells
-    unreachable from the start.  Each dead state produces
-    ``nactions`` dead columns in the flat-grid-observation-action-ft
-    layout (``action * nstates + state_idx``).
-    """
-    char_map = {
-        "o": gridutils.CELL_OPEN,
-        "s": gridutils.CELL_START,
-        "g": gridutils.CELL_GOAL,
-        "x": gridutils.CELL_CLIFF,
-    }
-    grid_arr = np.array([[char_map[ch] for ch in row] for row in grid], dtype=np.int8)
-    exits = list(zip(*np.where(grid_arr == gridutils.CELL_GOAL)))
-    return gridutils.grid_dead_ohe_indices(grid_arr, exits=exits, nactions=nactions)
-
-
 def gaussian_illustration_experiment_specs(
     mc_tiling_dim: int = 4,
     acrobot_tiling_dim: int = 3,
@@ -740,16 +720,17 @@ def gaussian_illustration_experiment_specs(
     }
     mc_feats_specs: Sequence[Sequence[Mapping[str, Any]]] = [
         [
-            estimationencodings.keep_raw_dims(raw_dim=2, observation_dim=3),
+            encodings.keep_raw_dims(
+                raw_dim=encodings.MOUNTAIN_CAR_RAW_DIM,
+                observation_dim=encodings.MOUNTAIN_CAR_OBSERVATION_DIM,
+            ),
             {
                 "name": "tile-observation-action-ft",
                 "args": {"tiling_dim": mc_tiling_dim},
             },
         ]
     ]
-    mc_est_feats: Sequence[Mapping[str, Any]] = [
-        estimationencodings.mc_potential_curr_succ()
-    ]
+    mc_est_feats: Sequence[Mapping[str, Any]] = [encodings.mc_potential_curr_succ()]
     mc_learning_rate_config, mc_provenance = derived_learning_rate_config(
         env_name="MountainCar-v0",
         env_args=mc_base_args,
@@ -766,7 +747,10 @@ def gaussian_illustration_experiment_specs(
     }
     acrobot_feats_specs: Sequence[Sequence[Mapping[str, Any]]] = [
         [
-            estimationencodings.keep_raw_dims(raw_dim=6, observation_dim=7),
+            encodings.keep_raw_dims(
+                raw_dim=encodings.ACROBOT_RAW_DIM,
+                observation_dim=encodings.ACROBOT_OBSERVATION_DIM,
+            ),
             {
                 "name": "tile-observation-action-ft",
                 "args": {
@@ -777,7 +761,7 @@ def gaussian_illustration_experiment_specs(
         ]
     ]
     acrobot_est_feats: Sequence[Mapping[str, Any]] = [
-        estimationencodings.acrobot_potential_curr_succ()
+        encodings.acrobot_potential_curr_succ()
     ]
     acrobot_learning_rate_config, acrobot_provenance = derived_learning_rate_config(
         env_name="Acrobot-v1",
@@ -786,7 +770,7 @@ def gaussian_illustration_experiment_specs(
         rule="fixed",
     )
     gw_base_args: Mapping[str, Any] = {
-        "grid": MINES_GW_GRID,
+        "grid": grids.MINES_GW_GRID,
         "max_episode_steps": 200,
         "reward_shaping": {
             "name": "gridworld-distance-pbrs",
@@ -796,16 +780,17 @@ def gaussian_illustration_experiment_specs(
     }
     gw_feats_specs: Sequence[Sequence[Mapping[str, Any]]] = [
         [
-            estimationencodings.keep_raw_dims(raw_dim=2, observation_dim=3),
+            encodings.keep_raw_dims(
+                raw_dim=encodings.GRIDWORLD_RAW_DIM,
+                observation_dim=encodings.GRIDWORLD_OBSERVATION_DIM,
+            ),
             {
                 "name": "tile-observation-action-ft",
                 "args": {"tiling_dim": gw_tiling_dim},
             },
         ]
     ]
-    gw_est_feats: Sequence[Mapping[str, Any]] = [
-        estimationencodings.gw_potential_curr_succ()
-    ]
+    gw_est_feats: Sequence[Mapping[str, Any]] = [encodings.gw_potential_curr_succ()]
     gw_learning_rate_config, gw_provenance = derived_learning_rate_config(
         env_name="GridWorld-MINES",
         env_args=gw_base_args,
@@ -914,7 +899,7 @@ def _lunar_lander_template(rule: str = "dim") -> Mapping[str, Any]:
             }
         ]
     ]
-    encoding: Sequence[Mapping[str, Any]] = [estimationencodings.lunar_lander_reward()]
+    encoding: Sequence[Mapping[str, Any]] = [encodings.lunar_lander_reward()]
     learning_rate_config, provenance = derived_learning_rate_config(
         env_name="LunarLander-v3",
         env_args=base_args,
@@ -935,20 +920,6 @@ def _lunar_lander_template(rule: str = "dim") -> Mapping[str, Any]:
         "metadata": provenance,
         "epochs": 10,
     }
-
-
-def load_solvable_grids(
-    path: str,
-    min_passes: int = 4,
-) -> Sequence[Mapping[str, Any]]:
-    """
-    Loads grid specs from a solvable grids JSON file, filtering by
-    minimum number of passed solvability trials.
-    """
-    with open(path, "r") as readable:
-        entries: list[Mapping[str, Any]] = json.load(readable)
-    passing_grids = [entry for entry in entries if entry["passes"] >= min_passes]
-    return passing_grids
 
 
 def grid_experiments_specs(

@@ -18,7 +18,7 @@ from drmdp import (
     task,
     transform,
 )
-from drmdp.workflows import controlexps
+from drmdp.workflows import grids
 from tests.drmdp.testhelpers import assert_training_snapshots
 
 
@@ -26,7 +26,7 @@ class TestOptionsSemigradientSARSA:
     def test_trains_on_gridworld(self):
         env = envs.make(
             "GridWorld-MINES",
-            grid=controlexps.MINES_GW_GRID,
+            grid=grids.MINES_GW_GRID,
             max_episode_steps=200,
         )
         env, mon = task.monitor_wrapper(env)
@@ -58,7 +58,7 @@ class TestOptionsSemigradientSARSA:
     def test_single_action_options_trains(self):
         env = envs.make(
             "GridWorld-MINES",
-            grid=controlexps.MINES_GW_GRID,
+            grid=grids.MINES_GW_GRID,
             max_episode_steps=200,
         )
         env, mon = task.monitor_wrapper(env)

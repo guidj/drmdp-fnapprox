@@ -1,4 +1,4 @@
-"""Tests for control_results_agg_pipeline.py — pure utility functions."""
+"""Tests for aggregate.py — pure utility functions."""
 
 import json
 import os
@@ -7,7 +7,7 @@ import tempfile
 import numpy as np
 import pandas as pd
 
-from drmdp.workflows import control_results_agg_pipeline as agg
+from drmdp.workflows.control import aggregate as agg
 
 
 class TestParsePathFromFilename:

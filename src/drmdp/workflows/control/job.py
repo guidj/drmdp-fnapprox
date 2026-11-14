@@ -1,5 +1,10 @@
 """
-Boostrap and run distributed jobs.
+Ray job entry point for the control campaigns.
+
+`--problem-set` selects the spec family (`electric-motor`, `grid-world`,
+`gaussian-illustration`); the family's specs are parsed into
+`ExperimentInstance`s and submitted to the Ray cluster given by
+`--cluster-uri` (a local cluster when omitted), one task per instance.
 """
 
 import argparse
@@ -12,7 +17,8 @@ import numpy as np
 import ray
 
 from drmdp import core, task
-from drmdp.workflows import controlexps, raytasks, specutils
+from drmdp.workflows import grids, raytasks, specutils
+from drmdp.workflows.control import exps
 
 logger = logging.getLogger(__name__)
 
@@ -57,12 +63,12 @@ def create_tasks(
     Runs numerical experiments on policy evaluation.
     """
     if problem_set == EM_PS:
-        specs = controlexps.electric_motor_experiment_specs()
+        specs = exps.electric_motor_experiment_specs()
     elif problem_set == GW_PS:
-        grid_specs = controlexps.load_solvable_grids(path=config_args["grids_file"])
-        specs = controlexps.grid_experiments_specs(grid_specs=grid_specs)
+        grid_specs = grids.load_solvable_grids(path=config_args["grids_file"])
+        specs = exps.grid_experiments_specs(grid_specs=grid_specs)
     elif problem_set == GIL_PS:
-        specs = controlexps.gaussian_illustration_experiment_specs()
+        specs = exps.gaussian_illustration_experiment_specs()
 
     experiments = specutils.parse_experiment_specs(specs=specs)
     experiment_instances = list(

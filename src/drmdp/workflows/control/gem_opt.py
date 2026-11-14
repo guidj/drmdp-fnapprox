@@ -1,3 +1,11 @@
+"""
+Optimal-policy runs on the GEM motor environments.
+
+Runs each configured finite-control motor with a markovian policy per
+feature-map turn, plus a uniform-random baseline, and writes the
+per-step records the GEM analyses use as reference trajectories.
+"""
+
 import argparse
 import dataclasses
 import itertools

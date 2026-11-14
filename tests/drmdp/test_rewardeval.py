@@ -18,7 +18,7 @@ from drmdp import (
     transform,
 )
 from drmdp.envs import gympg, models
-from drmdp.workflows import controlexps, estimationencodings
+from drmdp.workflows import encodings, grids
 from tests.drmdp.hookhelpers import FTOpHook
 
 CRAFTED_GRID = ["soooo", "ooooo", "oooxg"]
@@ -199,7 +199,7 @@ class TestDiscreteStateActionRewards:
     def _mines_setup(self):
         result = task.create_env(
             "GridWorld-MINES",
-            {"grid": controlexps.MINES_GW_GRID, "max_episode_steps": 200},
+            {"grid": grids.MINES_GW_GRID, "max_episode_steps": 200},
         )
         proxy = result.proxy
         ft_op = task.create_ft_ops(
@@ -290,7 +290,7 @@ class TestTrueRewardErrorFn:
             "GridWorld-CRAFTED", {"grid": CRAFTED_GRID, "max_episode_steps": 100}
         )
         proxy = result.proxy
-        dead_ohe = controlexps.grid_dead_ohe_indices(CRAFTED_GRID)
+        dead_ohe = grids.grid_dead_ohe_indices(CRAFTED_GRID)
         ft_op = task.create_ft_ops(
             proxy,
             feats_spec=[
@@ -331,7 +331,7 @@ class TestEvaluationDomain:
         try:
             assert not rewardeval.supports_discrete_enumeration(proxy)
             hook = rewardfeat.transition_feature_fn(
-                proxy, estimationencodings.gw_potential_curr_succ()
+                proxy, encodings.gw_potential_curr_succ()
             )
             report = rewardeval.true_reward_error_fn(
                 proxy, hook, num_samples=128, seed=42
@@ -360,7 +360,7 @@ class TestEvaluationDomain:
         ).proxy
         try:
             hook = rewardfeat.transition_feature_fn(
-                proxy, estimationencodings.mc_potential_curr_succ()
+                proxy, encodings.mc_potential_curr_succ()
             )
             report = rewardeval.true_reward_error_fn(
                 proxy, hook, num_samples=256, seed=42
@@ -385,7 +385,7 @@ class TestEvaluationDomain:
         ).proxy
         try:
             hook = rewardfeat.transition_feature_fn(
-                proxy, estimationencodings.acrobot_potential_curr_succ()
+                proxy, encodings.acrobot_potential_curr_succ()
             )
             report = rewardeval.true_reward_error_fn(
                 proxy, hook, num_samples=256, seed=42
@@ -411,7 +411,7 @@ class TestEvaluationDomain:
         ).proxy
         try:
             hook = rewardfeat.transition_feature_fn(
-                proxy, estimationencodings.gw_potential_curr_succ()
+                proxy, encodings.gw_potential_curr_succ()
             )
             report = rewardeval.true_reward_error_fn(
                 proxy, hook, num_samples=256, seed=42
@@ -548,7 +548,7 @@ class TestPolicyControlRewardErrorLogging:
 
     def _run_control(self, mapper_name, tmp_path, episodes):
         run_dir = os.path.join(str(tmp_path), mapper_name)
-        dead_ohe = controlexps.grid_dead_ohe_indices(CRAFTED_GRID)
+        dead_ohe = grids.grid_dead_ohe_indices(CRAFTED_GRID)
         attempt_arg = (
             {"attempt_estimation_episode": 10}
             if mapper_name == "least-lfa"

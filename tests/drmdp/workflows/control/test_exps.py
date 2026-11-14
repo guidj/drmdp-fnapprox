@@ -5,71 +5,27 @@ import numpy as np
 import pytest
 
 from drmdp import constants, task
-from drmdp.workflows import controlexps, estimationencodings, estimationexps
-
-
-class TestGridDeadOheIndices:
-    def test_mines_gw_grid(self):
-        indices = controlexps.grid_dead_ohe_indices(controlexps.MINES_GW_GRID)
-        nrows = len(controlexps.MINES_GW_GRID)
-        ncols = len(controlexps.MINES_GW_GRID[0])
-        nstates = nrows * ncols
-        assert ncols == 12
-        cliff_cells = [
-            0 * 12 + 4,
-            1 * 12 + 9,
-            2 * 12 + 1,
-            2 * 12 + 7,
-            3 * 12 + 5,
-            4 * 12 + 2,
-            4 * 12 + 9,
-        ] + [5 * 12 + col for col in range(1, 11)]
-        goal_cells = [5 * 12 + 11]
-        dead_cells = cliff_cells + goal_cells
-        for state_idx in dead_cells:
-            for action in range(4):
-                assert action * nstates + state_idx in indices
-        assert len(indices) == len(dead_cells) * 4
-
-    def test_simple_grid(self):
-        grid = ["sox", "xog"]
-        indices = controlexps.grid_dead_ohe_indices(grid)
-        nstates = 2 * 3
-        cliff_states = [2, 3]
-        goal_states = [5]
-        dead_states = cliff_states + goal_states
-        expected = sorted(
-            action * nstates + state for state in dead_states for action in range(4)
-        )
-        assert sorted(indices) == expected
-
-    def test_no_cliffs(self):
-        grid = ["sog"]
-        indices = controlexps.grid_dead_ohe_indices(grid)
-        nstates = 1 * 3
-        goal_states = [2]
-        expected = sorted(
-            action * nstates + state for state in goal_states for action in range(4)
-        )
-        assert sorted(indices) == expected
+from drmdp.workflows import encodings
+from drmdp.workflows.control import exps
+from drmdp.workflows.reward_estimation.encodings import exps as encodings_exps
 
 
 class TestDefaultDelayConfig:
     def test_uniform_ranges(self):
-        configs = controlexps.default_delay_config()
+        configs = exps.default_delay_config()
         assert [
             (config["args"]["min_delay"], config["args"]["max_delay"])
             for config in configs
         ] == [(2, 4), (6, 8), (10, 12)]
 
     def test_configs_are_uniform(self):
-        for config in controlexps.default_delay_config():
+        for config in exps.default_delay_config():
             assert config["name"] == "uniform"
 
     def test_bounds_are_integers(self):
         # the delay wrapper samples with random.randint, which requires
         # integer bounds
-        for config in controlexps.default_delay_config():
+        for config in exps.default_delay_config():
             assert isinstance(config["args"]["min_delay"], int)
             assert isinstance(config["args"]["max_delay"], int)
 
@@ -77,8 +33,8 @@ class TestDefaultDelayConfig:
         # option specs are derived for delay configs whose minimum delay
         # is within MAX_OPTIONS_DELAY; only [2, 4] qualifies
         within_budget = [
-            controlexps._delay_min(config) <= controlexps.MAX_OPTIONS_DELAY
-            for config in controlexps.default_delay_config()
+            exps._delay_min(config) <= exps.MAX_OPTIONS_DELAY
+            for config in exps.default_delay_config()
         ]
         assert within_budget == [True, False, False]
 
@@ -91,10 +47,10 @@ class TestDiscountFactorGrid:
         # alone sets its arm count
         gammas = {
             problem_spec["gamma"]
-            for spec in controlexps.gaussian_illustration_experiment_specs()
+            for spec in exps.gaussian_illustration_experiment_specs()
             for problem_spec in spec["problem_specs"]
         }
-        assert gammas == set(controlexps.DEFAULT_DISCOUNT_FACTORS)
+        assert gammas == set(exps.DEFAULT_DISCOUNT_FACTORS)
         assert gammas == {1.0, 0.99, 0.98}
 
     def test_common_specs_one_no_delay_arm_per_discount(self):
@@ -102,17 +58,17 @@ class TestDiscountFactorGrid:
         # discount would also remove that method's reference for the gamma
         no_delay = [
             spec
-            for spec in controlexps.common_problem_specs(include_options=False)
+            for spec in exps.common_problem_specs(include_options=False)
             if spec["delay_config"] is None
         ]
         assert [spec["gamma"] for spec in no_delay] == list(
-            controlexps.DEFAULT_DISCOUNT_FACTORS
+            exps.DEFAULT_DISCOUNT_FACTORS
         )
 
 
 class TestGaussianIllustrationNoiseSpecs:
     def test_relative_noise_with_unit_magnitude(self):
-        specs = controlexps.gaussian_illustration_experiment_specs()
+        specs = exps.gaussian_illustration_experiment_specs()
         for exp in specs:
             noise = exp["args"]["reward_noise"]
             assert noise["name"] == "relative-gaussian"
@@ -123,14 +79,14 @@ class TestGaussianIllustrationNoiseSpecs:
             assert noise["args"]["std_multiplier"] >= 0.0
 
     def test_std_multipliers_cover_the_sweep(self):
-        specs = controlexps.gaussian_illustration_experiment_specs()
+        specs = exps.gaussian_illustration_experiment_specs()
         multipliers = sorted(
             {exp["args"]["reward_noise"]["args"]["std_multiplier"] for exp in specs}
         )
         assert multipliers == [0.0, 0.25, 0.5, 1.0, 2.0]
 
     def test_metadata_carries_no_noise_scale(self):
-        for exp in controlexps.gaussian_illustration_experiment_specs():
+        for exp in exps.gaussian_illustration_experiment_specs():
             assert "noise_scale" not in (exp.get("metadata") or {})
 
 
@@ -144,7 +100,7 @@ class TestGaussianIllustrationShapingSpecs:
     }
 
     def test_shaping_and_potential_wrapper_per_env(self):
-        specs = controlexps.gaussian_illustration_experiment_specs()
+        specs = exps.gaussian_illustration_experiment_specs()
         unshaped = {"LunarLander-v3"}
         assert {spec["name"] for spec in specs} == set(self._SHAPING) | unshaped
         for spec in specs:
@@ -160,7 +116,7 @@ class TestGaussianIllustrationShapingSpecs:
     def test_discount_is_not_pinned_in_the_shaping_args(self):
         # task.create_env injects the problem spec's gamma, so the shaping
         # discount follows each arm
-        for spec in controlexps.gaussian_illustration_experiment_specs():
+        for spec in exps.gaussian_illustration_experiment_specs():
             if "reward_shaping" not in spec["args"]:
                 continue
             args = spec["args"]["reward_shaping"].get("args") or {}
@@ -169,7 +125,7 @@ class TestGaussianIllustrationShapingSpecs:
     def test_gridworld_pins_the_quadratic_exponent(self):
         # exponent 1 pays a constant reward on every step of a shortest
         # path, which removes the signal the family estimates
-        for spec in controlexps.gaussian_illustration_experiment_specs():
+        for spec in exps.gaussian_illustration_experiment_specs():
             if spec["name"] != "GridWorld-MINES":
                 continue
             args = spec["args"]["reward_shaping"]["args"]
@@ -177,7 +133,7 @@ class TestGaussianIllustrationShapingSpecs:
 
     def test_every_env_runs_at_least_two_steps(self):
         configured = set()
-        for spec in controlexps.gaussian_illustration_experiment_specs():
+        for spec in exps.gaussian_illustration_experiment_specs():
             if spec["name"] in configured:
                 continue
             configured.add(spec["name"])
@@ -198,7 +154,7 @@ class TestBladeTdRewardSampling:
         # the family compares reward estimators; a per-episode posterior
         # weight draw is a third stochastic source, so BLADE-TD consumes
         # the fixed posterior mean
-        specs = controlexps.gaussian_illustration_experiment_specs()
+        specs = exps.gaussian_illustration_experiment_specs()
         bayes_args = [
             problem_spec["reward_mapper"]["args"]
             for spec in specs
@@ -215,12 +171,12 @@ class TestEstimatorEncoding:
 
     def test_encoding_is_the_selected_campaign_encoding(self):
         expected = {
-            "MountainCar-v0": estimationencodings.mc_potential_curr_succ(),
-            "Acrobot-v1": estimationencodings.acrobot_potential_curr_succ(),
-            "GridWorld-MINES": estimationencodings.gw_potential_curr_succ(),
-            "LunarLander-v3": estimationencodings.lunar_lander_reward(),
+            "MountainCar-v0": encodings.mc_potential_curr_succ(),
+            "Acrobot-v1": encodings.acrobot_potential_curr_succ(),
+            "GridWorld-MINES": encodings.gw_potential_curr_succ(),
+            "LunarLander-v3": encodings.lunar_lander_reward(),
         }
-        for spec in controlexps.gaussian_illustration_experiment_specs():
+        for spec in exps.gaussian_illustration_experiment_specs():
             for mapper_name in ("least-lfa", "bayes-least-lfa"):
                 for args in _estimator_args(spec, mapper_name):
                     assert args["transition_feats_spec"] == expected[spec["name"]]
@@ -229,12 +185,12 @@ class TestEstimatorEncoding:
         # the selected encodings are campaign encodings, so a control run
         # compares against a campaign cell rather than a third recipe
         campaign: dict[str, list[Mapping[str, Any]]] = {}
-        for spec in estimationexps.estimation_experiment_specs():
+        for spec in encodings_exps.experiment_specs():
             for args in _estimator_args(spec, "least-lfa"):
                 campaign.setdefault(spec["name"], []).append(
                     args["transition_feats_spec"]
                 )
-        for spec in controlexps.gaussian_illustration_experiment_specs():
+        for spec in exps.gaussian_illustration_experiment_specs():
             # LunarLander is not an environment of the estimation campaign, so
             # its encoding has no campaign cell to match.
             if spec["name"] not in campaign:
@@ -254,7 +210,7 @@ class TestEstimatorEncoding:
             "LunarLander-v3": 16,
         }
         measured: dict[str, int] = {}
-        for spec in controlexps.gaussian_illustration_experiment_specs():
+        for spec in exps.gaussian_illustration_experiment_specs():
             if spec["name"] in measured:
                 continue
             proxied = task.create_env(spec["name"], args=dict(spec["args"]), gamma=1.0)
@@ -280,7 +236,7 @@ class TestBayesLeastSpecsMapperName:
     _FEATS: tuple[Mapping[str, Any], ...] = ({"name": "current-features", "args": {}},)
 
     def test_unit_variance_keeps_the_blade_td_name(self):
-        specs = controlexps.bayes_least_specs(
+        specs = exps.bayes_least_specs(
             init_attempt_estimation_episodes=(10,), transition_feats_specs=self._FEATS
         )
         assert specs
@@ -291,7 +247,7 @@ class TestBayesLeastSpecsMapperName:
     def test_nig_mode_selects_the_nig_mapper_name(self):
         # aggregation labels a run by its mapper name alone, so the NIG
         # mode needs a name of its own to be separated from unit variance
-        specs = controlexps.bayes_least_specs(
+        specs = exps.bayes_least_specs(
             init_attempt_estimation_episodes=(10,),
             transition_feats_specs=self._FEATS,
             error_variance="nig",
@@ -303,7 +259,7 @@ class TestBayesLeastSpecsMapperName:
 
     def test_unknown_error_variance_is_rejected(self):
         with pytest.raises(ValueError, match="error_variance"):
-            controlexps.bayes_least_specs(
+            exps.bayes_least_specs(
                 init_attempt_estimation_episodes=(10,),
                 transition_feats_specs=self._FEATS,
                 error_variance="inverse-gamma",
@@ -314,7 +270,7 @@ class TestEstimatorConfiguration:
     """The estimator configurations are unchanged by the encoding selection."""
 
     def test_least_keeps_the_factors_gate(self):
-        for spec in controlexps.gaussian_illustration_experiment_specs():
+        for spec in exps.gaussian_illustration_experiment_specs():
             for args in _estimator_args(spec, "least-lfa"):
                 assert args["estimation_check"] == "factors"
                 assert args["attempt_estimation_episode"] == 10
@@ -324,7 +280,7 @@ class TestEstimatorConfiguration:
 
     def test_bayes_keeps_the_absent_gate(self):
         # no estimation_check key: the wrapper's default is no gate
-        for spec in controlexps.gaussian_illustration_experiment_specs():
+        for spec in exps.gaussian_illustration_experiment_specs():
             for args in _estimator_args(spec, "bayes-least-lfa"):
                 assert "estimation_check" not in args
                 assert args["init_attempt_estimation_episode"] == 10
@@ -359,36 +315,34 @@ def _rollout_rewards(env, seed: int, steps: int) -> set[float]:
 
 class TestLearningRateRules:
     def test_dimension_rule_divides_by_the_observation_width(self):
-        assert controlexps.learning_rate_from_dimension(0.1, 13) == pytest.approx(
-            0.1 / 13
-        )
-        assert controlexps.learning_rate_from_dimension(0.1, 26) == pytest.approx(
-            0.5 * controlexps.learning_rate_from_dimension(0.1, 13)
+        assert exps.learning_rate_from_dimension(0.1, 13) == pytest.approx(0.1 / 13)
+        assert exps.learning_rate_from_dimension(0.1, 26) == pytest.approx(
+            0.5 * exps.learning_rate_from_dimension(0.1, 13)
         )
 
     def test_active_feature_rule_divides_by_the_tiling_count(self):
-        assert controlexps.learning_rate_from_active_features(0.1, 32) == pytest.approx(
+        assert exps.learning_rate_from_active_features(0.1, 32) == pytest.approx(
             0.003125
         )
-        assert controlexps.learning_rate_from_active_features(0.1, 64) == pytest.approx(
-            0.5 * controlexps.learning_rate_from_active_features(0.1, 32)
+        assert exps.learning_rate_from_active_features(0.1, 64) == pytest.approx(
+            0.5 * exps.learning_rate_from_active_features(0.1, 32)
         )
 
     def test_fixed_rule_ignores_the_dimension(self):
-        first = controlexps.learning_rate_fixed(0.1, 13)
-        second = controlexps.learning_rate_fixed(0.1, 4096)
-        assert first == second == controlexps.LEARNING_RATE_SPEC["args"]["initial_lr"]
+        first = exps.learning_rate_fixed(0.1, 13)
+        second = exps.learning_rate_fixed(0.1, 4096)
+        assert first == second == exps.LEARNING_RATE_SPEC["args"]["initial_lr"]
 
     def test_every_rule_rejects_a_nonpositive_dimension(self):
         with pytest.raises(ValueError, match="positive"):
-            controlexps.learning_rate_from_dimension(0.1, 0)
+            exps.learning_rate_from_dimension(0.1, 0)
         with pytest.raises(ValueError, match="positive"):
-            controlexps.learning_rate_from_active_features(0.1, 0)
+            exps.learning_rate_from_active_features(0.1, 0)
 
 
 class TestDerivedLearningRateConfig:
     def test_dim_rule_resolves_against_the_wrapped_observation_width(self):
-        config, provenance = controlexps.derived_learning_rate_config(
+        config, provenance = exps.derived_learning_rate_config(
             env_name="LunarLander-v3",
             env_args=_LUNAR_BASE_ARGS,
             feats_specs=_LUNAR_FEATS_SPECS,
@@ -404,7 +358,7 @@ class TestDerivedLearningRateConfig:
         assert provenance["learning_rate"] == pytest.approx(0.1 / 13)
 
     def test_actives_rule_resolves_against_the_tiling_count(self):
-        config, provenance = controlexps.derived_learning_rate_config(
+        config, provenance = exps.derived_learning_rate_config(
             env_name="LunarLander-v3",
             env_args=_LUNAR_BASE_ARGS,
             feats_specs=_LUNAR_FEATS_SPECS,
@@ -416,7 +370,7 @@ class TestDerivedLearningRateConfig:
         assert config["args"]["initial_lr"] == pytest.approx(0.1 / 32)
 
     def test_dim_rule_counts_the_wrapped_observation_not_the_tile_input(self):
-        config, provenance = controlexps.derived_learning_rate_config(
+        config, provenance = exps.derived_learning_rate_config(
             env_name="MountainCar-v0",
             env_args=_MC_BASE_ARGS,
             feats_specs=_MC_FEATS_SPECS,
@@ -428,7 +382,7 @@ class TestDerivedLearningRateConfig:
         assert config["args"]["initial_lr"] == pytest.approx(0.1 / 3)
 
     def test_actives_rule_reads_the_default_tiling_count_through_the_pipeline(self):
-        config, provenance = controlexps.derived_learning_rate_config(
+        config, provenance = exps.derived_learning_rate_config(
             env_name="MountainCar-v0",
             env_args=_MC_BASE_ARGS,
             feats_specs=_MC_FEATS_SPECS,
@@ -441,8 +395,8 @@ class TestDerivedLearningRateConfig:
         def fail_create_env(*args, **kwargs):
             raise AssertionError("the fixed rule must not construct an env")
 
-        monkeypatch.setattr(controlexps.task, "create_env", fail_create_env)
-        config, provenance = controlexps.derived_learning_rate_config(
+        monkeypatch.setattr(exps.task, "create_env", fail_create_env)
+        config, provenance = exps.derived_learning_rate_config(
             env_name="MountainCar-v0",
             env_args={},
             feats_specs=[],
@@ -450,7 +404,7 @@ class TestDerivedLearningRateConfig:
         )
         assert (
             config["args"]["initial_lr"]
-            == (controlexps.LEARNING_RATE_SPEC["args"]["initial_lr"])
+            == (exps.LEARNING_RATE_SPEC["args"]["initial_lr"])
         )
         assert provenance["learning_rate_rule"] == "fixed"
         assert provenance["observation_dim"] is None
@@ -459,7 +413,7 @@ class TestDerivedLearningRateConfig:
 
     def test_unknown_rule_raises(self):
         with pytest.raises(ValueError, match="Unknown learning-rate rule"):
-            controlexps.derived_learning_rate_config(
+            exps.derived_learning_rate_config(
                 env_name="MountainCar-v0",
                 env_args={},
                 feats_specs=[],
@@ -469,7 +423,7 @@ class TestDerivedLearningRateConfig:
 
 class TestGaussianIllustrationIncludesLunarLander:
     def test_lunar_lander_is_a_peer_env_of_the_illustration_family(self):
-        specs = controlexps.gaussian_illustration_experiment_specs(
+        specs = exps.gaussian_illustration_experiment_specs(
             noise_std_multipliers=(0.0,)
         )
         names = [spec["name"] for spec in specs]
@@ -492,7 +446,7 @@ class TestGaussianIllustrationIncludesLunarLander:
 
     def test_lunar_spec_selects_a_different_rule_without_touching_the_env(self):
         family_spec = _lunar_spec()
-        actives_template = controlexps._lunar_lander_template(rule="actives")
+        actives_template = exps._lunar_lander_template(rule="actives")
         np.testing.assert_allclose(
             sorted(_rates(actives_template["problem_specs_fn"]())), [0.1 / 32]
         )
@@ -512,12 +466,12 @@ class TestGaussianIllustrationIncludesLunarLander:
             mapper for mapper in mappers if mapper["name"] in _ESTIMATOR_MAPPERS
         ]
         assert estimator_arms
-        expected = estimationencodings.lunar_lander_reward()
+        expected = encodings.lunar_lander_reward()
         for mapper in estimator_arms:
             assert mapper["args"]["transition_feats_spec"] == expected
 
     def test_other_envs_keep_the_control_rate(self):
-        specs = controlexps.gaussian_illustration_experiment_specs(
+        specs = exps.gaussian_illustration_experiment_specs(
             noise_std_multipliers=(0.0,)
         )
         others = [spec for spec in specs if spec["name"] != "LunarLander-v3"]
@@ -526,11 +480,11 @@ class TestGaussianIllustrationIncludesLunarLander:
             for problem in spec["problem_specs"]:
                 assert (
                     problem["learning_rate_config"]["args"]["initial_lr"]
-                    == controlexps.LEARNING_RATE_SPEC["args"]["initial_lr"]
+                    == exps.LEARNING_RATE_SPEC["args"]["initial_lr"]
                 )
 
     def test_every_env_spec_records_its_learning_rate_provenance(self):
-        specs = controlexps.gaussian_illustration_experiment_specs(
+        specs = exps.gaussian_illustration_experiment_specs(
             noise_std_multipliers=(0.0,)
         )
         for spec in specs:
@@ -548,19 +502,19 @@ class TestGaussianIllustrationIncludesLunarLander:
                 assert metadata["learning_rate_rule"] == "fixed"
                 assert (
                     metadata["learning_rate"]
-                    == (controlexps.LEARNING_RATE_SPEC["args"]["initial_lr"])
+                    == (exps.LEARNING_RATE_SPEC["args"]["initial_lr"])
                 )
 
     def test_custom_rate_reaches_every_helper_spec(self):
         config = {"name": "constant", "args": {"initial_lr": 0.123}}
         specs = (
-            controlexps.common_problem_specs(learning_rate_config=config)
-            + controlexps.least_specs(
+            exps.common_problem_specs(learning_rate_config=config)
+            + exps.least_specs(
                 attempt_estimation_episodes=(1,),
                 transition_feats_specs=[{"name": "current-features", "args": {}}],
                 learning_rate_config=config,
             )
-            + controlexps.bayes_least_specs(
+            + exps.bayes_least_specs(
                 init_attempt_estimation_episodes=(1,),
                 transition_feats_specs=[{"name": "current-features", "args": {}}],
                 learning_rate_config=config,
@@ -586,9 +540,7 @@ def _rates(problem_specs: Sequence[Mapping[str, Any]]) -> list[float]:
 
 def _lunar_spec() -> Mapping[str, Any]:
     """The illustration family's single LunarLander-v3 spec."""
-    specs = controlexps.gaussian_illustration_experiment_specs(
-        noise_std_multipliers=(0.0,)
-    )
+    specs = exps.gaussian_illustration_experiment_specs(noise_std_multipliers=(0.0,))
     return next(spec for spec in specs if spec["name"] == "LunarLander-v3")
 
 
@@ -621,7 +573,7 @@ _MC_BASE_ARGS = {
 }
 _MC_FEATS_SPECS = [
     [
-        estimationencodings.keep_raw_dims(raw_dim=2, observation_dim=3),
+        encodings.keep_raw_dims(raw_dim=2, observation_dim=3),
         {
             "name": "tile-observation-action-ft",
             "args": {"tiling_dim": 4},
