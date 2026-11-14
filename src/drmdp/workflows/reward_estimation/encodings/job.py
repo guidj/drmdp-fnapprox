@@ -1,8 +1,8 @@
 """
-Bootstrap and run estimation-only distributed jobs.
+Ray job entry point for the encodings campaign.
 
-The estimation-only campaign measures reward-estimation encodings without
-control: every experiment runs `task.estimation_only`, the fixed-behaviour
+The campaign measures reward-estimation encodings without control: every
+experiment runs `task.reward_estimation_only`, the fixed-behaviour
 loop that exercises the production estimator stack and records true-reward
 errors per estimation event. The behaviour policy is the environment's task
 oracle mixed with a uniform action draw at the campaign's exploration rate.
@@ -17,13 +17,14 @@ import numpy as np
 import ray
 
 from drmdp import core, task
-from drmdp.workflows import estimationexps, raytasks, specutils
+from drmdp.workflows import raytasks, specutils
+from drmdp.workflows.reward_estimation.encodings import exps
 
 logger = logging.getLogger(__name__)
 
 
 @dataclasses.dataclass(frozen=True)
-class EstimationPipelineArgs:
+class EncodingsPipelineArgs:
     """
     Program arguments.
     """
@@ -45,7 +46,7 @@ def create_tasks(
     task_prefix: str,
     log_episode_frequency: int,
     use_seed: bool,
-    exploration_rate: float = estimationexps.EXPLORATION_RATE,
+    exploration_rate: float = exps.EXPLORATION_RATE,
 ) -> Sequence[core.ExperimentInstance]:
     """
     Experiment instances of the estimation-only campaign.
@@ -57,9 +58,7 @@ def create_tasks(
     cells of one environment would collapse onto each other in the
     estimation-event dedup.
     """
-    specs = estimationexps.estimation_experiment_specs(
-        exploration_rate=exploration_rate
-    )
+    specs = exps.experiment_specs(exploration_rate=exploration_rate)
     experiments = specutils.parse_experiment_specs(specs=specs)
 
     cells: dict[str, list[core.Experiment]] = {}
@@ -75,7 +74,7 @@ def create_tasks(
             task.generate_experiments_instances(
                 experiments=cell_experiments,
                 num_runs=num_runs,
-                num_episodes_per_epoch=estimationexps.episode_cap(env_name),
+                num_episodes_per_epoch=exps.episode_cap(env_name),
                 log_episode_frequency=log_episode_frequency,
                 use_seed=use_seed,
                 output_dir=output_dir,
@@ -110,24 +109,26 @@ def cell_key(experiment: core.Experiment) -> str:
 
 
 @ray.remote
-def run_estimation_instance(experiment_instance: core.ExperimentInstance) -> str:
+def run_experiment(experiment_instance: core.ExperimentInstance) -> str:
     """
     Run one estimation-only experiment instance.
     """
     task_id = f"{experiment_instance.exp_id}/{experiment_instance.instance_id}"
-    logger.info("Estimation experiment %s starting: %s", task_id, experiment_instance)
+    logger.info(
+        "Reward-estimation experiment %s starting: %s", task_id, experiment_instance
+    )
     try:
-        task.estimation_only(experiment_instance)
+        task.reward_estimation_only(experiment_instance)
     except Exception as err:
-        logger.error("Error in estimation experiment %s: %s", task_id, err)
+        logger.error("Error in reward-estimation experiment %s: %s", task_id, err)
         raise RuntimeError(
-            f"Estimation experiment {experiment_instance} failed"
+            f"Reward-estimation experiment {experiment_instance} failed"
         ) from err
-    logger.info("Estimation experiment %s finished", task_id)
+    logger.info("Reward-estimation experiment %s finished", task_id)
     return task_id
 
 
-def main(args: EstimationPipelineArgs) -> None:
+def main(args: EncodingsPipelineArgs) -> None:
     """
     Program entry point.
     """
@@ -147,13 +148,13 @@ def main(args: EstimationPipelineArgs) -> None:
         logger.info("Submitting %d tasks", len(experiment_instances))
         results_refs = []
         for experiment_instance in experiment_instances:
-            result_ref = run_estimation_instance.remote(experiment_instance)
+            result_ref = run_experiment.remote(experiment_instance)
             results_refs.append(result_ref)
 
-        raytasks.wait_till_completion(results_refs, name="estimation-experiment")
+        raytasks.wait_till_completion(results_refs, name="reward-estimation-experiment")
 
 
-def parse_args() -> EstimationPipelineArgs:
+def parse_args() -> EncodingsPipelineArgs:
     """
     Parses program arguments.
     """
@@ -164,12 +165,12 @@ def parse_args() -> EstimationPipelineArgs:
     arg_parser.add_argument("--task-prefix", type=str, required=True)
     arg_parser.add_argument("--use-seed", action="store_true")
     arg_parser.add_argument(
-        "--exploration-rate", type=float, default=estimationexps.EXPLORATION_RATE
+        "--exploration-rate", type=float, default=exps.EXPLORATION_RATE
     )
     arg_parser.add_argument("--cluster-uri", type=str, default=None)
     known_args, unknown_args = arg_parser.parse_known_args()
     logger.info("Unknown args: %s", unknown_args)
-    return EstimationPipelineArgs(**vars(known_args))
+    return EncodingsPipelineArgs(**vars(known_args))
 
 
 if __name__ == "__main__":

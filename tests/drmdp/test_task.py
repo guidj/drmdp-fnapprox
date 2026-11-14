@@ -7,7 +7,7 @@ import pytest
 
 from drmdp import constants, core, envs, rewdelay, task, transform
 from drmdp.envs import wrappers
-from drmdp.workflows import controlexps
+from drmdp.workflows import grids
 from tests.drmdp.testhelpers import assert_training_snapshots
 
 
@@ -26,7 +26,7 @@ class TestCreateEnv:
     def test_creates_gridworld_with_correct_obs(self):
         result = task.create_env(
             "GridWorld-MINES",
-            {"grid": controlexps.MINES_GW_GRID, "max_episode_steps": 200},
+            {"grid": grids.MINES_GW_GRID, "max_episode_steps": 200},
         )
         obs, _ = result.env.reset()
         assert obs.shape == (2,)
@@ -129,7 +129,7 @@ class TestCreateEnv:
         result = task.create_env(
             "GridWorld-MINES",
             {
-                "grid": controlexps.MINES_GW_GRID,
+                "grid": grids.MINES_GW_GRID,
                 "max_episode_steps": 200,
                 "reward_shaping": {
                     "name": "gridworld-distance-pbrs",

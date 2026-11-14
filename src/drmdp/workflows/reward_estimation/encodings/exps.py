@@ -1,5 +1,5 @@
 """
-Experiment specifications for the estimation-only encoding campaign.
+Experiment specifications for the reward-estimation encodings campaign.
 
 One estimation experiment per (environment, encoding, method, delay, noise
 multiplier): the estimators receive aggregate window sums from the
@@ -15,7 +15,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from drmdp import constants, rewdelay
-from drmdp.workflows import controlexps, estimationencodings
+from drmdp.workflows import encodings, grids
 
 # exploration rate of the behaviour policy: the oracle acts on all other
 # steps, so the occupancy is goal-directed with an exploration floor
@@ -47,18 +47,8 @@ NOISE_STD_MULTIPLIERS: Sequence[float] = (0.0, 1.0)
 # the gaussian illustration family
 REFERENCE_STD = 1.0
 
-# observation dimensions of the coords wrapper: raw dimensions first, then the
-# shaped potential, one successor coordinate per action, and per-action
-# indicators (Acrobot: terminal; GridWorld: cliff)
-MC_RAW_DIM = 2
-MC_OBSERVATION_DIM = 3
-ACROBOT_RAW_DIM = 6
-ACROBOT_OBSERVATION_DIM = 7
-GW_RAW_DIM = 2
-GW_OBSERVATION_DIM = 3
 
-
-def estimation_experiment_specs(
+def experiment_specs(
     exploration_rate: float = EXPLORATION_RATE,
     policy_type: str = POLICY_TYPE,
 ) -> Sequence[Mapping[str, Any]]:
@@ -203,32 +193,32 @@ def _mc_encodings() -> Sequence[tuple[str, str, Mapping[str, Any]]]:
         (
             "potential-curr-succ",
             "reward structure",
-            estimationencodings.mc_potential_curr_succ(),
+            encodings.mc_potential_curr_succ(),
         ),
-        ("fourier-succ-o5", "general", estimationencodings.mc_fourier_succ()),
-        ("succ-bins-54", "general", estimationencodings.mc_succ_bins()),
+        ("fourier-succ-o5", "general", encodings.mc_fourier_succ()),
+        ("succ-bins-54", "general", encodings.mc_succ_bins()),
         (
             "sa-bins-4x2",
             "general",
-            estimationencodings.sa_bins((4, 2), raw_dim=2),
+            encodings.sa_bins((4, 2), raw_dim=2),
         ),
         (
             "sa-bins-18x4",
             "general",
-            estimationencodings.sa_bins((18, 4), raw_dim=2),
+            encodings.sa_bins((18, 4), raw_dim=2),
         ),
         (
             "current-tiles-td3",
             "env-specific",
-            estimationencodings.current_tiles(
-                3, raw_dim=2, observation_dim=MC_OBSERVATION_DIM
+            encodings.current_tiles(
+                3, raw_dim=2, observation_dim=encodings.MOUNTAIN_CAR_OBSERVATION_DIM
             ),
         ),
         (
             "currsucc-tiles-td3",
             "env-specific",
-            estimationencodings.current_and_successor_tiles(
-                3, raw_dim=2, observation_dim=MC_OBSERVATION_DIM
+            encodings.current_and_successor_tiles(
+                3, raw_dim=2, observation_dim=encodings.MOUNTAIN_CAR_OBSERVATION_DIM
             ),
         ),
     )
@@ -240,17 +230,17 @@ def _acrobot_encodings() -> Sequence[tuple[str, str, Mapping[str, Any]]]:
         (
             "potential-curr-succ",
             "reward structure",
-            estimationencodings.acrobot_potential_curr_succ(),
+            encodings.acrobot_potential_curr_succ(),
         ),
         (
             "action-termination",
             "general",
-            estimationencodings.action_termination(),
+            encodings.action_termination(),
         ),
         (
             "sa-bins-2x6",
             "general",
-            estimationencodings.sa_bins((2, 2, 2, 2, 2, 2), raw_dim=ACROBOT_RAW_DIM),
+            encodings.sa_bins((2, 2, 2, 2, 2, 2), raw_dim=encodings.ACROBOT_RAW_DIM),
         ),
     )
 
@@ -261,32 +251,32 @@ def _gw_encodings() -> Sequence[tuple[str, str, Mapping[str, Any]]]:
         (
             "potential-curr-succ",
             "reward structure",
-            estimationencodings.gw_potential_curr_succ(),
+            encodings.gw_potential_curr_succ(),
         ),
         (
             "transition-anomaly",
             "dynamics structure",
-            estimationencodings.gridworld_transition_anomaly(raw_dim=2),
+            encodings.gridworld_transition_anomaly(raw_dim=2),
         ),
         (
             "next-cell-ohe",
             "dynamics structure",
-            estimationencodings.gridworld_next_cell(raw_dim=2),
+            encodings.gridworld_next_cell(raw_dim=2),
         ),
         (
             "sa-ohe",
             "env-specific",
-            estimationencodings.gridworld_sa_ohe(
-                controlexps.grid_dead_ohe_indices(controlexps.MINES_GW_GRID),
-                raw_dim=GW_RAW_DIM,
-                observation_dim=GW_OBSERVATION_DIM,
+            encodings.gridworld_sa_ohe(
+                grids.grid_dead_ohe_indices(grids.MINES_GW_GRID),
+                raw_dim=encodings.GRIDWORLD_RAW_DIM,
+                observation_dim=encodings.GRIDWORLD_OBSERVATION_DIM,
             ),
         ),
         (
             "tiles-td3",
             "env-specific",
-            estimationencodings.current_tiles(
-                3, raw_dim=2, observation_dim=GW_OBSERVATION_DIM
+            encodings.current_tiles(
+                3, raw_dim=2, observation_dim=encodings.GRIDWORLD_OBSERVATION_DIM
             ),
         ),
     )
@@ -322,7 +312,7 @@ def _env_templates() -> Mapping[str, Any]:
         },
         "GridWorld-MINES": {
             "base_args": {
-                "grid": controlexps.MINES_GW_GRID,
+                "grid": grids.MINES_GW_GRID,
                 "max_episode_steps": 200,
                 "reward_shaping": {
                     "name": "gridworld-distance-pbrs",

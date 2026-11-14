@@ -1,14 +1,20 @@
 """
-Reward features computed from a transition.
+Reward features for one transition.
 
-A `TransitionFeatureFn` maps one transition to the reward-feature vector
-the estimators fit. It replaces the estimator-side `FTOp` pipeline: the
-estimators see features, not transformed examples, so a feature may depend
-on the successor observation and on the termination flag.
+A `TransitionFeatureFn` maps a transition
+$(s, a, s', \\text{terminated}, \\text{truncated}, \\text{info})$ to the
+row the reward estimator regresses aggregate window sums against. Because
+the input is a transition, a row may depend on the successor observation
+and on the termination flag, which per-state feature maps cannot express.
 
-The vector is a concatenation of named blocks. A block either delegates its
-map to an `FTOp` specification declared in the hook args, or computes its
-entries from transition fields directly.
+Build a function from a specification with `transition_feature_fn(env,
+spec)`; estimator mappers receive it through the `transition_feats_spec`
+mapper argument, which `task.estimator_feats_fn` resolves. A row is a
+concatenation of named blocks: each block either delegates to an `FTOp`
+specification over the current or successor observation, or computes its
+entries from transition fields directly. The spec constructors
+(`current_features_spec`, `current_and_successor_features_spec`,
+`concatenated_features_spec`) build the block layouts.
 """
 
 import dataclasses

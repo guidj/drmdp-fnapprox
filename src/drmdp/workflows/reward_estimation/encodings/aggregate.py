@@ -1,4 +1,4 @@
-"""Offline pre-aggregation of estimation-only campaign logs.
+"""Offline log aggregation for the encodings campaign.
 
 Reads ``experiment-params.json`` and the last line of each
 ``experiment-logs.jsonl`` from the run directories, and writes three

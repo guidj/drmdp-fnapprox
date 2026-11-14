@@ -421,7 +421,7 @@ ESTIMATION_ORACLE_POLICY = "oracle"
 ESTIMATION_RANDOM_POLICY = "uniform-random"
 
 
-def estimation_only(exp_instance: core.ExperimentInstance):
+def reward_estimation_only(exp_instance: core.ExperimentInstance):
     """
     Entry point running reward estimation without control.
 
@@ -629,9 +629,9 @@ def estimator_feats_fn(
     """
     Builds an estimator's transition-feature function from its specification.
 
-    Pops `transition_feats_spec` from the mapper args and rejects the
-    removed `feats_spec` key: an estimator's features come from a
-    transition, never from the control pipeline's operators.
+    Pops `transition_feats_spec` from the mapper args and rejects
+    `feats_spec`: an estimator's features come from a transition, never
+    from the control pipeline's operators.
     """
     if "feats_spec" in mapper_args:
         raise ValueError(

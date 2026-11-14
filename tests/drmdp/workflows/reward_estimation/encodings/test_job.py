@@ -1,4 +1,4 @@
-"""Tests for estimationjob — parsing and the estimation-only loop."""
+"""Tests for encodings.job — parsing and the fixed-behaviour loop."""
 
 import json
 import os
@@ -6,19 +6,20 @@ import os
 import numpy as np
 
 from drmdp import core, task
-from drmdp.workflows import estimationexps, estimationjob, specutils
+from drmdp.workflows import specutils
+from drmdp.workflows.reward_estimation.encodings import exps, job
 
 
 class TestParseExperiments:
     def test_experiments_match_the_problem_spec_grid(self):
-        specs = estimationexps.estimation_experiment_specs()
+        specs = exps.experiment_specs()
         experiments = specutils.parse_experiment_specs(specs)
         assert len(experiments) == 360  # 30 specs x 12 problem specs
         assert all(isinstance(exp, core.Experiment) for exp in experiments)
         assert all(exp.env_spec.feats_spec == [] for exp in experiments)
 
     def test_encoding_metadata_flows_to_the_env_spec(self):
-        specs = estimationexps.estimation_experiment_specs()
+        specs = exps.experiment_specs()
         experiments = specutils.parse_experiment_specs(specs)
         metadata = {exp.env_spec.metadata["encoding"] for exp in experiments}
         assert "transition-anomaly" in metadata
@@ -27,7 +28,7 @@ class TestParseExperiments:
 
 class TestCreateTasks:
     def test_instances_match_the_run_grid_with_per_env_episode_caps(self):
-        instances = estimationjob.create_tasks(
+        instances = job.create_tasks(
             num_runs=1,
             output_dir="unused",
             task_prefix="test",
@@ -48,7 +49,7 @@ class TestCreateTasks:
 
     def test_every_cell_has_a_distinct_exp_id(self):
         """The aggregation dedups events by (exp_id, instance_id)."""
-        instances = estimationjob.create_tasks(
+        instances = job.create_tasks(
             num_runs=1,
             output_dir="unused",
             task_prefix="test",
@@ -59,7 +60,7 @@ class TestCreateTasks:
         assert len(set(identities)) == len(identities)
 
     def test_cell_key_separates_check_mode_variants(self):
-        specs = estimationexps.estimation_experiment_specs()
+        specs = exps.experiment_specs()
         experiments = specutils.parse_experiment_specs(specs)
         coords_exps = [
             experiment
@@ -68,7 +69,7 @@ class TestCreateTasks:
             == "potential-curr-succ"
             and experiment.env_spec.name == "MountainCar-v0"
         ]
-        keys = {estimationjob.cell_key(experiment) for experiment in coords_exps}
+        keys = {job.cell_key(experiment) for experiment in coords_exps}
         # 2 estimators x 3 modes x 2 delays x 2 noise = 24
         assert len(keys) == 24
 
@@ -78,7 +79,7 @@ class TestEstimationOnly:
 
     def _gw_instance(self, tmp_path, encoding, estimation_check, episodes):
         spec = None
-        for candidate in estimationexps.estimation_experiment_specs():
+        for candidate in exps.experiment_specs():
             if (
                 candidate["name"] == "GridWorld-MINES"
                 and candidate["metadata"]["encoding"] == encoding
@@ -130,7 +131,7 @@ class TestEstimationOnly:
             estimation_check="none",
             episodes=30,
         )
-        task.estimation_only(instance)
+        task.reward_estimation_only(instance)
         entries = self._read_log(tmp_path)
         events = [
             event
@@ -158,7 +159,7 @@ class TestEstimationOnly:
             estimation_check="factors",
             episodes=20,
         )
-        task.estimation_only(instance)
+        task.reward_estimation_only(instance)
         entries = self._read_log(tmp_path)
         deferred = [
             attempt
@@ -188,8 +189,8 @@ class TestEstimationOnly:
             estimation_check="none",
             episodes=30,
         )
-        task.estimation_only(first)
-        task.estimation_only(second)
+        task.reward_estimation_only(first)
+        task.reward_estimation_only(second)
         first_entries = _strip_wall_clock(self._read_log(first_dir))
         second_entries = _strip_wall_clock(self._read_log(second_dir))
         assert first_entries == second_entries
