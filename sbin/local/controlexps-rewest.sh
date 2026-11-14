@@ -15,7 +15,7 @@ ray job submit \
     --working-dir $PARENT_DIR \
     --runtime-env-json='{"py_modules":["src/drmdp"], "excludes": [".git"]}' \
     -- \
-    python $PARENT_DIR/src/$BASE/workflows/rewest.py \
+    python $PARENT_DIR/src/$BASE/workflows/reward_estimation/methods/job.py \
         --num-runs 1 \
         --num-episodes 500 \
         --output-path "$HOME/fs/$BASE/exp/rewest/$TIMESTAMP"

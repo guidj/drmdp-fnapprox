@@ -18,8 +18,8 @@ import numpy as np
 import tensorflow as tf
 
 from drmdp import constants, mathutils
-from drmdp.workflows import controlexps
-from drmdp.workflows.grids import rewest_runner
+from drmdp.workflows import grids
+from drmdp.workflows.reward_estimation.methods import runner
 
 DELAY_LAMBDAS = (2, 5, 7)
 SEEDS = (0, 1, 2)
@@ -80,8 +80,8 @@ def load_grids(
 ) -> list[Mapping[str, Any]]:
     all_grids: list[Mapping[str, Any]] = []
     for path in grid_files:
-        grids = controlexps.load_solvable_grids(path=path, min_passes=min_passes)
-        all_grids.extend(grids)
+        grid_specs = grids.load_solvable_grids(path=path, min_passes=min_passes)
+        all_grids.extend(grid_specs)
 
     specs_by_size: dict[str, list[Mapping[str, Any]]] = collections.defaultdict(list)
     for grid in all_grids:
@@ -434,11 +434,11 @@ def run_configs_with_executor(
     cluster_uri: str | None,
 ) -> list[Mapping[str, Any]]:
     if executor == "sequential":
-        return rewest_runner.run_sequential(run_configs)
+        return runner.run_sequential(run_configs)
     if executor == "joblib":
-        return rewest_runner.run_parallel(run_configs)
+        return runner.run_parallel(run_configs)
     if executor == "ray":
-        return rewest_runner.run_ray(run_configs, cluster_uri=cluster_uri)
+        return runner.run_ray(run_configs, cluster_uri=cluster_uri)
     raise ValueError(f"Unknown executor: {executor}")
 
 

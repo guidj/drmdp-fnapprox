@@ -1,4 +1,4 @@
-"""Tests for validate_least_coverage.py — grid loading, config generation,
+"""Tests for validate_least.py — grid loading, config generation,
 and mapper construction."""
 
 import os
@@ -6,7 +6,7 @@ import os
 import pytest
 
 from drmdp import envs, task
-from drmdp.workflows.grids import rewest_runner, validate_least_coverage
+from drmdp.workflows.reward_estimation.methods import runner, validate_least
 
 # Smallest solvable grid: one row, start / open / goal cells, no dead cells.
 GRID_SPEC = {
@@ -29,7 +29,7 @@ class TestBuildRunConfigs:
                 "dead_ohe": [2],
             }
         ]
-        configs = validate_least_coverage.build_run_configs(
+        configs = validate_least.build_run_configs(
             grids=grids,
             max_steps_values=(100,),
             num_episodes_values=(50,),
@@ -49,7 +49,7 @@ class TestBuildRunConfigs:
                 "dead_ohe": [2],
             }
         ]
-        configs = validate_least_coverage.build_run_configs(
+        configs = validate_least.build_run_configs(
             grids=grids,
             max_steps_values=(100,),
             num_episodes_values=(50,),
@@ -70,7 +70,7 @@ class TestBuildRunConfigs:
                 "dead_ohe": [2],
             }
         ]
-        configs = validate_least_coverage.build_run_configs(
+        configs = validate_least.build_run_configs(
             grids=grids,
             max_steps_values=(200, 500),
             num_episodes_values=(50,),
@@ -82,16 +82,23 @@ class TestBuildRunConfigs:
 class TestLoadGrids:
     def test_limits_grids_per_size(self):
         grids_path = os.path.join(
-            os.path.dirname(__file__), "..", "..", "..", "assets", "grids.json"
+            os.path.dirname(__file__),
+            "..",
+            "..",
+            "..",
+            "..",
+            "..",
+            "assets",
+            "grids.json",
         )
         if not os.path.exists(grids_path):
             pytest.skip(f"grids fixture not found: {grids_path}")
-        grids_one = validate_least_coverage.load_grids(
+        grids_one = validate_least.load_grids(
             grid_files=[grids_path],
             min_passes=4,
             grids_per_size=1,
         )
-        grids_two = validate_least_coverage.load_grids(
+        grids_two = validate_least.load_grids(
             grid_files=[grids_path],
             min_passes=4,
             grids_per_size=2,
@@ -102,7 +109,7 @@ class TestLoadGrids:
 class TestMethodConfigsMapperConstruction:
     """Every METHOD_CONFIGS entry must build through `task.reward_mapper`.
 
-    The mapping spec is built exactly as `rewest_runner` builds it for a
+    The mapping spec is built exactly as `runner` builds it for a
     run, so an argument removed from the reward-estimation wrappers (e.g.
     `use_next_state`, replaced by `transition_feats_spec`) fails here
     instead of crashing every run of the validation script.
@@ -126,8 +133,8 @@ class TestMethodConfigsMapperConstruction:
         nrows, ncols = GRID_SPEC["size"]
         live_dim = nrows * ncols * 4 - len(GRID_SPEC["dead_ohe"])
         for method in ("least-lfa", "bayes-least-lfa"):
-            mapping_spec = rewest_runner.mapping_spec_for(
-                GRID_SPEC, method, validate_least_coverage.METHOD_CONFIGS[method]
+            mapping_spec = runner.mapping_spec_for(
+                GRID_SPEC, method, validate_least.METHOD_CONFIGS[method]
             )
             mapper = task.reward_mapper(
                 env, proxy_env=proxy_env, mapping_spec=mapping_spec
@@ -138,8 +145,8 @@ class TestMethodConfigsMapperConstruction:
 
     def test_identity_returns_env_unwrapped(self):
         env, proxy_env = self._make_envs()
-        mapping_spec = rewest_runner.mapping_spec_for(
-            GRID_SPEC, "identity", validate_least_coverage.METHOD_CONFIGS["identity"]
+        mapping_spec = runner.mapping_spec_for(
+            GRID_SPEC, "identity", validate_least.METHOD_CONFIGS["identity"]
         )
         assert (
             task.reward_mapper(env, proxy_env=proxy_env, mapping_spec=mapping_spec)
@@ -150,14 +157,14 @@ class TestMethodConfigsMapperConstruction:
 
     def test_impute_missing_uses_configured_value(self):
         env, proxy_env = self._make_envs()
-        mapping_spec = rewest_runner.mapping_spec_for(
+        mapping_spec = runner.mapping_spec_for(
             GRID_SPEC,
             "impute-missing",
-            validate_least_coverage.METHOD_CONFIGS["impute-missing"],
+            validate_least.METHOD_CONFIGS["impute-missing"],
         )
         mapper = task.reward_mapper(env, proxy_env=proxy_env, mapping_spec=mapping_spec)
         assert mapper.impute_value == float(
-            validate_least_coverage.METHOD_CONFIGS["impute-missing"]["impute_value"]
+            validate_least.METHOD_CONFIGS["impute-missing"]["impute_value"]
         )
         env.close()
         proxy_env.close()

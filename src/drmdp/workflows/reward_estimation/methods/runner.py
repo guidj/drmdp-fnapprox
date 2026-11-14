@@ -1,3 +1,12 @@
+"""
+Grid-environment runner for the methods campaign.
+
+Runs one configuration on a grid environment: a reward-store wrapper
+captures per-step rewards and observations, a policy acts under the
+campaign's exploration floor, and the recorded buffers feed the method
+comparison and coverage measurements.
+"""
+
 import math
 import os
 from collections.abc import Mapping, Sequence
@@ -10,7 +19,14 @@ import ray
 import tqdm.auto
 
 from drmdp import envs, metrics, rewdelay, task, transform
-from drmdp.workflows import controlexps
+
+# behaviour exploration floor and constant step size of the campaign; the
+# same values the control families use
+EPSILON = 0.1
+LEARNING_RATE_SPEC: Mapping[str, Any] = {
+    "name": "constant",
+    "args": {"initial_lr": 0.01},
+}
 
 REWARD_EVAL_SAMPLES = 25_000
 
@@ -60,7 +76,7 @@ def run_reward_estimation(
     gamma: float,
     num_episodes: int,
     seed: int,
-    epsilon: float = controlexps.EPSILON,
+    epsilon: float = EPSILON,
     mean_return_window: int | None = None,
 ) -> Mapping[str, Any]:
     """
@@ -108,7 +124,7 @@ def run_reward_estimation(
     solver_state = env.solver_state
 
     ft_op = transform.transform_pipeline(env=env, specs=control_feats_spec)
-    lr = task.learning_rate(**controlexps.LEARNING_RATE_SPEC)  # type: ignore
+    lr = task.learning_rate(**LEARNING_RATE_SPEC)  # type: ignore
     algorithm = task.create_algorithm(
         env=env,
         ft_op=ft_op,
@@ -206,7 +222,7 @@ def mapping_spec_for(
         return {"name": method, "args": None}
     if method == "impute-missing":
         return {"name": method, "args": {**method_args}}
-    rewest_feats_spec = [
+    method_feats_spec = [
         {"name": "flat-grid-observation-action-ft", "args": {}},
         {
             "name": "drop-observation-dims-ft",
@@ -219,7 +235,7 @@ def mapping_spec_for(
             **method_args,
             "transition_feats_spec": {
                 "name": "current-features",
-                "args": {"current_spec": rewest_feats_spec},
+                "args": {"current_spec": method_feats_spec},
             },
         },
     }
