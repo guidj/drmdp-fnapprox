@@ -203,20 +203,22 @@ def parse_experiment_logs(paths: Sequence[str]) -> ray.data.Dataset:
 
 def _normalize_metadata(metadata: Mapping[str, Any]) -> Mapping[str, Any]:
     """
-    Experiment-params entries with empty env-spec metadata mapped to None.
+    Experiment-params entries with empty dicts mapped to None, recursively.
 
     An empty dict reaches Arrow as a fieldless struct, which pyarrow cannot
-    write to Parquet; `EnvSpec.metadata` allows None and its readers fall
-    back to an empty mapping.
+    write to Parquet; the empty mapping appears wherever a spec declares no
+    options, e.g. `EnvSpec.metadata` or the `args` of a reward-observation
+    wrapper. Readers of the normalized fields fall back to an empty
+    mapping.
     """
-    normalized = {}
-    for path, entry in metadata.items():
-        env_spec = entry["experiment"]["env_spec"]
-        if isinstance(env_spec.get("metadata"), Mapping) and not env_spec["metadata"]:
-            entry = copy.deepcopy(entry)
-            entry["experiment"]["env_spec"]["metadata"] = None
-        normalized[path] = entry
-    return normalized
+
+    def normalize(value: Any) -> Any:
+        if isinstance(value, Mapping):
+            normalized = {key: normalize(item) for key, item in value.items()}
+            return None if not normalized else normalized
+        return value
+
+    return {path: normalize(entry) for path, entry in metadata.items()}
 
 
 def join_logs_and_metadata(

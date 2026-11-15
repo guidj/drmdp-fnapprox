@@ -61,11 +61,35 @@ class TestNormalizeMetadata:
         result = agg._normalize_metadata({"/run": entry})
         assert "metadata" not in result["/run"]["experiment"]["env_spec"]
 
-    def test_empty_dict_fields_outside_env_spec_are_untouched(self):
+    def test_every_empty_dict_becomes_none(self):
+        """
+        The sweep is recursive: an empty dict nested anywhere in the
+        entry, e.g. the `args` of a reward-observation wrapper inside
+        `env_spec.args`, becomes None so Arrow writes a null field.
+        """
         entry = self._entry({})
+        entry["experiment"]["env_spec"]["args"] = {
+            "reward_shaping": {"name": "mc-pbrs", "args": {}},
+            "reward_obs": {"name": "mc-pbrs-potential", "args": {}},
+        }
         entry["run_config"] = {}
         result = agg._normalize_metadata({"/run": entry})
-        assert result["/run"]["run_config"] == {}
+        args = result["/run"]["experiment"]["env_spec"]["args"]
+        assert args["reward_shaping"] == {"name": "mc-pbrs", "args": None}
+        assert args["reward_obs"] == {"name": "mc-pbrs-potential", "args": None}
+        assert result["/run"]["run_config"] is None
+
+    def test_populated_args_are_preserved(self):
+        entry = self._entry({})
+        entry["experiment"]["env_spec"]["args"] = {
+            "max_episode_steps": 2500,
+            "reward_noise": {"name": "relative-gaussian", "args": {"scale": 0.1}},
+        }
+        result = agg._normalize_metadata({"/run": entry})
+        assert (
+            result["/run"]["experiment"]["env_spec"]["args"]
+            == entry["experiment"]["env_spec"]["args"]
+        )
 
 
 class TestChunks:
