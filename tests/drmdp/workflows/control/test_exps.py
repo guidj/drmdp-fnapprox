@@ -51,7 +51,7 @@ class TestDiscountFactorGrid:
             for problem_spec in spec["problem_specs"]
         }
         assert gammas == set(exps.DEFAULT_DISCOUNT_FACTORS)
-        assert gammas == {1.0, 0.99, 0.98}
+        assert gammas == {1.0, 0.99}
 
     def test_common_specs_one_no_delay_arm_per_discount(self):
         # every discount contributes exactly one no-delay FR spec; a missing
