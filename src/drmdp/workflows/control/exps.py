@@ -42,11 +42,11 @@ DEFAULT_DISCOUNT_FACTORS = (1.0, 0.99)
 def default_delay_config() -> list[dict[str, Any]]:
     """Uniform delay ranges for the control experiment families."""
     delay_configs = []
-    for min_delay, max_delay in ((2, 4), (6, 8), (10, 12)):
+    for delay in range(3, 15 + 1, 2):
         delay_configs.append(
             {
-                "name": "uniform",
-                "args": {"min_delay": min_delay, "max_delay": max_delay},
+                "name": "fixed",
+                "args": {"delay": delay},
             },
         )
     return delay_configs

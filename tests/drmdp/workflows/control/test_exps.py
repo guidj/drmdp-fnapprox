@@ -11,32 +11,34 @@ from drmdp.workflows.reward_estimation.encodings import exps as encodings_exps
 
 
 class TestDefaultDelayConfig:
-    def test_uniform_ranges(self):
+    def test_config_values(self):
         configs = exps.default_delay_config()
-        assert [
-            (config["args"]["min_delay"], config["args"]["max_delay"])
-            for config in configs
-        ] == [(2, 4), (6, 8), (10, 12)]
+        assert [config["args"]["delay"] for config in configs] == [
+            3,
+            5,
+            7,
+            9,
+            11,
+            13,
+            15,
+        ]
 
     def test_configs_are_uniform(self):
         for config in exps.default_delay_config():
-            assert config["name"] == "uniform"
+            assert config["name"] == "fixed"
 
-    def test_bounds_are_integers(self):
-        # the delay wrapper samples with random.randint, which requires
-        # integer bounds
+    def test_values_are_integers(self):
         for config in exps.default_delay_config():
-            assert isinstance(config["args"]["min_delay"], int)
-            assert isinstance(config["args"]["max_delay"], int)
+            assert isinstance(config["args"]["delay"], int)
 
     def test_only_first_range_within_option_budget(self):
         # option specs are derived for delay configs whose minimum delay
-        # is within MAX_OPTIONS_DELAY; only [2, 4] qualifies
+        # is within MAX_OPTIONS_DELAY;
         within_budget = [
             exps._delay_min(config) <= exps.MAX_OPTIONS_DELAY
             for config in exps.default_delay_config()
         ]
-        assert within_budget == [True, False, False]
+        assert within_budget == [True, False, False, False, False, False, False]
 
 
 class TestDiscountFactorGrid:
