@@ -247,15 +247,11 @@ def bayes_least_specs(
     discounts: Sequence[float] = DEFAULT_DISCOUNT_FACTORS,
     impute_value: float = DEFAULT_IMPUTE_VALUE,
     sample_weights: bool = False,
-    error_variance: str = rewdelay.ERROR_VARIANCE_UNIT,
+    error_variance: str = rewdelay.ERROR_VARIANCE_NIG,
     learning_rate_config: Mapping[str, Any] = LEARNING_RATE_SPEC,
 ) -> Sequence[Mapping[str, Any]]:
-    """
+    r"""
     Bayesian linear regression specs.
-
-    The mapper name carries the error-variance mode: aggregation labels a
-    run by its mapper name alone, so the NIG mode needs a name of its own
-    to stay apart from the unit-variance estimator.
     """
     error_variance = rewdelay.resolve_error_variance(error_variance)
     mapper_name = (

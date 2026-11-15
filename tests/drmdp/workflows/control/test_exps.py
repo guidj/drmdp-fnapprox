@@ -161,7 +161,7 @@ class TestBladeTdRewardSampling:
             problem_spec["reward_mapper"]["args"]
             for spec in specs
             for problem_spec in spec["problem_specs"]
-            if problem_spec["reward_mapper"]["name"] == "bayes-least-lfa"
+            if problem_spec["reward_mapper"]["name"] == "blade-td-nig"
         ]
         assert bayes_args
         for args in bayes_args:
@@ -179,7 +179,7 @@ class TestEstimatorEncoding:
             "LunarLander-v3": encodings.lunar_lander_reward(),
         }
         for spec in exps.gaussian_illustration_experiment_specs():
-            for mapper_name in ("least-lfa", "bayes-least-lfa"):
+            for mapper_name in ("least-lfa", "blade-td-nig"):
                 for args in _estimator_args(spec, mapper_name):
                     assert args["transition_feats_spec"] == expected[spec["name"]]
 
@@ -237,27 +237,27 @@ class TestBayesLeastSpecsMapperName:
 
     _FEATS: tuple[Mapping[str, Any], ...] = ({"name": "current-features", "args": {}},)
 
-    def test_unit_variance_keeps_the_blade_td_name(self):
+    def test_default_mode_selects_the_nig_mapper_name(self):
         specs = exps.bayes_least_specs(
             init_attempt_estimation_episodes=(10,), transition_feats_specs=self._FEATS
         )
         assert specs
         for spec in specs:
-            assert spec["reward_mapper"]["name"] == "bayes-least-lfa"
-            assert spec["reward_mapper"]["args"]["error_variance"] == "unit"
+            assert spec["reward_mapper"]["name"] == "blade-td-nig"
+            assert spec["reward_mapper"]["args"]["error_variance"] == "nig"
 
-    def test_nig_mode_selects_the_nig_mapper_name(self):
-        # aggregation labels a run by its mapper name alone, so the NIG
-        # mode needs a name of its own to be separated from unit variance
+    def test_unit_mode_selects_the_blade_td_name(self):
+        # aggregation labels a run by its mapper name alone, so the
+        # unit-variance mode needs a name of its own to be separated from NIG
         specs = exps.bayes_least_specs(
             init_attempt_estimation_episodes=(10,),
             transition_feats_specs=self._FEATS,
-            error_variance="nig",
+            error_variance="unit",
         )
         assert specs
         for spec in specs:
-            assert spec["reward_mapper"]["name"] == "blade-td-nig"
-            assert spec["reward_mapper"]["args"]["error_variance"] == "nig"
+            assert spec["reward_mapper"]["name"] == "bayes-least-lfa"
+            assert spec["reward_mapper"]["args"]["error_variance"] == "unit"
 
     def test_unknown_error_variance_is_rejected(self):
         with pytest.raises(ValueError, match="error_variance"):
@@ -283,7 +283,7 @@ class TestEstimatorConfiguration:
     def test_bayes_keeps_the_absent_gate(self):
         # no estimation_check key: the wrapper's default is no gate
         for spec in exps.gaussian_illustration_experiment_specs():
-            for args in _estimator_args(spec, "bayes-least-lfa"):
+            for args in _estimator_args(spec, "blade-td-nig"):
                 assert "estimation_check" not in args
                 assert args["init_attempt_estimation_episode"] == 10
                 assert args["estimation_buffer_mult"] == (
@@ -527,7 +527,7 @@ class TestGaussianIllustrationIncludesLunarLander:
             assert problem["learning_rate_config"] is config
 
 
-_ESTIMATOR_MAPPERS = ("least-lfa", "bayes-least-lfa")
+_ESTIMATOR_MAPPERS = ("least-lfa", "blade-td-nig")
 
 
 def _rates(problem_specs: Sequence[Mapping[str, Any]]) -> list[float]:
