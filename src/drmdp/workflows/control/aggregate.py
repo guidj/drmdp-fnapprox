@@ -7,7 +7,6 @@ Parquet table per log key for the analysis notebooks.
 """
 
 import argparse
-import copy
 import dataclasses
 import json
 import logging
@@ -44,7 +43,7 @@ class StepSnapshotAggregator(ray.data.aggregate.AggregateFn):
     Aggregates returns.
     """
 
-    AggType = Mapping[str, dict[str, Any]]
+    AggType = dict[str, list[dict[str, Any]]]
     Row = Mapping[str, Any]
 
     def __init__(self, name: str = "StepSnapshotAggregator()"):
@@ -64,21 +63,17 @@ class StepSnapshotAggregator(ray.data.aggregate.AggregateFn):
         """
         Add a single row to aggregation.
         """
-        new_acc = dict(**copy.deepcopy(acc))
-        if row["exp_id"] not in acc:
-            meta = copy.deepcopy(row["meta"])
-            # Path is a random pick
-            # from one of the runs
-            del meta["path"]
-            new_acc[row["exp_id"]] = {"meta": meta, "records": []}
-        new_acc[row["exp_id"]]["records"].append(
+        records = acc.get(row["exp_id"])
+        if records is None:
+            records = acc[row["exp_id"]] = []
+        records.append(
             {
                 "instance_id": row["instance_id"],
                 "returns": row["returns"],
                 "steps": row["steps"],
             }
         )
-        return new_acc
+        return acc
 
     def _merge(self, acc_left: AggType, acc_right: AggType) -> AggType:
         """
@@ -89,14 +84,15 @@ class StepSnapshotAggregator(ray.data.aggregate.AggregateFn):
         # episode of that block comes back as a null field ({exp_id: None}).
         # A null entry means "no records here", not data, so it merges
         # as absent on either side.
-        acc = dict(**copy.deepcopy(acc_left))
-        for key, value in acc_right.items():
-            if value is None:
+        acc = dict(acc_left)
+        for exp_id, records in acc_right.items():
+            if records is None:
                 continue
-            if key not in acc or acc[key] is None:
-                acc[key] = copy.deepcopy(value)
+            entry = acc.get(exp_id)
+            if entry is None:
+                acc[exp_id] = records
             else:
-                acc[key]["records"].extend(value["records"])
+                entry.extend(records)
         return acc
 
     def _finalize(self, acc: AggType) -> Any:
@@ -108,14 +104,13 @@ class StepSnapshotAggregator(ray.data.aggregate.AggregateFn):
         # arrays were an arbitrary per-row permutation, which made
         # index pairing across rows invalid
         projected = {}
-        for exp_id, data in acc.items():
+        for exp_id, records in acc.items():
             # exp_id logged no run at this episode in any block (see
             # _merge on null struct fields)
-            if data is None:
+            if records is None:
                 continue
-            records = sorted(data["records"], key=lambda record: record["instance_id"])
+            records = sorted(records, key=lambda record: record["instance_id"])
             projected[exp_id] = {
-                "meta": data["meta"],
                 "returns": [record["returns"] for record in records],
                 "steps": [record["steps"] for record in records],
                 "instance_ids": [record["instance_id"] for record in records],
@@ -140,16 +135,19 @@ def main():
         logger.info("Ray Context: %s", context)
         logger.info("Ray Nodes: %s", ray.nodes())
 
-        metadata = parse_experiment_metadata(paths)
+        metadata = _normalize_metadata(parse_experiment_metadata(paths))
         ds_logs = parse_experiment_logs(paths)
 
         logger.info("Metadata # keys: %d", len(metadata))
         logger.info("Datalogs size: %fMB", ds_logs.size_bytes() / 1024 / 1024)
-        ds_logs_and_metadata = join_logs_and_metadata(ds_logs, metadata)
+        fields = derive_exp_fields(metadata)
+        exp_meta = derive_exp_meta(metadata)
+        ds_logs_and_fields = join_logs_and_fields(ds_logs, fields)
 
-        results_ref = pipeline.remote(ds_logs_and_metadata)
-        write_results_ref = write_results.remote(results_ref, args.output_dir)
-        raytasks.wait_till_completion([write_results_ref])
+        datasets = pipeline(ds_logs_and_fields, exp_meta)
+        for key in list(datasets):
+            write_ref = write_dataset.remote(datasets.pop(key), key, args.output_dir)
+            raytasks.wait_till_completion([write_ref])
 
 
 def parse_experiment_metadata(paths: Sequence[str]) -> Mapping[str, Any]:
@@ -221,28 +219,94 @@ def _normalize_metadata(metadata: Mapping[str, Any]) -> Mapping[str, Any]:
     return {path: normalize(entry) for path, entry in metadata.items()}
 
 
-def join_logs_and_metadata(
-    ds_logs: ray.data.Dataset, metadata: Mapping[str, Any]
+EXP_FIELDS_COLUMNS: tuple[str, ...] = (
+    "exp_id",
+    "instance_id",
+    "env_name",
+    "gamma",
+    "delay_config",
+    "method",
+    "estimation_check",
+    "feats_spec",
+    "noise_scale",
+    "episodes_per_run",
+    "log_episode_frequency",
+)
+
+
+def derive_exp_fields(
+    metadata: Mapping[str, Any],
+) -> Mapping[str, Mapping[str, Any]]:
+    """
+    Scalar experiment fields keyed by run path.
+
+    The fields are the per-row constants the pipeline consumes;
+    deriving them once per run cell replaces attaching the full
+    metadata entry to every log row.
+    """
+    fields = {}
+    for path, entry in metadata.items():
+        experiment = entry["experiment"]
+        env_spec = experiment["env_spec"]
+        problem_spec = experiment["problem_spec"]
+        reward_mapper = problem_spec["reward_mapper"]
+        mapper_args = dict(reward_mapper.get("args") or {})
+        fields[path] = {
+            "exp_id": entry["exp_id"],
+            "instance_id": entry["instance_id"],
+            "env_name": env_spec["name"],
+            "gamma": problem_spec["gamma"],
+            "delay_config": problem_spec["delay_config"],
+            "method": dataproc.MAPPERS_NAMES[reward_mapper["name"]],
+            "estimation_check": _resolve_check_mode(mapper_args),
+            "feats_spec": json.dumps(
+                mapper_args.get("transition_feats_spec") or {}, sort_keys=True
+            ),
+            "noise_scale": _noise_std_multiplier(env_spec),
+            "episodes_per_run": entry["run_config"]["episodes_per_run"],
+            "log_episode_frequency": entry["run_config"]["log_episode_frequency"],
+        }
+    return fields
+
+
+def derive_exp_meta(metadata: Mapping[str, Any]) -> Mapping[str, Any]:
+    """
+    One metadata entry per experiment, keyed by exp_id, `path` removed.
+
+    The entry with the smallest instance id represents its experiment,
+    a deterministic pick where the per-row stream previously carried an
+    arbitrary run's entry.
+    """
+    by_exp: dict[str, dict[str, Any]] = {}
+    for path in sorted(metadata, key=lambda p: metadata[p]["instance_id"]):
+        entry = metadata[path]
+        by_exp.setdefault(
+            entry["exp_id"],
+            {key: value for key, value in entry.items() if key != "path"},
+        )
+    return by_exp
+
+
+def add_exp_fields(
+    df_logs: pd.DataFrame, fields: Mapping[str, Mapping[str, Any]]
+) -> pd.DataFrame:
+    """
+    Adds the derived field columns to one block of log rows.
+    """
+    paths = df_logs["path"].apply(parse_path_from_filename)
+    derived = pd.DataFrame([fields[path] for path in paths], columns=EXP_FIELDS_COLUMNS)
+    derived.index = df_logs.index
+    return pd.concat([df_logs.drop(columns=["path"]), derived], axis=1)
+
+
+def join_logs_and_fields(
+    ds_logs: ray.data.Dataset, fields: Mapping[str, Mapping[str, Any]]
 ) -> ray.data.Dataset:
     """
-    Parses logs for an experiment.
+    Joins the derived fields onto the log rows of a dataset.
     """
-    metadata = _normalize_metadata(metadata)
-
-    def get_exp_id(df: pd.DataFrame) -> pd.Series:
-        return df["meta"].apply(lambda meta: meta["exp_id"])  # type: ignore
-
-    def get_instance_id(df: pd.DataFrame) -> pd.Series:
-        return df["meta"].apply(lambda meta: meta["instance_id"])  # type: ignore
-
-    def get_metadata(df: pd.DataFrame) -> pd.Series:
-        paths = df["path"].apply(parse_path_from_filename)
-        return paths.apply(lambda path: metadata[path])  # type: ignore
-
-    return (
-        ds_logs.add_column("meta", get_metadata)
-        .add_column("exp_id", get_exp_id)
-        .add_column("instance_id", get_instance_id)
+    return ds_logs.map_batches(
+        lambda df: add_exp_fields(df, fields), batch_format="pandas"
     )
 
 
@@ -305,8 +369,9 @@ class EstimationEventDedup(ray.data.aggregate.AggregateFn):
         return acc
 
 
-@ray.remote
-def pipeline(ds_logs: ray.data.Dataset) -> Mapping[str, ray.data.Dataset]:
+def pipeline(
+    ds_logs: ray.data.Dataset, exp_meta: Mapping[str, Any]
+) -> Mapping[str, ray.data.Dataset]:
     """
     This pipeline aggregates the output of
     multiple runs from each experiment.
@@ -335,7 +400,7 @@ def pipeline(ds_logs: ray.data.Dataset) -> Mapping[str, ray.data.Dataset]:
     ds_logs = (
         ds_logs.groupby("episode")
         .aggregate(StepSnapshotAggregator(name="step_snapshot_agg"))
-        .flat_map(step_snapshot_rows)
+        .flat_map(lambda row: step_snapshot_rows(row, exp_meta))
     )
     ds_metrics = calculate_metrics(ds_logs)
     return {
@@ -347,18 +412,21 @@ def pipeline(ds_logs: ray.data.Dataset) -> Mapping[str, ray.data.Dataset]:
     }
 
 
-@ray.remote
-def write_results(results_datasets: Mapping[str, ray.data.Dataset], output_dir: str):
+@ray.remote(max_calls=1)
+def write_dataset(ds: ray.data.Dataset, key: str, output_dir: str) -> None:
     """
-    Exports results
+    Writes one derived dataset to Parquet.
+
+    The worker process is discarded after the task returns
+    (`max_calls=1`), so the state one dataset's count and write retain
+    does not carry into the next dataset's execution.
     """
-    for key, ds in results_datasets.items():
-        if ds.count() == 0:
-            logger.info("Skipping empty %s", key)
-            continue
-        output_path = os.path.join(output_dir, key)
-        logger.info("Writing %s to %s", key, output_path)
-        ds.write_parquet(output_path)
+    if ds.count() == 0:
+        logger.info("Skipping empty %s", key)
+        return
+    output_path = os.path.join(output_dir, key)
+    logger.info("Writing %s to %s", key, output_path)
+    ds.write_parquet(output_path)
 
 
 def has_estimation_events(row: Mapping[str, Any]) -> bool:
@@ -408,12 +476,6 @@ def deferred_attempt_events(row: Mapping[str, Any]) -> Sequence[Any]:
     return list(attempts)
 
 
-def _mapper_args(row: Mapping[str, Any]) -> Mapping[str, Any]:
-    """Reward-mapper args of the run a log record belongs to."""
-    problem_spec = row["meta"]["experiment"]["problem_spec"]
-    return dict(problem_spec["reward_mapper"].get("args") or {})
-
-
 def _resolve_check_mode(mapper_args: Mapping[str, Any]) -> str:
     """Resolve estimation check mode from mapper args."""
     return str(mapper_args.get("estimation_check", "none"))
@@ -430,13 +492,6 @@ def estimation_event_rows(row: Mapping[str, Any]) -> list[dict[str, Any]]:
     events = reward_error_events(row)
     if not events:
         return []
-    meta = row["meta"]
-    experiment = meta["experiment"]
-    problem_spec = experiment["problem_spec"]
-    mapper_args = _mapper_args(row)
-    check_mode = _resolve_check_mode(mapper_args)
-    method = dataproc.MAPPERS_NAMES[problem_spec["reward_mapper"]["name"]]
-    feats_spec = mapper_args.get("transition_feats_spec") or {}
     return [
         {
             "exp_id": row["exp_id"],
@@ -447,12 +502,12 @@ def estimation_event_rows(row: Mapping[str, Any]) -> list[dict[str, Any]]:
             "update_index": event["update_index"],
             "rmse": event["rmse"],
             "num_samples": event["num_samples"],
-            "method": method,
-            "estimation_check": check_mode,
-            "feats_spec": json.dumps(feats_spec, sort_keys=True),
-            "env_name": experiment["env_spec"]["name"],
-            "gamma": problem_spec["gamma"],
-            "delay_config": problem_spec["delay_config"],
+            "method": row["method"],
+            "estimation_check": row["estimation_check"],
+            "feats_spec": row["feats_spec"],
+            "env_name": row["env_name"],
+            "gamma": row["gamma"],
+            "delay_config": row["delay_config"],
         }
         for event in events
     ]
@@ -470,13 +525,6 @@ def deferred_attempt_rows(row: Mapping[str, Any]) -> list[dict[str, Any]]:
     attempts = deferred_attempt_events(row)
     if not attempts:
         return []
-    meta = row["meta"]
-    experiment = meta["experiment"]
-    problem_spec = experiment["problem_spec"]
-    mapper_args = _mapper_args(row)
-    check_mode = _resolve_check_mode(mapper_args)
-    method = dataproc.MAPPERS_NAMES[problem_spec["reward_mapper"]["name"]]
-    feats_spec = mapper_args.get("transition_feats_spec") or {}
     return [
         {
             "exp_id": row["exp_id"],
@@ -487,12 +535,12 @@ def deferred_attempt_rows(row: Mapping[str, Any]) -> list[dict[str, Any]]:
             "nonzero_columns": attempt["nonzero_columns"],
             "matrix_columns": attempt["matrix_columns"],
             "numerical_rank": attempt.get("numerical_rank"),
-            "method": method,
-            "estimation_check": check_mode,
-            "feats_spec": json.dumps(feats_spec, sort_keys=True),
-            "env_name": experiment["env_spec"]["name"],
-            "gamma": problem_spec["gamma"],
-            "delay_config": problem_spec["delay_config"],
+            "method": row["method"],
+            "estimation_check": row["estimation_check"],
+            "feats_spec": row["feats_spec"],
+            "env_name": row["env_name"],
+            "gamma": row["gamma"],
+            "delay_config": row["delay_config"],
         }
         for attempt in attempts
     ]
@@ -509,11 +557,6 @@ def run_rows(row: Mapping[str, Any]) -> list[dict[str, Any]]:
     per-checkpoint evaluation mean was recorded; those runs are
     recovered by differencing the cumulative mean.
     """
-    meta = row["meta"]
-    experiment = meta["experiment"]
-    problem_spec = experiment["problem_spec"]
-    mapper_args = dict(problem_spec["reward_mapper"].get("args") or {})
-    check_mode = _resolve_check_mode(mapper_args)
     info = row.get("info") or {}
     policy_eval = info.get("policy_eval") or {}
     return [
@@ -524,19 +567,21 @@ def run_rows(row: Mapping[str, Any]) -> list[dict[str, Any]]:
             "returns": row["returns"],
             "steps": row["steps"],
             "policy_eval_mean": policy_eval.get("mean"),
-            "method": dataproc.MAPPERS_NAMES[problem_spec["reward_mapper"]["name"]],
-            "estimation_check": check_mode,
-            "env_name": experiment["env_spec"]["name"],
-            "gamma": problem_spec["gamma"],
-            "delay_config": problem_spec["delay_config"],
-            "noise_scale": _noise_std_multiplier(experiment["env_spec"]),
-            "episodes_per_run": meta["run_config"]["episodes_per_run"],
-            "log_episode_frequency": meta["run_config"]["log_episode_frequency"],
+            "method": row["method"],
+            "estimation_check": row["estimation_check"],
+            "env_name": row["env_name"],
+            "gamma": row["gamma"],
+            "delay_config": row["delay_config"],
+            "noise_scale": row["noise_scale"],
+            "episodes_per_run": row["episodes_per_run"],
+            "log_episode_frequency": row["log_episode_frequency"],
         }
     ]
 
 
-def step_snapshot_rows(row: Mapping[str, Any]) -> list[dict[str, Any]]:
+def step_snapshot_rows(
+    row: Mapping[str, Any], meta_by_exp: Mapping[str, Any]
+) -> list[dict[str, Any]]:
     """
     One row per experiment of an episode's snapshot aggregation.
 
@@ -545,7 +590,12 @@ def step_snapshot_rows(row: Mapping[str, Any]) -> list[dict[str, Any]]:
     it produces no row.
     """
     return [
-        {"episode": row["episode"], "exp_id": exp_id, **data}
+        {
+            "episode": row["episode"],
+            "exp_id": exp_id,
+            "meta": meta_by_exp[exp_id],
+            **data,
+        }
         for exp_id, data in row["step_snapshot_agg"].items()
         if data is not None
     ]

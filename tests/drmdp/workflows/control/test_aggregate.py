@@ -92,6 +92,196 @@ class TestNormalizeMetadata:
         )
 
 
+class TestDeriveExpFields:
+    """Per-path scalar fields from a normalized metadata entry."""
+
+    def _entry(self, env_spec_args=None, env_metadata=None, mapper_args=None):
+        return {
+            "exp_id": "exp",
+            "instance_id": 3,
+            "experiment": {
+                "env_spec": {
+                    "name": "GridWorld-MINES",
+                    "metadata": env_metadata
+                    if env_metadata is not None
+                    else {"noise_scale": 0.5},
+                    "args": env_spec_args if env_spec_args is not None else {},
+                },
+                "problem_spec": {
+                    "reward_mapper": {
+                        "name": "bayes-least-lfa",
+                        "args": mapper_args
+                        if mapper_args is not None
+                        else {
+                            "estimation_check": "none",
+                            "transition_feats_spec": {
+                                "name": "action-and-termination-features",
+                                "args": {},
+                            },
+                        },
+                    },
+                    "gamma": 0.99,
+                    "delay_config": {"name": "clipped-poisson", "args": {}},
+                },
+            },
+            "run_config": {"episodes_per_run": 2500, "log_episode_frequency": 25},
+        }
+
+    def test_derives_all_fields(self):
+        fields = agg.derive_exp_fields({"/run": self._entry()})
+        assert set(fields) == {"/run"}
+        field_row = fields["/run"]
+        assert set(field_row) == set(agg.EXP_FIELDS_COLUMNS)
+        assert field_row["exp_id"] == "exp"
+        assert field_row["instance_id"] == 3
+        assert field_row["env_name"] == "GridWorld-MINES"
+        assert field_row["gamma"] == 0.99
+        assert field_row["delay_config"] == {"name": "clipped-poisson", "args": {}}
+        assert field_row["method"] == "BLADE-TD"
+        assert field_row["estimation_check"] == "none"
+        assert field_row["feats_spec"] == json.dumps(
+            {"name": "action-and-termination-features", "args": {}}, sort_keys=True
+        )
+        assert field_row["noise_scale"] == 0.5
+        assert field_row["episodes_per_run"] == 2500
+        assert field_row["log_episode_frequency"] == 25
+
+    def test_noise_scale_from_wrapper_args(self):
+        entry = self._entry(
+            env_spec_args={
+                "reward_noise": {
+                    "name": "relative-gaussian",
+                    "args": {"std_multiplier": 0.4},
+                }
+            },
+            env_metadata={},
+        )
+        assert agg.derive_exp_fields({"/run": entry})["/run"]["noise_scale"] == 0.4
+
+    def test_noise_scale_from_retired_scale_arg(self):
+        entry = self._entry(
+            env_spec_args={
+                "reward_noise": {"name": "relative-gaussian", "args": {"scale": 0.25}}
+            },
+            env_metadata={},
+        )
+        assert agg.derive_exp_fields({"/run": entry})["/run"]["noise_scale"] == 0.5
+
+    def test_noise_scale_from_metadata(self):
+        entry = self._entry(env_metadata={"std_multiplier": 0.75})
+        assert agg.derive_exp_fields({"/run": entry})["/run"]["noise_scale"] == 0.75
+
+    def test_noise_scale_none_without_any_source(self):
+        entry = self._entry(env_metadata={})
+        assert agg.derive_exp_fields({"/run": entry})["/run"]["noise_scale"] is None
+
+    def test_delay_config_none_preserved(self):
+        entry = self._entry()
+        entry["experiment"]["problem_spec"]["delay_config"] = None
+        assert agg.derive_exp_fields({"/run": entry})["/run"]["delay_config"] is None
+
+    def test_empty_mapper_args(self):
+        entry = self._entry(mapper_args={})
+        field_row = agg.derive_exp_fields({"/run": entry})["/run"]
+        assert field_row["estimation_check"] == "none"
+        assert field_row["feats_spec"] == "{}"
+
+
+class TestDeriveExpMeta:
+    """One entry per experiment, path removed, smallest instance id."""
+
+    def _entry(self, instance_id):
+        return {
+            "exp_id": "exp",
+            "instance_id": instance_id,
+            "path": f"/run-{instance_id}",
+            "payload": instance_id,
+        }
+
+    def test_picks_smallest_instance_id_and_drops_path(self):
+        metadata = {"/run-5": self._entry(5), "/run-1": self._entry(1)}
+        result = agg.derive_exp_meta(metadata)
+        assert result == {"exp": {"exp_id": "exp", "instance_id": 1, "payload": 1}}
+
+    def test_keeps_one_entry_per_experiment(self):
+        metadata = {
+            "/run-1": {**self._entry(1), "exp_id": "exp-a"},
+            "/run-2": {**self._entry(2), "exp_id": "exp-b"},
+        }
+        assert set(agg.derive_exp_meta(metadata)) == {"exp-a", "exp-b"}
+
+    def test_input_entries_not_mutated(self):
+        metadata = {"/run-1": self._entry(1)}
+        agg.derive_exp_meta(metadata)
+        assert metadata["/run-1"] == self._entry(1)
+
+
+class TestAddExpFields:
+    """The field join adds the derived columns and drops the path."""
+
+    def _fields(self):
+        base = {
+            "exp_id": "exp",
+            "env_name": "GridWorld-MINES",
+            "gamma": 0.99,
+            "delay_config": {"name": "clipped-poisson", "args": {}},
+            "method": "BLADE-TD",
+            "estimation_check": "none",
+            "feats_spec": "{}",
+            "noise_scale": 0.5,
+            "episodes_per_run": 2500,
+            "log_episode_frequency": 25,
+        }
+        return {
+            "bucket/runs/run_0/rm/seed": dict(base, instance_id=0),
+            "/local/runs": dict(
+                base,
+                instance_id=1,
+                env_name="MountainCar-v0",
+                delay_config=None,
+                method="LEAST",
+                noise_scale=None,
+            ),
+        }
+
+    def _df(self, paths):
+        return pd.DataFrame({"episode": [1, 2], "returns": [-1.0, -2.0], "path": paths})
+
+    def test_adds_columns_and_drops_path(self):
+        df = self._df(
+            [
+                "gs://bucket/runs/run_0/rm/seed/experiment-logs.jsonl",
+                "/local/runs/experiment-logs.jsonl",
+            ]
+        )
+        result = agg.add_exp_fields(df, self._fields())
+        assert "path" not in result.columns
+        assert set(agg.EXP_FIELDS_COLUMNS) <= set(result.columns)
+        assert list(result["episode"]) == [1, 2]
+        assert list(result["returns"]) == [-1.0, -2.0]
+        assert list(result["env_name"]) == ["GridWorld-MINES", "MountainCar-v0"]
+        assert list(result["instance_id"]) == [0, 1]
+        assert list(result["delay_config"]) == [
+            {"name": "clipped-poisson", "args": {}},
+            None,
+        ]
+
+    def test_local_paths(self):
+        df = pd.DataFrame(
+            {
+                "episode": [3, 4],
+                "returns": [-3.0, -4.0],
+                "path": [
+                    "/local/runs/experiment-logs.jsonl",
+                    "/local/runs/experiment-logs.jsonl",
+                ],
+            }
+        )
+        result = agg.add_exp_fields(df, self._fields())
+        assert "path" not in result.columns
+        assert list(result["env_name"]) == ["MountainCar-v0", "MountainCar-v0"]
+
+
 class TestChunks:
     def test_even_chunks(self):
         result = list(agg.chunks([1, 2, 3, 4], 2))
@@ -156,29 +346,17 @@ class TestEstimationEventRows:
             "steps": 100,
             "returns": -1.0,
             "info": info,
-            "meta": {
-                "exp_id": "exp",
-                "instance_id": instance_id,
-                "experiment": {
-                    "env_spec": {"name": "GridWorld-MINES"},
-                    "problem_spec": {
-                        "reward_mapper": {
-                            "name": "bayes-least-lfa",
-                            "args": {
-                                "estimation_check": "none",
-                                "transition_feats_spec": {
-                                    "name": "action-and-termination-features",
-                                    "args": {},
-                                },
-                            },
-                        },
-                        "gamma": 0.99,
-                        "delay_config": {"name": "clipped-poisson", "args": {}},
-                    },
-                },
-            },
             "exp_id": "exp",
             "instance_id": instance_id,
+            "env_name": "GridWorld-MINES",
+            "gamma": 0.99,
+            "delay_config": {"name": "clipped-poisson", "args": {}},
+            "method": "BLADE-TD",
+            "estimation_check": "none",
+            "feats_spec": json.dumps(
+                {"name": "action-and-termination-features", "args": {}},
+                sort_keys=True,
+            ),
         }
 
     def _event(self, update_index, episode):
@@ -232,36 +410,23 @@ class TestDeferredAttemptRows:
     """Per-deferral rows and the routing predicate."""
 
     def _log_row(self, attempts):
-        row = {
+        return {
             "episode": 20,
             "steps": 100,
             "returns": -1.0,
             "info": {"deferred_attempts": attempts},
-            "meta": {
-                "exp_id": "exp",
-                "instance_id": 0,
-                "experiment": {
-                    "env_spec": {"name": "MountainCar-v0"},
-                    "problem_spec": {
-                        "reward_mapper": {
-                            "name": "least-lfa",
-                            "args": {
-                                "estimation_check": "factors",
-                                "transition_feats_spec": {
-                                    "name": "state-bins-action-features",
-                                    "args": {"bins": [4, 2]},
-                                },
-                            },
-                        },
-                        "gamma": 0.99,
-                        "delay_config": {"name": "clipped-poisson", "args": {}},
-                    },
-                },
-            },
             "exp_id": "exp",
             "instance_id": 0,
+            "env_name": "MountainCar-v0",
+            "gamma": 0.99,
+            "delay_config": {"name": "clipped-poisson", "args": {}},
+            "method": "LEAST",
+            "estimation_check": "factors",
+            "feats_spec": json.dumps(
+                {"name": "state-bins-action-features", "args": {"bins": [4, 2]}},
+                sort_keys=True,
+            ),
         }
-        return row
 
     def test_extracts_one_row_per_attempt(self):
         attempts = [
@@ -349,27 +514,33 @@ class TestStepSnapshotRows:
     def _snapshot_row(self, snapshot):
         return {"episode": 25, "step_snapshot_agg": snapshot}
 
-    def _data(self, exp_id):
+    def _data(self):
+        return {"returns": [-10.0], "steps": [100], "instance_ids": [0]}
+
+    def _meta_by_exp(self):
         return {
-            "meta": {"exp_id": exp_id},
-            "returns": [-10.0],
-            "steps": [100],
-            "instance_ids": [0],
+            "exp": {
+                "exp_id": "exp",
+                "experiment": {"env_spec": {"name": "GridWorld-MINES"}},
+            }
         }
 
-    def test_rows_carry_episode_and_exp_identity(self):
-        rows = agg.step_snapshot_rows(self._snapshot_row({"exp": self._data("exp")}))
+    def test_rows_carry_episode_exp_identity_and_meta(self):
+        rows = agg.step_snapshot_rows(
+            self._snapshot_row({"exp": self._data()}), self._meta_by_exp()
+        )
         assert len(rows) == 1
         assert rows[0]["episode"] == 25
         assert rows[0]["exp_id"] == "exp"
         assert rows[0]["instance_ids"] == [0]
-        assert rows[0]["meta"] == {"exp_id": "exp"}
+        assert rows[0]["meta"] == self._meta_by_exp()["exp"]
 
     def test_rows_skip_null_entries(self):
         # an exp_id that logged no run at the episode arrives as a null
         # struct field (see StepSnapshotAggregator._merge)
         rows = agg.step_snapshot_rows(
-            self._snapshot_row({"exp": self._data("exp"), "exp-b": None, "exp-c": None})
+            self._snapshot_row({"exp": self._data(), "exp-b": None, "exp-c": None}),
+            self._meta_by_exp(),
         )
         assert [row["exp_id"] for row in rows] == ["exp"]
 
@@ -384,7 +555,6 @@ class TestStepSnapshotAggregator:
             "instance_id": instance_id,
             "returns": returns,
             "steps": steps,
-            "meta": {"exp_id": exp_id, "path": "/some/run"},
         }
 
     def _aggregator(self):
@@ -395,7 +565,7 @@ class TestStepSnapshotAggregator:
         acc = aggregator._init(key=None)
         acc = aggregator._accumulate_row(acc, self._row("exp", 0, -10.0))
         acc = aggregator._accumulate_row(acc, self._row("exp", 1, -20.0))
-        records = acc["exp"]["records"]
+        records = acc["exp"]
         assert [record["instance_id"] for record in records] == [0, 1]
         assert [record["returns"] for record in records] == [-10.0, -20.0]
         assert [record["steps"] for record in records] == [100, 100]
@@ -405,8 +575,16 @@ class TestStepSnapshotAggregator:
         acc = aggregator._init(key=None)
         acc = aggregator._accumulate_row(acc, self._row("exp-a", 0, -10.0))
         acc = aggregator._accumulate_row(acc, self._row("exp-b", 0, -30.0))
-        assert [record["returns"] for record in acc["exp-a"]["records"]] == [-10.0]
-        assert [record["returns"] for record in acc["exp-b"]["records"]] == [-30.0]
+        assert [record["returns"] for record in acc["exp-a"]] == [-10.0]
+        assert [record["returns"] for record in acc["exp-b"]] == [-30.0]
+
+    def test_accumulate_returns_the_same_accumulator(self):
+        # in-place accumulation replaces a per-row deep copy of the
+        # whole accumulator
+        aggregator = self._aggregator()
+        acc = aggregator._init(key=None)
+        acc = aggregator._accumulate_row(acc, self._row("exp", 0, -10.0))
+        assert aggregator._accumulate_row(acc, self._row("exp", 1, -20.0)) is acc
 
     def test_merge_extends_records(self):
         aggregator = self._aggregator()
@@ -415,7 +593,7 @@ class TestStepSnapshotAggregator:
         acc_right = aggregator._init(key=None)
         acc_right = aggregator._accumulate_row(acc_right, self._row("exp", 1, -20.0))
         merged = aggregator._merge(acc_left, acc_right)
-        records = merged["exp"]["records"]
+        records = merged["exp"]
         assert [record["instance_id"] for record in records] == [0, 1]
 
     def test_merge_keeps_disjoint_experiments(self):
@@ -436,7 +614,7 @@ class TestStepSnapshotAggregator:
         acc_left = aggregator._accumulate_row(acc_left, self._row("exp", 0, -10.0))
         acc_right = {"exp": None, "exp-b": None}
         merged = aggregator._merge(acc_left, acc_right)
-        records = merged["exp"]["records"]
+        records = merged["exp"]
         assert [record["instance_id"] for record in records] == [0]
 
     def test_merge_replaces_null_left_entry_with_records(self):
@@ -447,7 +625,7 @@ class TestStepSnapshotAggregator:
         acc_right = aggregator._init(key=None)
         acc_right = aggregator._accumulate_row(acc_right, self._row("exp-b", 1, -20.0))
         merged = aggregator._merge(acc_left, acc_right)
-        records = merged["exp-b"]["records"]
+        records = merged["exp-b"]
         assert [record["instance_id"] for record in records] == [1]
 
     def test_merge_null_on_both_sides_keeps_no_records(self):
@@ -456,7 +634,7 @@ class TestStepSnapshotAggregator:
         acc_left = aggregator._accumulate_row(acc_left, self._row("exp", 0, -10.0))
         acc_left["exp-b"] = None
         merged = aggregator._merge(acc_left, {"exp-b": None})
-        assert merged["exp"]["records"][0]["returns"] == -10.0
+        assert merged["exp"][0]["returns"] == -10.0
         # a null on both sides carries no records; finalize drops it
         assert merged["exp-b"] is None
 
@@ -476,18 +654,11 @@ class TestStepSnapshotAggregator:
         acc = aggregator._accumulate_row(acc, self._row("exp", 0, -10.0, steps=200))
         acc = aggregator._accumulate_row(acc, self._row("exp", 1, -20.0, steps=54))
         result = aggregator._finalize(acc)["exp"]
+        assert set(result) == {"returns", "steps", "instance_ids"}
         assert result["instance_ids"] == [0, 1, 2]
         # position k of each array is run k
         assert result["returns"] == [-10.0, -20.0, -30.0]
         assert result["steps"] == [200, 54, 9]
-
-    def test_finalize_drops_path_from_meta(self):
-        aggregator = self._aggregator()
-        acc = aggregator._init(key=None)
-        acc = aggregator._accumulate_row(acc, self._row("exp", 0, -10.0))
-        result = aggregator._finalize(acc)["exp"]
-        assert "path" not in result["meta"]
-        assert result["meta"]["exp_id"] == "exp"
 
 
 class TestRunRows:
@@ -499,30 +670,19 @@ class TestRunRows:
             "steps": 100,
             "returns": -41.0,
             "info": info,
-            "meta": {
-                "exp_id": "exp",
-                "instance_id": instance_id,
-                "experiment": {
-                    "env_spec": {
-                        "name": "GridWorld-MINES",
-                        "metadata": {"noise_scale": 0.5},
-                    },
-                    "problem_spec": {
-                        "reward_mapper": {"name": "least-lfa"},
-                        "gamma": 0.99,
-                        "delay_config": {
-                            "name": "clipped-poisson",
-                            "args": {"lam": 5},
-                        },
-                    },
-                },
-                "run_config": {
-                    "episodes_per_run": 2500,
-                    "log_episode_frequency": 25,
-                },
-            },
             "exp_id": "exp",
             "instance_id": instance_id,
+            "env_name": "GridWorld-MINES",
+            "gamma": 0.99,
+            "delay_config": {
+                "name": "clipped-poisson",
+                "args": {"lam": 5},
+            },
+            "method": "LEAST",
+            "estimation_check": "none",
+            "noise_scale": 0.5,
+            "episodes_per_run": 2500,
+            "log_episode_frequency": 25,
         }
 
     def test_projects_run_and_config(self):
@@ -536,6 +696,7 @@ class TestRunRows:
         assert row["steps"] == 100
         assert row["policy_eval_mean"] is None
         assert row["method"] == "LEAST"
+        assert row["estimation_check"] == "none"
         assert row["env_name"] == "GridWorld-MINES"
         assert row["gamma"] == 0.99
         assert row["delay_config"] == {
@@ -564,10 +725,10 @@ class TestRunRows:
 
     def test_delay_config_none_is_kept(self):
         row = self._log_row(info={})
-        row["meta"]["experiment"]["problem_spec"]["delay_config"] = None
+        row["delay_config"] = None
         assert agg.run_rows(row)[0]["delay_config"] is None
 
-    def test_missing_noise_metadata_yields_none(self):
+    def test_noise_scale_none_is_passed_through(self):
         row = self._log_row(info={})
-        del row["meta"]["experiment"]["env_spec"]["metadata"]
+        row["noise_scale"] = None
         assert agg.run_rows(row)[0]["noise_scale"] is None
