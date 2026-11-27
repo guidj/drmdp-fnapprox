@@ -8,10 +8,12 @@ recursive-include assets *.pxi
 recursive-include assets *.txt
 recursive-include assets *.png
 recursive-include docs *.png
+recursive-include docs *.gif
 recursive-include docs *.ico
 recursive-include docs *.md
 recursive-include sbin *.sh
 recursive-include assets *.h5
+include assets/grids.json
 
 # config
 include pyproject.toml

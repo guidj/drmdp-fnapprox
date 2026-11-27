@@ -16,6 +16,7 @@ FINITE_SPLICED_TILES = f"{FINITE}-{SPLICED_TILES}"
 RANDOM_VEC = "random"
 FINITE_RANDOM_VEC = f"{FINITE}-{RANDOM_VEC}"
 CLUSTER_CENTROID = "cluster-c"
+LUNAR_LANDER_REWARD_OBS = "lunar-lander-reward-obs"
 FLAT_GRID_COORD = "flat-grid-coord"
 FINITE_FLAT_GRID_COORD = f"{FINITE}-{FLAT_GRID_COORD}"
 DEFAULT_PARAMS_GRID = {
@@ -32,6 +33,12 @@ OPTIONS_POLICY = "options"
 SINGLE_STEP_POLICY = "single-step"
 
 DEFAULT_BATCH_SIZE = 1
+
+# estimation-buffer capacity as a multiple of the estimator's feature
+# dimension: the buffer retains DEFAULT_ESTIMATION_BUFFER_MULT * mdim completed
+# delay windows. Value shared by every experiment family that estimates rewards
+# from aggregate windows, so estimation error is compared at one sample budget.
+DEFAULT_ESTIMATION_BUFFER_MULT = 100
 
 SARSA = "sarsa"
 

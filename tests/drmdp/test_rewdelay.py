@@ -1,3 +1,5 @@
+import random
+
 import gymnasium as gym
 import numpy as np
 import pytest
@@ -5,6 +7,9 @@ from gymnasium import spaces
 
 from drmdp import optsol, rewdelay, transform
 from tests.drmdp.hookhelpers import FTOpHook
+
+# estimation is forced by hand after buffering windows of several lengths
+LATE_ESTIMATION = 10**6
 
 
 class TestDelayedRewardWrapper:
@@ -273,6 +278,60 @@ class TestDelayedRewardWrapper:
                 assert (term, trunc) == (True, False)
 
 
+class TestDelaySamplerSeeding:
+    """The sampler seed contract: same seed reproduces the sequence, and
+    no other component's draws can shift it."""
+
+    def test_uniform_same_seed_reproduces_the_sequence(self):
+        first = rewdelay.UniformDelay(2, 4, seed=7)
+        second = rewdelay.UniformDelay(2, 4, seed=7)
+        assert [first.sample() for _ in range(50)] == [
+            second.sample() for _ in range(50)
+        ]
+
+    def test_uniform_different_seeds_differ(self):
+        first = rewdelay.UniformDelay(2, 4, seed=7)
+        second = rewdelay.UniformDelay(2, 4, seed=8)
+        assert [first.sample() for _ in range(50)] != [
+            second.sample() for _ in range(50)
+        ]
+
+    def test_uniform_is_independent_of_the_global_generator(self):
+        state = random.getstate()
+        try:
+            random.seed(123)
+            reference_sampler = rewdelay.UniformDelay(2, 4, seed=7)
+            reference = [reference_sampler.sample() for _ in range(50)]
+            random.seed(321)
+            follower = rewdelay.UniformDelay(2, 4, seed=7)
+            global_draws = [random.randint(2, 4) for _ in range(10)]
+            sequence = [follower.sample() for _ in range(50)]
+        finally:
+            random.setstate(state)
+        assert sequence == reference
+        assert len(global_draws) == 10
+
+    def test_uniform_unseeded_stays_within_range(self):
+        sampler = rewdelay.UniformDelay(2, 4)
+        assert all(2 <= sampler.sample() <= 4 for _ in range(50))
+
+    def test_clipped_poisson_same_seed_reproduces_the_sequence(self):
+        first = rewdelay.ClippedPoissonDelay(lam=3, min_delay=2, seed=5)
+        second = rewdelay.ClippedPoissonDelay(lam=3, min_delay=2, seed=5)
+        assert [int(first.sample()) for _ in range(50)] == [
+            int(second.sample()) for _ in range(50)
+        ]
+
+    def test_clipped_poisson_unseeded_respects_bounds(self):
+        sampler = rewdelay.ClippedPoissonDelay(lam=3, min_delay=2)
+        assert all(int(sampler.sample()) >= 2 for _ in range(200))
+
+    def test_fixed_delay_accepts_a_seed_and_stays_constant(self):
+        sampler = rewdelay.FixedDelay(delay=3, seed=9)
+        assert sampler.sample() == 3
+        assert sampler.range() == (3, 3)
+
+
 class TestDataBuffer:
     """Tests for DataBuffer — accounting modes for capacity and size-byte limits."""
 
@@ -404,6 +463,139 @@ class TestDataBuffer:
         assert buffer.size_bytes() == 32
 
 
+class TestDataBufferColumnAwareEviction:
+    """Tests for DataBuffer column-aware eviction via per-column non-zero tracking."""
+
+    @staticmethod
+    def _make_row(dim: int, nonzero_col: int, value: float = 1.0):
+        features = np.zeros(dim)
+        features[nonzero_col] = value
+        reward = float(nonzero_col)
+        return (features, reward)
+
+    def test_eviction_skips_sole_contributor(self):
+        dim = 4
+        buf = rewdelay.DataBuffer(max_capacity=3, feature_dim=dim)
+        buf.add(self._make_row(dim, 0))
+        buf.add(self._make_row(dim, 1))
+        buf.add(self._make_row(dim, 2))
+        # All three rows are sole contributors — oldest is col 0.
+        # Adding a duplicate of col 0 makes the col-0 row evictable.
+        buf.add(self._make_row(dim, 0, value=2.0))
+        assert buf.size() == 3
+        # The original col-0 row (oldest evictable) was dropped.
+        remaining_rewards = [row[1] for row in buf.buffer]
+        assert remaining_rewards == [1.0, 2.0, 0.0]
+
+    def test_eviction_falls_back_to_fifo_when_all_sole(self):
+        dim = 4
+        buf = rewdelay.DataBuffer(max_capacity=3, feature_dim=dim)
+        buf.add(self._make_row(dim, 0))
+        buf.add(self._make_row(dim, 1))
+        buf.add(self._make_row(dim, 2))
+        # All sole contributors. New row on col 3 — still all sole.
+        buf.add(self._make_row(dim, 3))
+        assert buf.size() == 3
+        # FIFO fallback drops row 0 (col 0).
+        remaining_rewards = [row[1] for row in buf.buffer]
+        assert remaining_rewards == [1.0, 2.0, 3.0]
+
+    def test_col_nnz_consistent_after_add_evict_clear(self):
+        dim = 3
+        buf = rewdelay.DataBuffer(max_capacity=4, feature_dim=dim)
+        buf.add(self._make_row(dim, 0))
+        buf.add(self._make_row(dim, 1))
+        buf.add(self._make_row(dim, 0))
+        buf.add(self._make_row(dim, 2))
+        np.testing.assert_array_equal(buf._col_nnz, [2, 1, 1])
+
+        # Evict by adding beyond capacity — col 0 has count 2, so oldest
+        # col-0 row is evictable.
+        buf.add(self._make_row(dim, 1))
+        assert buf.size() == 4
+        np.testing.assert_array_equal(buf._col_nnz, [1, 2, 1])
+
+        buf.clear()
+        np.testing.assert_array_equal(buf._col_nnz, [0, 0, 0])
+        assert buf.size() == 0
+
+    def test_no_tracking_without_feature_dim(self):
+        buf = rewdelay.DataBuffer(max_capacity=2)
+        assert buf._col_nnz is None
+        buf.add(([1.0, 0.0], 0.0))
+        buf.add(([0.0, 1.0], 1.0))
+        buf.add(([1.0, 0.0], 2.0))
+        # FIFO without column awareness.
+        assert buf.size() == 2
+        remaining_rewards = [row[1] for row in buf.buffer]
+        assert remaining_rewards == [1.0, 2.0]
+
+    def test_rebuild_col_nnz_after_external_mutation(self):
+        dim = 3
+        buf = rewdelay.DataBuffer(max_capacity=10, feature_dim=dim)
+        buf.add(self._make_row(dim, 0))
+        buf.add(self._make_row(dim, 1))
+        buf.add(self._make_row(dim, 0))
+        np.testing.assert_array_equal(buf._col_nnz, [2, 1, 0])
+
+        # Simulate external mutation (as _handle_estimation_failure does).
+        buf.buffer = [buf.buffer[0]]
+        buf._rebuild_col_nnz()
+        np.testing.assert_array_equal(buf._col_nnz, [1, 0, 0])
+
+
+class TestDropSamplesColumnAware:
+    """Tests for drop_samples with column-aware filtering."""
+
+    def test_column_aware_drop_avoids_sole_contributor(self):
+        rng = np.random.default_rng(42)
+        matrix = np.array(
+            [
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ]
+        )
+        rewards = np.array([0.0, 1.0, 2.0, 3.0])
+        col_nnz = np.array([2, 1, 1], dtype=np.int32)
+
+        _ndropped, (new_matrix, new_rewards) = rewdelay.drop_samples(
+            frac=0.5, arrays=[matrix, rewards], rng=rng, col_nnz=col_nnz
+        )
+        # Only row 0 or 2 (col 0, count=2) are evictable. frac=0.5
+        # requests 2 drops, but only 2 are evictable → drops at most 2,
+        # but one must remain to keep col 0 covered.
+        assert new_matrix.shape[0] >= 2
+        # Rows 1 and 3 (sole contributors to cols 1 and 2) are always kept.
+        kept_rewards = set(new_rewards.tolist())
+        assert 1.0 in kept_rewards
+        assert 3.0 in kept_rewards
+
+    def test_column_aware_drop_nothing_when_all_sole(self):
+        rng = np.random.default_rng(42)
+        matrix = np.eye(3)
+        rewards = np.array([0.0, 1.0, 2.0])
+        col_nnz = np.array([1, 1, 1], dtype=np.int32)
+
+        ndropped, (new_matrix, _new_rewards) = rewdelay.drop_samples(
+            frac=0.5, arrays=[matrix, rewards], rng=rng, col_nnz=col_nnz
+        )
+        assert ndropped == 0
+        np.testing.assert_array_equal(new_matrix, matrix)
+
+    def test_drop_without_col_nnz_is_unchanged(self):
+        rng = np.random.default_rng(42)
+        matrix = np.eye(3)
+        rewards = np.array([0.0, 1.0, 2.0])
+
+        ndropped, (new_matrix, _) = rewdelay.drop_samples(
+            frac=0.34, arrays=[matrix, rewards], rng=rng
+        )
+        assert ndropped == 1
+        assert new_matrix.shape[0] == 2
+
+
 class TestLeastLfaGenerativeRewardWrapper:
     """Tests for LeastLfaGenerativeRewardWrapper — stepping, estimation, episode-boundary buffering, segment feature accumulation, and per-step reward prediction."""
 
@@ -415,7 +607,7 @@ class TestLeastLfaGenerativeRewardWrapper:
             delayed,
             feats_fn=FTOpHook(ft_op),
             attempt_estimation_episode=1,
-            check_factors=False,
+            estimation_check="none",
         )
         return wrapper
 
@@ -490,7 +682,7 @@ class TestLeastLfaGenerativeRewardWrapper:
             feats_fn=FTOpHook(DummyFTOp(env)),
             intercept=True,
             attempt_estimation_episode=1,
-            check_factors=False,
+            estimation_check="none",
         )
         drive_episodes(wrapper, num_episodes=3, steps_per_episode=4)
         assert wrapper.weights is not None
@@ -730,7 +922,7 @@ class TestLeastLfaGenerativeRewardWrapper:
             delayed,
             feats_fn=FTOpHook(DummyFTOp(env)),
             attempt_estimation_episode=2,
-            check_factors=False,
+            estimation_check="none",
             reward_error_fn=stub_reward_error_fn(seen_weights),
         )
         # 2-step episodes at delay 2 buffer one segment each;
@@ -755,7 +947,7 @@ class TestLeastLfaGenerativeRewardWrapper:
             delayed,
             feats_fn=FTOpHook(DummyFTOp(env)),
             attempt_estimation_episode=2,
-            check_factors=False,
+            estimation_check="none",
         )
         drive_episodes(wrapper, num_episodes=6, steps_per_episode=2)
 
@@ -778,13 +970,84 @@ class TestLeastLfaGenerativeRewardWrapper:
             delayed,
             feats_fn=FTOpHook(DummyFTOp(env)),
             attempt_estimation_episode=2,
-            check_factors=False,
+            estimation_check="none",
             reward_error_fn=failing_error_fn,
         )
         drive_episodes(wrapper, num_episodes=6, steps_per_episode=2)
 
         assert wrapper.weights is not None
         assert wrapper.estimation_meta["reward_errors"] == []
+
+    def test_constant_feature_reproduces_the_per_step_constant(self):
+        """A constant coordinate accumulates to the window length."""
+        constant, weight = -1.0, 0.5
+        env = ConstantPlusIndexEnv(constant=constant, weight=weight)
+        delayed = rewdelay.DelayedRewardWrapper(
+            env, reward_delay=rewdelay.UniformDelay(min_delay=2, max_delay=4, seed=7)
+        )
+        wrapper = rewdelay.LeastLfaGenerativeRewardWrapper(
+            delayed,
+            feats_fn=FTOpHook(constant_and_index_ftop(example_space(env))),
+            attempt_estimation_episode=LATE_ESTIMATION,
+            estimation_check="none",
+            intercept=False,
+        )
+        window_lengths = drive_windows(wrapper, num_episodes=6)
+        wrapper.estimate_rewards()
+
+        rows = np.stack([row for row, _ in wrapper.est_buffer.buffer])
+        assert len(window_lengths) == rows.shape[0]
+        assert min(window_lengths) < max(window_lengths)
+        # column order is [step index, constant]; the constant column holds
+        # the window length, not one per window row
+        np.testing.assert_array_equal(rows[:, 1], window_lengths)
+        np.testing.assert_allclose(wrapper.weights, [weight, constant], atol=1e-9)
+
+        errors = per_step_prediction_errors(
+            wrapper,
+            env,
+            num_episodes=3,
+            reward_fn=lambda index: constant + weight * index,
+        )
+        assert np.max(np.abs(errors)) < 1e-9
+
+    def test_row_intercept_biases_per_step_predictions_by_window_length(self):
+        """
+        A fit-time intercept passes the row fit and biases every per-step
+        prediction by $c(L-1)$, where $L$ is the window length: the
+        intercept absorbs the per-step constant at window scale
+        ($\\hat{b} = cL$ per row).
+        """
+        constant, weight, delay = -1.0, 0.5, 3
+        env = ConstantPlusIndexEnv(constant=constant, weight=weight, episode_steps=12)
+        delayed = rewdelay.DelayedRewardWrapper(
+            env, reward_delay=rewdelay.FixedDelay(delay=delay)
+        )
+        wrapper = rewdelay.LeastLfaGenerativeRewardWrapper(
+            delayed,
+            feats_fn=FTOpHook(index_ftop(example_space(env))),
+            attempt_estimation_episode=LATE_ESTIMATION,
+            estimation_check="none",
+            intercept=True,
+        )
+        drive_windows(wrapper, num_episodes=6)
+        wrapper.estimate_rewards()
+
+        # the rows are consistent: the intercept enters in window units
+        snapshot = wrapper.estimation_meta["snapshots"][-1]
+        assert snapshot["error"]["rmse"] < 1e-9
+        np.testing.assert_allclose(
+            wrapper.weights, [weight, constant * delay], atol=1e-9
+        )
+
+        # every per-step prediction carries the window offset
+        errors = per_step_prediction_errors(
+            wrapper,
+            env,
+            num_episodes=3,
+            reward_fn=lambda index: constant + weight * index,
+        )
+        np.testing.assert_allclose(errors, constant * (delay - 1), atol=1e-9)
 
 
 class TestLeastLfaDiscreteFeatures:
@@ -798,7 +1061,7 @@ class TestLeastLfaDiscreteFeatures:
             delayed,
             feats_fn=FTOpHook(ft_op),
             attempt_estimation_episode=1,
-            check_factors=False,
+            estimation_check="none",
         )
         return wrapper
 
@@ -870,7 +1133,7 @@ class TestEstimationAttemptRecords:
             del weights
             return {"rmse": 0.5, "num_samples": 10}
 
-    def _run(self, check_factors: bool, episodes: int = 3):
+    def _run(self, estimation_check: str = "none", episodes: int = 3):
         env = DummyEnv(term_steps=2)
         delayed = rewdelay.DelayedRewardWrapper(
             env, reward_delay=rewdelay.FixedDelay(delay=2)
@@ -879,7 +1142,7 @@ class TestEstimationAttemptRecords:
             delayed,
             feats_fn=self._DeadColumnFeatures(),
             attempt_estimation_episode=1,
-            check_factors=check_factors,
+            estimation_check=estimation_check,
             reward_error_fn=self._ConstantErrorFn(),
         )
         wrapper.reset()
@@ -892,7 +1155,7 @@ class TestEstimationAttemptRecords:
         return wrapper
 
     def test_event_records_steps_and_elapsed_time(self):
-        wrapper = self._run(check_factors=False)
+        wrapper = self._run(estimation_check="none")
         # fires at the second episode's end: the buffer holds its second
         # window there, after four environment steps
         events = wrapper.estimation_meta["reward_errors"]
@@ -905,7 +1168,7 @@ class TestEstimationAttemptRecords:
         assert wrapper.weights is not None
 
     def test_gate_deferral_records_the_buffer_state(self):
-        wrapper = self._run(check_factors=True)
+        wrapper = self._run(estimation_check="factors")
         # the second column never activates, so the coverage gate defers
         # every scheduled attempt and never solves
         assert wrapper.weights is None
@@ -928,7 +1191,7 @@ class TestEstimationAttemptRecords:
             delayed,
             feats_fn=self._DeadColumnFeatures(),
             init_attempt_estimation_episode=1,
-            check_factors=True,
+            estimation_check="factors",
         )
         wrapper.reset()
         for _ in range(3):
@@ -942,6 +1205,318 @@ class TestEstimationAttemptRecords:
         assert len(deferred) == 2
         assert deferred[0]["nonzero_columns"] == 1
         assert deferred[0]["matrix_columns"] == 2
+
+
+class TestResolveEstimationCheck:
+    """Tests for resolve_estimation_check — new mode, legacy bool, and conflicts."""
+
+    @pytest.mark.parametrize(
+        "estimation_check, expected",
+        [
+            ("none", "none"),
+            ("factors", "factors"),
+            ("full-rank", "full-rank"),
+        ],
+    )
+    def test_new_mode_passthrough(self, estimation_check, expected):
+        assert (
+            rewdelay.resolve_estimation_check(estimation_check=estimation_check)
+            == expected
+        )
+
+    def test_both_omitted_defaults_to_none(self):
+        assert rewdelay.resolve_estimation_check() == "none"
+
+    def test_invalid_mode_raises(self):
+        with pytest.raises(ValueError, match="unknown estimation_check"):
+            rewdelay.resolve_estimation_check(estimation_check="bogus")
+
+
+class TestEstimationCheckGate:
+    """Behavioral gate tests: zero column, covered-but-dependent, and full-rank designs."""
+
+    class _ZeroColumnFeatures:
+        """Two features, the second always zero."""
+
+        @property
+        def feature_dim(self) -> int:
+            return 2
+
+        def __call__(self, transition) -> np.ndarray:
+            del transition
+            return np.array([1.0, 0.0])
+
+    class _DependentColumnFeatures:
+        """Two features where column 2 = 2 * column 1: covered but rank-deficient."""
+
+        @property
+        def feature_dim(self) -> int:
+            return 2
+
+        def __call__(self, transition) -> np.ndarray:
+            del transition
+            return np.array([1.0, 2.0])
+
+    class _FullRankFeatures:
+        """Two features whose per-window sums form a full-rank design.
+
+        Both features vary with a global call counter so that accumulated
+        window sums differ across episodes, producing rank 2 with two
+        or more windows.
+        """
+
+        def __init__(self):
+            self._call_count = 0
+
+        @property
+        def feature_dim(self) -> int:
+            return 2
+
+        def __call__(self, transition) -> np.ndarray:
+            del transition
+            self._call_count += 1
+            return np.array([float(self._call_count), float(self._call_count**2)])
+
+    def _run_wrapper(self, feats_cls, estimation_check, episodes=3):
+        env = DummyEnv(term_steps=2)
+        delayed = rewdelay.DelayedRewardWrapper(
+            env, reward_delay=rewdelay.FixedDelay(delay=2)
+        )
+        wrapper = rewdelay.LeastLfaGenerativeRewardWrapper(
+            delayed,
+            feats_fn=feats_cls(),
+            attempt_estimation_episode=1,
+            estimation_check=estimation_check,
+        )
+        wrapper.reset()
+        for _ in range(episodes):
+            done = False
+            while not done:
+                _, _, term, trunc, _ = wrapper.step(0)
+                done = term or trunc
+            wrapper.reset()
+        return wrapper
+
+    def test_zero_column_none_mode_solves(self):
+        wrapper = self._run_wrapper(self._ZeroColumnFeatures, "none")
+        assert wrapper.weights is not None
+        assert len(wrapper.estimation_meta["snapshots"]) == 1
+
+    def test_zero_column_factors_mode_defers(self):
+        wrapper = self._run_wrapper(self._ZeroColumnFeatures, "factors")
+        assert wrapper.weights is None
+        assert len(wrapper.estimation_meta["deferred_attempts"]) >= 1
+        deferred = wrapper.estimation_meta["deferred_attempts"][0]
+        assert deferred["estimation_check"] == "factors"
+        assert deferred["nonzero_columns"] < deferred["matrix_columns"]
+        assert "numerical_rank" not in deferred
+
+    def test_zero_column_full_rank_mode_defers(self):
+        wrapper = self._run_wrapper(self._ZeroColumnFeatures, "full-rank")
+        assert wrapper.weights is None
+        assert len(wrapper.estimation_meta["deferred_attempts"]) >= 1
+        deferred = wrapper.estimation_meta["deferred_attempts"][0]
+        assert deferred["estimation_check"] == "full-rank"
+        assert "numerical_rank" in deferred
+        assert deferred["numerical_rank"] < deferred["matrix_columns"]
+
+    def test_dependent_columns_none_mode_solves(self):
+        wrapper = self._run_wrapper(self._DependentColumnFeatures, "none")
+        assert wrapper.weights is not None
+
+    def test_dependent_columns_factors_mode_solves(self):
+        wrapper = self._run_wrapper(self._DependentColumnFeatures, "factors")
+        assert wrapper.weights is not None
+
+    def test_dependent_columns_full_rank_mode_defers(self):
+        wrapper = self._run_wrapper(self._DependentColumnFeatures, "full-rank")
+        assert wrapper.weights is None
+        deferred = wrapper.estimation_meta["deferred_attempts"]
+        assert len(deferred) >= 1
+        assert deferred[0]["estimation_check"] == "full-rank"
+        assert deferred[0]["numerical_rank"] < deferred[0]["matrix_columns"]
+
+    def test_full_rank_none_mode_solves(self):
+        wrapper = self._run_wrapper(self._FullRankFeatures, "none")
+        assert wrapper.weights is not None
+
+    def test_full_rank_factors_mode_solves(self):
+        wrapper = self._run_wrapper(self._FullRankFeatures, "factors")
+        assert wrapper.weights is not None
+
+    def test_full_rank_full_rank_mode_solves(self):
+        wrapper = self._run_wrapper(self._FullRankFeatures, "full-rank")
+        assert wrapper.weights is not None
+
+    def test_factors_mode_defers_on_zero_column(self):
+        env = DummyEnv(term_steps=2)
+        delayed = rewdelay.DelayedRewardWrapper(
+            env, reward_delay=rewdelay.FixedDelay(delay=2)
+        )
+        wrapper = rewdelay.LeastLfaGenerativeRewardWrapper(
+            delayed,
+            feats_fn=self._ZeroColumnFeatures(),
+            attempt_estimation_episode=1,
+            estimation_check="factors",
+        )
+        assert wrapper.estimation_check == "factors"
+        wrapper.reset()
+        for _ in range(3):
+            done = False
+            while not done:
+                _, _, term, trunc, _ = wrapper.step(0)
+                done = term or trunc
+            wrapper.reset()
+        assert wrapper.weights is None
+
+    def test_estimation_meta_includes_check_mode(self):
+        wrapper = self._run_wrapper(self._FullRankFeatures, "full-rank")
+        assert wrapper.estimation_meta["estimation_check"] == "full-rank"
+
+    def test_none_and_factors_do_not_compute_numerical_rank(self):
+        wrapper_none = self._run_wrapper(self._FullRankFeatures, "none")
+        wrapper_factors = self._run_wrapper(self._FullRankFeatures, "factors")
+        for wrapper in (wrapper_none, wrapper_factors):
+            for attempt in wrapper.estimation_meta.get("deferred_attempts", []):
+                assert "numerical_rank" not in attempt
+
+
+class TestGenerativeWrapperRngSeeding:
+    """The estimator generator seed: same seed, same draw sequence."""
+
+    @staticmethod
+    def _least_lfa(rng_seed: int | None):
+        env = DummyEnv(term_steps=2)
+        delayed = rewdelay.DelayedRewardWrapper(
+            env, reward_delay=rewdelay.FixedDelay(delay=2)
+        )
+        return rewdelay.LeastLfaGenerativeRewardWrapper(
+            delayed,
+            feats_fn=FTOpHook(DummyFTOp(env)),
+            attempt_estimation_episode=5,
+            rng_seed=rng_seed,
+        )
+
+    @staticmethod
+    def _bayes(rng_seed: int | None):
+        env = DummyEnv(term_steps=2)
+        delayed = rewdelay.DelayedRewardWrapper(
+            env, reward_delay=rewdelay.FixedDelay(delay=2)
+        )
+        return rewdelay.BayesLeastLfaGenerativeRewardWrapper(
+            delayed,
+            feats_fn=FTOpHook(DummyFTOp(env)),
+            init_attempt_estimation_episode=1,
+            rng_seed=rng_seed,
+        )
+
+    def test_least_lfa_same_seed_reproduces_draws(self):
+        first = self._least_lfa(7)
+        second = self._least_lfa(7)
+        assert [first.rng.random() for _ in range(10)] == [
+            second.rng.random() for _ in range(10)
+        ]
+
+    def test_bayes_same_seed_reproduces_draws(self):
+        first = self._bayes(7)
+        second = self._bayes(7)
+        assert [first.rng.random() for _ in range(10)] == [
+            second.rng.random() for _ in range(10)
+        ]
+
+    def test_unseeded_generators_are_independent_instances(self):
+        first = self._least_lfa(None)
+        second = self._least_lfa(None)
+        assert first.rng is not second.rng
+
+
+class TestBayesEstimationCheckGate:
+    """BLADE-TD gate: rejection preserves posterior and update count."""
+
+    class _ZeroColumnFeatures:
+        @property
+        def feature_dim(self) -> int:
+            return 2
+
+        def __call__(self, transition) -> np.ndarray:
+            del transition
+            return np.array([1.0, 0.0])
+
+    class _FullRankFeatures:
+        def __init__(self):
+            self._call_count = 0
+
+        @property
+        def feature_dim(self) -> int:
+            return 2
+
+        def __call__(self, transition) -> np.ndarray:
+            del transition
+            self._call_count += 1
+            return np.array([float(self._call_count), float(self._call_count**2)])
+
+    def _make_bayes_wrapper(self, feats_cls, estimation_check, episodes=3):
+        env = DummyEnv(term_steps=2)
+        delayed = rewdelay.DelayedRewardWrapper(
+            env, reward_delay=rewdelay.FixedDelay(delay=2)
+        )
+        wrapper = rewdelay.BayesLeastLfaGenerativeRewardWrapper(
+            delayed,
+            feats_fn=feats_cls(),
+            init_attempt_estimation_episode=1,
+            estimation_check=estimation_check,
+        )
+        wrapper.reset()
+        for _ in range(episodes):
+            done = False
+            while not done:
+                _, _, term, trunc, _ = wrapper.step(0)
+                done = term or trunc
+            wrapper.reset()
+        return wrapper
+
+    def test_rejected_initial_preserves_none_posterior(self):
+        wrapper = self._make_bayes_wrapper(self._ZeroColumnFeatures, "factors")
+        assert wrapper.mv_normal_rewards is None
+        assert wrapper.posterior_updates == 0
+        assert len(wrapper.estimation_meta["deferred_attempts"]) >= 1
+
+    def test_rejected_full_rank_preserves_none_posterior(self):
+        wrapper = self._make_bayes_wrapper(self._ZeroColumnFeatures, "full-rank")
+        assert wrapper.mv_normal_rewards is None
+        assert wrapper.posterior_updates == 0
+        deferred = wrapper.estimation_meta["deferred_attempts"]
+        assert len(deferred) >= 1
+        assert "numerical_rank" in deferred[0]
+
+    def test_full_rank_features_solve_with_none_mode(self):
+        wrapper = self._make_bayes_wrapper(self._FullRankFeatures, "none")
+        assert wrapper.mv_normal_rewards is not None
+
+    def test_full_rank_features_solve_with_factors_mode(self):
+        wrapper = self._make_bayes_wrapper(self._FullRankFeatures, "factors")
+        assert wrapper.mv_normal_rewards is not None
+
+    def test_full_rank_features_solve_with_full_rank_mode(self):
+        wrapper = self._make_bayes_wrapper(self._FullRankFeatures, "full-rank")
+        assert wrapper.mv_normal_rewards is not None
+
+    def test_factors_mode_resolves(self):
+        env = DummyEnv(term_steps=2)
+        delayed = rewdelay.DelayedRewardWrapper(
+            env, reward_delay=rewdelay.FixedDelay(delay=2)
+        )
+        wrapper = rewdelay.BayesLeastLfaGenerativeRewardWrapper(
+            delayed,
+            feats_fn=self._ZeroColumnFeatures(),
+            init_attempt_estimation_episode=1,
+            estimation_check="factors",
+        )
+        assert wrapper.estimation_check == "factors"
+
+    def test_estimation_meta_includes_check_mode(self):
+        wrapper = self._make_bayes_wrapper(self._FullRankFeatures, "full-rank")
+        assert wrapper.estimation_meta["estimation_check"] == "full-rank"
 
 
 class TestBayesLeastLfaGenerativeRewardWrapper:
@@ -961,7 +1536,7 @@ class TestBayesLeastLfaGenerativeRewardWrapper:
             env=delayed,
             feats_fn=FTOpHook(ft_op),
             init_attempt_estimation_episode=1,
-            check_factors=False,
+            estimation_check="none",
             schedule_rho=schedule_rho,
             sample_weights=sample_weights,
         )
@@ -994,7 +1569,7 @@ class TestBayesLeastLfaGenerativeRewardWrapper:
                 delayed,
                 feats_fn=FTOpHook(DummyFTOp(env)),
                 init_attempt_estimation_episode=10,
-                check_factors=False,
+                estimation_check="none",
                 schedule_rho=rho,
                 reward_error_fn=stub_reward_error_fn([]),
             )
@@ -1177,7 +1752,7 @@ class TestBayesLeastLfaGenerativeRewardWrapper:
             delayed,
             feats_fn=FTOpHook(DummyFTOp(env)),
             init_attempt_estimation_episode=2,
-            check_factors=False,
+            estimation_check="none",
             reward_error_fn=stub_reward_error_fn(seen_weights),
         )
         # prior on first full buffer, then updates on each exponential window
@@ -1204,7 +1779,7 @@ class TestBayesLeastLfaGenerativeRewardWrapper:
             delayed,
             feats_fn=FTOpHook(DummyFTOp(env)),
             init_attempt_estimation_episode=2,
-            check_factors=False,
+            estimation_check="none",
         )
         drive_episodes(wrapper, num_episodes=10, steps_per_episode=2)
 
@@ -1223,7 +1798,7 @@ class TestBayesLeastLfaGenerativeRewardWrapper:
             delayed,
             feats_fn=FTOpHook(DummyFTOp(env)),
             init_attempt_estimation_episode=2,
-            check_factors=False,
+            estimation_check="none",
             sample_weights=True,
             reward_error_fn=stub_reward_error_fn(seen_weights),
         )
@@ -1232,6 +1807,137 @@ class TestBayesLeastLfaGenerativeRewardWrapper:
         assert len(seen_weights) >= 1
         for weights in seen_weights:
             np.testing.assert_allclose(weights, wrapper.mv_normal_rewards.mean)
+
+
+class TestBayesErrorVariance:
+    """BLADE-TD error-variance modes: the fixed unit scale versus NIG."""
+
+    class _ObservationFeatures:
+        """Observation-driven features, so window sums vary across batches."""
+
+        @property
+        def feature_dim(self):
+            return 4
+
+        def __call__(self, transition):
+            return np.array([*transition.observation, 1.0])
+
+    class _VaryingEnv(gym.Env):
+        """Observation changes every episode; reward is constant."""
+
+        def __init__(self, term_steps=2):
+            self.observation_space = spaces.Box(low=-10.0, high=10.0, shape=(3,))
+            self.action_space = spaces.Discrete(3)
+            self.term_steps = term_steps
+            self.episode = 0
+            self.step_count = 0
+
+        def _observation(self):
+            return np.array(
+                [0.7 * self.episode, -0.3 * self.episode + self.step_count, 1.5]
+            )
+
+        def step(self, action):
+            del action
+            self.step_count += 1
+            terminated = self.step_count >= self.term_steps
+            return self._observation(), 1.0, terminated, False, {}
+
+        def reset(self, seed=None, options=None):
+            del seed
+            del options
+            self.step_count = 0
+            self.episode += 1
+            return self._observation(), {}
+
+    def _make_wrapper(self, **kwargs):
+        env = self._VaryingEnv(term_steps=2)
+        delayed = rewdelay.DelayedRewardWrapper(env, rewdelay.FixedDelay(delay=2))
+        return rewdelay.BayesLeastLfaGenerativeRewardWrapper(
+            delayed,
+            feats_fn=self._ObservationFeatures(),
+            init_attempt_estimation_episode=1,
+            estimation_check="none",
+            **kwargs,
+        )
+
+    def _force_estimate(self, wrapper):
+        while wrapper.est_buffer.size() < wrapper.mdim:
+            wrapper.reset()
+            done = False
+            while not done:
+                _, _, term, trunc, _ = wrapper.step(0)
+                done = term or trunc
+        wrapper.estimate_rewards()
+        assert wrapper._has_estimate()
+
+    def test_default_mode_is_the_fixed_unit_variance(self):
+        wrapper = self._make_wrapper()
+        assert wrapper.error_variance == rewdelay.ERROR_VARIANCE_UNIT
+        self._force_estimate(wrapper)
+        assert isinstance(wrapper.mv_normal_rewards, optsol.MultivariateNormal)
+        snapshot = wrapper.estimation_meta["snapshots"][0]
+        assert "sigma2_hat" not in snapshot["estimate"]
+        info = wrapper._get_estimator_info()
+        assert info["error_variance"] == rewdelay.ERROR_VARIANCE_UNIT
+        assert "sigma2_hat" not in info
+
+    def test_nig_mode_fits_a_normal_inverse_gamma_posterior(self):
+        wrapper = self._make_wrapper(error_variance=rewdelay.ERROR_VARIANCE_NIG)
+        self._force_estimate(wrapper)
+        posterior = wrapper.mv_normal_rewards
+        assert isinstance(posterior, optsol.NormalInverseGamma)
+        assert posterior.ig.variance > 0.0
+        assert posterior.ig.shape > 0.0
+
+    def test_nig_mode_reports_the_variance_estimate(self):
+        wrapper = self._make_wrapper(error_variance=rewdelay.ERROR_VARIANCE_NIG)
+        self._force_estimate(wrapper)
+        posterior = wrapper.mv_normal_rewards
+        expected = posterior.ig.variance
+        snapshot = wrapper.estimation_meta["snapshots"][0]
+        assert snapshot["estimate"]["sigma2_hat"] == pytest.approx(expected)
+        info = wrapper._get_estimator_info()
+        assert info["error_variance"] == rewdelay.ERROR_VARIANCE_NIG
+        assert info["sigma2_hat"] == pytest.approx(expected)
+
+    def test_nig_mode_leaves_the_posterior_mean_unchanged(self):
+        # identical batches: the variance scale multiplies the covariance and
+        # cancels from the mean recursion
+        unit = self._make_wrapper(error_variance=rewdelay.ERROR_VARIANCE_UNIT)
+        nig = self._make_wrapper(error_variance=rewdelay.ERROR_VARIANCE_NIG)
+        self._force_estimate(unit)
+        self._force_estimate(nig)
+        unit_posterior = unit.mv_normal_rewards
+        nig_posterior = nig.mv_normal_rewards
+        np.testing.assert_allclose(nig_posterior.mean, unit_posterior.mean, atol=1e-8)
+        np.testing.assert_allclose(
+            nig_posterior.cov,
+            nig_posterior.ig.variance * unit_posterior.cov,
+            rtol=1e-6,
+            atol=1e-10,
+        )
+
+    def test_nig_mode_estimates_zero_variance_on_representable_rewards(self):
+        # a constant feature vector represents the constant dummy reward
+        # exactly, leaving no residual for the variance to absorb
+        env = DummyEnv(term_steps=2)
+        delayed = rewdelay.DelayedRewardWrapper(env, rewdelay.FixedDelay(delay=2))
+        wrapper = rewdelay.BayesLeastLfaGenerativeRewardWrapper(
+            delayed,
+            feats_fn=FTOpHook(DummyFTOp(env)),
+            init_attempt_estimation_episode=1,
+            estimation_check="none",
+            error_variance=rewdelay.ERROR_VARIANCE_NIG,
+        )
+        self._force_estimate(wrapper)
+        posterior = wrapper.mv_normal_rewards
+        assert isinstance(posterior, optsol.NormalInverseGamma)
+        assert posterior.ig.variance < 1e-12
+
+    def test_unknown_error_variance_raises(self):
+        with pytest.raises(ValueError, match="unknown error_variance"):
+            self._make_wrapper(error_variance="heteroscedastic")
 
 
 class TestConvexSolverGenerativeRewardWrapper:
@@ -1554,3 +2260,90 @@ class DiscreteDummyFTOp(transform.FTOp):
 
     def reset_counter(self):
         self._call_count = 0
+
+
+class ConstantPlusIndexEnv(gym.Env):
+    """Pays $c + w s_t$ on the transition from step index $s_t$.
+
+    The observation is the index, so the per-step reward is affine in the
+    feature vector $[1, s_t]$.
+    """
+
+    def __init__(
+        self, constant: float = -1.0, weight: float = 0.5, episode_steps: int = 12
+    ):
+        self.observation_space = spaces.Box(
+            low=0.0, high=float(episode_steps), shape=(1,), dtype=np.float64
+        )
+        self.action_space = spaces.Discrete(1)
+        self.constant = constant
+        self.weight = weight
+        self.episode_steps = episode_steps
+        self.index = 0
+
+    def step(self, action):
+        del action
+        reward = self.constant + self.weight * self.index
+        self.index += 1
+        observation = np.array([float(self.index)])
+        terminated = self.index >= self.episode_steps
+        return observation, reward, terminated, False, {}
+
+    def reset(self, seed=None, options=None):
+        del seed
+        del options
+        self.index = 0
+        return np.array([0.0]), {}
+
+
+def example_space(env: gym.Env) -> transform.ExampleSpace:
+    """The space of an env, as the FTOps expect it."""
+    return transform.ExampleSpace(
+        observation_space=env.observation_space, action_space=env.action_space
+    )
+
+
+def index_ftop(input_space: transform.ExampleSpace) -> transform.FTOp:
+    """The step index alone: the identity pipeline over the raw observation."""
+    return transform.Pipeline(input_space=input_space)
+
+
+def constant_and_index_ftop(input_space: transform.ExampleSpace) -> transform.FTOp:
+    """The step index followed by the constant coordinate of the builder map."""
+    return transform.Pipeline.from_specs(
+        input_space=input_space, specs=[{"name": "constant-ft", "args": {}}]
+    )
+
+
+def drive_windows(wrapper, num_episodes: int) -> list[int]:
+    """Steps whole episodes, recording the step count of each buffered window."""
+    window_lengths = []
+    steps = 0
+    for _ in range(num_episodes):
+        wrapper.reset(seed=0)
+        done = False
+        while not done:
+            buffered = len(wrapper.est_buffer.buffer)
+            _, _, terminated, truncated, _ = wrapper.step(0)
+            steps += 1
+            if len(wrapper.est_buffer.buffer) > buffered:
+                window_lengths.append(steps)
+                steps = 0
+            done = terminated or truncated
+    return window_lengths
+
+
+def per_step_prediction_errors(
+    wrapper, env: gym.Env, num_episodes: int, reward_fn
+) -> np.ndarray:
+    """Differences between the emitted per-step rewards and ``reward_fn(index)``."""
+    errors = []
+    for _ in range(num_episodes):
+        wrapper.reset(seed=0)
+        done = False
+        while not done:
+            index = env.index
+            _, reward, terminated, truncated, _ = wrapper.step(0)
+            errors.append(reward - reward_fn(index))
+            done = terminated or truncated
+    return np.array(errors)

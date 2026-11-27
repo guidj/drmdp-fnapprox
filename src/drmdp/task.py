@@ -14,6 +14,7 @@ from drmdp import (
     envs,
     logger,
     optsol,
+    oracle,
     rewardeval,
     rewardfeat,
     rewdelay,
@@ -32,12 +33,15 @@ REWARD_ERROR_SAMPLING_SEED = 0
 POLICY_EVAL_EPISODES = 25
 
 REWARD_SHAPING_BUILDERS: Mapping[str, type] = {
-    "mountain-car-height": wrappers.MountainCarHeightBonus,
     "mountain-car-height-pbrs": wrappers.MountainCarHeightShaping,
-    "acrobot-tip-height": wrappers.AcrobotTipHeightBonus,
     "acrobot-tip-height-pbrs": wrappers.AcrobotTipHeightShaping,
     "gridworld-distance-pbrs": wrappers.GridWorldDistanceShaping,
-    "action-cost": wrappers.ActionCostShapingWrapper,
+}
+
+REWARD_OBS_BUILDERS: Mapping[str, type] = {
+    "mountain-car-height-pbrs-potential": wrappers.PotentialObsWrapper,
+    "acrobot-tip-height-pbrs-potential": wrappers.PotentialObsWrapper,
+    "gridworld-distance-pbrs-potential": wrappers.PotentialObsWrapper,
 }
 
 REWARD_NOISE_BUILDERS: Mapping[str, type] = {
@@ -65,16 +69,33 @@ def policy_control(exp_instance: core.ExperimentInstance):
     # init env and agent
     env_spec = exp_instance.experiment.env_spec
     problem_spec = exp_instance.experiment.problem_spec
+    num_episodes = exp_instance.run_config.episodes_per_run
+    seeder = core.Seeder(
+        exp_instance.instance_id if exp_instance.run_config.use_seed else None
+    )
+    # Episodes 0..num_episodes-1 seed the training env resets (inside the
+    # algorithm); the seeds above the episode range drive the reward-noise
+    # wrapper, the delay sampler, the estimator's generator, and the
+    # policy's exploration draw, so every stream stays disjoint under the
+    # same pairing.
+    noise_seed = seeder.get_seed(episode=num_episodes)
+    delay_seed = seeder.get_seed(episode=num_episodes + 1)
+    estimator_seed = seeder.get_seed(episode=num_episodes + 2)
+    policy_seed = seeder.get_seed(episode=num_episodes + 3)
     proxied_env = create_env(
-        env_spec.name, args=env_spec.args, gamma=problem_spec.gamma
+        env_spec.name,
+        args=env_spec.args,
+        gamma=problem_spec.gamma,
+        seed=noise_seed,
     )
     env, monitor = monitor_wrapper(proxied_env.env)
-    rew_delay = reward_delay_distribution(problem_spec.delay_config)
+    rew_delay = reward_delay_distribution(problem_spec.delay_config, seed=delay_seed)
     env = delay_wrapper(env, rew_delay)
     env = reward_mapper(
         env,
         proxy_env=proxied_env.proxy,
         mapping_spec=problem_spec.reward_mapper,
+        rng_seed=estimator_seed,
     )
     ft_op = transform.transform_pipeline(env=env, specs=env_spec.feats_spec)
     lr = learning_rate(**problem_spec.learning_rate_config)
@@ -89,6 +110,7 @@ def policy_control(exp_instance: core.ExperimentInstance):
         policy_type=problem_spec.policy_type,
         algo_config=problem_spec.learning_rate_config.get("args"),
         base_seed=exp_instance.instance_id,
+        seed=policy_seed,
     )
 
     _logger.debug("Starting DRMDP Control Experiments: %s", exp_instance)
@@ -182,17 +204,29 @@ def evaluate_policy(
 
 
 def create_env(
-    name: str, args: Mapping[str, Any] | None, gamma: float | None = None
+    name: str,
+    args: Mapping[str, Any] | None,
+    gamma: float | None = None,
+    seed: int | None = None,
 ) -> core.ProxiedEnv:
     """
     Creates an env and a proxy.
 
     ``gamma`` is the learner discount.  Potential-based shaping needs it
     to keep the potential difference consistent with the discounted
-    return; other shaping classes ignore it.
+    return; other shaping classes ignore it. ``seed`` seeds the reward
+    noise wrapper when one is configured; the proxy carries no noise and
+    stays clean regardless.
+
+    ``reward_obs`` names an observation wrapper applied above the shaping
+    wrapper on the env and the proxy alike, so the estimator reads the shaped
+    potential from the observation and its successor while the policy's
+    features drop the entry. It runs before the noise wrapper, which needs the
+    clean shaped reward.
     """
     env_args = dict(args) if args else {}
     shaping_config = env_args.pop("reward_shaping", None)
+    obs_config = env_args.pop("reward_obs", None)
     noise_config = env_args.pop("reward_noise", None)
 
     env = envs.make(env_name=name, **env_args)
@@ -210,6 +244,15 @@ def create_env(
         env = shaping_cls(env, **shaping_args)
         proxy = shaping_cls(proxy, **shaping_args)
 
+    if obs_config:
+        obs_name = obs_config["name"]
+        obs_args = dict(obs_config.get("args", {}) or {})
+        if obs_name not in REWARD_OBS_BUILDERS:
+            raise ValueError(f"Unknown reward observation wrapper: {obs_name}")
+        obs_cls = REWARD_OBS_BUILDERS[obs_name]
+        env = obs_cls(env, **obs_args)
+        proxy = obs_cls(proxy, **obs_args)
+
     if noise_config:
         noise_name = noise_config["name"]
         noise_args = noise_config.get("args", {}) or {}
@@ -217,6 +260,8 @@ def create_env(
             raise ValueError(f"Unknown reward noise: {noise_name}")
         noise_cls = REWARD_NOISE_BUILDERS[noise_name]
         noise_args = wrappers.normalize_noise_args(noise_args)
+        if seed is not None:
+            noise_args.setdefault("seed", seed)
         env = noise_cls(env, **noise_args)
 
     return core.ProxiedEnv(env=env, proxy=proxy)
@@ -312,17 +357,22 @@ def learning_rate(name: str, args: Mapping[str, Any]) -> optsol.LearningRateSche
 
 def reward_delay_distribution(
     delay_config: Mapping[str, Any] | None,
+    seed: int | None = None,
 ) -> rewdelay.RewardDelay | None:
     """
     Returns an instance of a delayed
     reward distribution that can be used
     to sample delays.
+
+    ``seed`` seeds the sampler's instance-local generator; ``None``
+    leaves the sampler unseeded.
     """
     if delay_config:
         name = delay_config["name"]
-        args = delay_config["args"]
+        args = dict(delay_config["args"])
         if name not in DELAY_BUILDERS:
             raise ValueError(f"Unknown delay type {name}")
+        args.setdefault("seed", seed)
         return DELAY_BUILDERS[name](**args)
     return None
 
@@ -346,11 +396,14 @@ def delay_wrapper(env: gym.Env, reward_delay: rewdelay.RewardDelay | None) -> gy
     return env
 
 
+NIG_REWARD_MAPPERS = frozenset({"blade-td-nig", "nig-least-lfa"})
+BAYES_REWARD_MAPPERS = frozenset({"bayes-least-lfa", *NIG_REWARD_MAPPERS})
+
 ESTIMATOR_MAPPERS = frozenset(
     {
         "discrete-least-lfa",
         "least-lfa",
-        "bayes-least-lfa",
+        *BAYES_REWARD_MAPPERS,
         "cvlps",
         "recurring-cvlps",
     }
@@ -364,40 +417,62 @@ ONE_SHOT_REWARD_MAPPERS = frozenset(
     }
 )
 
+ESTIMATION_ORACLE_POLICY = "oracle"
+ESTIMATION_RANDOM_POLICY = "uniform-random"
 
-def estimation_only(exp_instance: core.ExperimentInstance):
+
+def reward_estimation_only(exp_instance: core.ExperimentInstance):
     """
     Entry point running reward estimation without control.
 
     The env stack matches `policy_control`: shaping and noise on the
     training env, aggregate window sums from `DelayedRewardWrapper`,
     and the reward mapper with its true-reward evaluator built from the
-    clean proxy. The action source is a seeded uniform-random policy;
-    no value function is learned, so the occupancy is exploration
-    alone. One-shot estimators stop at their first estimation event:
-    the freeze ends information collection, and the remaining episodes
-    would add no measurement.
+    clean proxy. The action source is a task oracle mixed with a
+    uniform action draw at the problem's epsilon, or a uniform draw
+    alone; no value function is learned, so the occupancy is the
+    behaviour policy's. One-shot estimators stop at their first
+    estimation event: the freeze ends information collection, and the
+    remaining episodes would add no measurement.
+
+    Seeded runs reproduce their full record: env resets and the behaviour
+    draw use per-episode seeds, and the delay sampler and reward-noise
+    wrapper get instance-derived seeds of their own.
     """
     env_spec = exp_instance.experiment.env_spec
     problem_spec = exp_instance.experiment.problem_spec
-    proxied_env = create_env(
-        env_spec.name, args=env_spec.args, gamma=problem_spec.gamma
-    )
-    env, monitor = monitor_wrapper(proxied_env.env)
-    rew_delay = reward_delay_distribution(problem_spec.delay_config)
-    env = delay_wrapper(env, rew_delay)
-    env = reward_mapper(
-        env,
-        proxy_env=proxied_env.proxy,
-        mapping_spec=problem_spec.reward_mapper,
-    )
-
     num_episodes = exp_instance.run_config.episodes_per_run
     log_frequency = max(exp_instance.run_config.log_episode_frequency, 1)
     seeder = core.Seeder(
         exp_instance.instance_id if exp_instance.run_config.use_seed else None
     )
+    # Episodes 0..num_episodes-1 seed env resets and the behaviour draw;
+    # the three seeds above the episode range drive the reward-noise
+    # wrapper, the delay sampler, and the estimator's generator, so every
+    # stream stays disjoint under the same pairing. An unseeded run keeps
+    # all five streams unseeded.
+    noise_seed = seeder.get_seed(episode=num_episodes)
+    delay_seed = seeder.get_seed(episode=num_episodes + 1)
+    estimator_seed = seeder.get_seed(episode=num_episodes + 2)
+    proxied_env = create_env(
+        env_spec.name,
+        args=env_spec.args,
+        gamma=problem_spec.gamma,
+        seed=noise_seed,
+    )
+    env, monitor = monitor_wrapper(proxied_env.env)
+    rew_delay = reward_delay_distribution(problem_spec.delay_config, seed=delay_seed)
+    env = delay_wrapper(env, rew_delay)
+    env = reward_mapper(
+        env,
+        proxy_env=proxied_env.proxy,
+        mapping_spec=problem_spec.reward_mapper,
+        rng_seed=estimator_seed,
+    )
+
     num_actions = int(env.action_space.n)
+    task_oracle = _estimation_oracle(env_spec.name, env, problem_spec.policy_type)
+    exploration_rate = problem_spec.epsilon
 
     def log_episode(episode: int, returns: Sequence[float]) -> None:
         exp_logger.log(
@@ -416,11 +491,14 @@ def estimation_only(exp_instance: core.ExperimentInstance):
         episode = 0
         for episode in range(num_episodes):
             seed = seeder.get_seed(episode=episode)
-            env.reset(seed=seed)
+            observation, _ = env.reset(seed=seed)
             rng = np.random.default_rng(seed)
             while True:
-                action = int(rng.integers(num_actions))
-                _, _, term, trunc, _ = env.step(action)
+                if task_oracle is None or rng.random() < exploration_rate:
+                    action = int(rng.integers(num_actions))
+                else:
+                    action = int(task_oracle.action(observation))
+                observation, _, term, trunc, _ = env.step(action)
                 run_steps += 1
                 if term or trunc:
                     break
@@ -440,6 +518,23 @@ def estimation_only(exp_instance: core.ExperimentInstance):
     env.close()
 
 
+def _estimation_oracle(
+    env_name: str, env: gym.Env, policy_type: str
+) -> oracle.TaskOracle | None:
+    """
+    Task oracle of an estimation run's behaviour policy.
+
+    Returns None for the exploration-only policy. Raises for an unknown
+    policy type so a misconfigured campaign fails instead of running the
+    wrong behaviour.
+    """
+    if policy_type == ESTIMATION_ORACLE_POLICY:
+        return oracle.task_oracle(env_name, env)
+    if policy_type == ESTIMATION_RANDOM_POLICY:
+        return None
+    raise ValueError(f"Unknown estimation policy type: {policy_type}")
+
+
 def _one_shot_estimated(env: gym.Env, mapper_name: str) -> bool:
     """
     Whether a one-shot estimator has frozen weights.
@@ -452,9 +547,17 @@ def _one_shot_estimated(env: gym.Env, mapper_name: str) -> bool:
     return env.get_wrapper_attr("weights") is not None
 
 
-def reward_mapper(env: gym.Env, proxy_env: gym.Env, mapping_spec: Mapping[str, Any]):
+def reward_mapper(
+    env: gym.Env,
+    proxy_env: gym.Env,
+    mapping_spec: Mapping[str, Any],
+    rng_seed: int | None = None,
+):
     """
     Creates a mapper for handling missing rewards.
+
+    ``rng_seed`` seeds the estimator's internal generator, used by the
+    solver-failure sample drop and by Bayesian posterior sampling.
     """
     name = mapping_spec["name"]
     m_args = dict(**(mapping_spec["args"] or {}))
@@ -473,6 +576,7 @@ def reward_mapper(env: gym.Env, proxy_env: gym.Env, mapping_spec: Mapping[str, A
         return rewdelay.LeastLfaGenerativeRewardWrapper(
             env=env,
             feats_fn=feats_fn,
+            rng_seed=rng_seed,
             **m_args,
         )
     elif name == "least-lfa":
@@ -480,25 +584,39 @@ def reward_mapper(env: gym.Env, proxy_env: gym.Env, mapping_spec: Mapping[str, A
             env=env,
             feats_fn=feats_fn,
             reward_error_fn=true_reward_error_fn(proxy_env, feats_fn, intercept),
+            rng_seed=rng_seed,
             **m_args,
         )
-    elif name == "bayes-least-lfa":
+    elif name in BAYES_REWARD_MAPPERS:
+        if name in NIG_REWARD_MAPPERS:
+            error_variance = rewdelay.resolve_error_variance(
+                m_args.get("error_variance", rewdelay.ERROR_VARIANCE_NIG)
+            )
+            if error_variance != rewdelay.ERROR_VARIANCE_NIG:
+                raise ValueError(
+                    f"{name} selects the NIG error variance; got "
+                    f"error_variance={error_variance!r}"
+                )
+            m_args["error_variance"] = error_variance
         return rewdelay.BayesLeastLfaGenerativeRewardWrapper(
             env=env,
             feats_fn=feats_fn,
             reward_error_fn=true_reward_error_fn(proxy_env, feats_fn, intercept),
+            rng_seed=rng_seed,
             **m_args,
         )
     elif name == "cvlps":
         return rewdelay.ConvexSolverGenerativeRewardWrapper(
             env=env,
             feats_fn=feats_fn,
+            rng_seed=rng_seed,
             **m_args,
         )
     elif name == "recurring-cvlps":
         return rewdelay.RecurringConvexSolverGenerativeRewardWrapper(
             env=env,
             feats_fn=feats_fn,
+            rng_seed=rng_seed,
             **m_args,
         )
 
@@ -511,9 +629,9 @@ def estimator_feats_fn(
     """
     Builds an estimator's transition-feature function from its specification.
 
-    Pops `transition_feats_spec` from the mapper args and rejects the
-    removed `feats_spec` key: an estimator's features come from a
-    transition, never from the control pipeline's operators.
+    Pops `transition_feats_spec` from the mapper args and rejects
+    `feats_spec`: an estimator's features come from a transition, never
+    from the control pipeline's operators.
     """
     if "feats_spec" in mapper_args:
         raise ValueError(
@@ -601,10 +719,14 @@ def create_algorithm(
     epsilon: float,
     algo_config: Mapping[str, Any] | None = None,
     base_seed: int | None = None,
+    seed: int | None = None,
 ):
     """
     Creates an algorithm instance based on the provided
     arguments.
+
+    ``seed`` seeds the policy's exploration generator; ``base_seed``
+    seeds the training loop's per-episode environment resets.
 
     Args:
         algo_config: Optional algorithm-specific configuration parameters.
@@ -616,7 +738,7 @@ def create_algorithm(
             gamma=gamma,
             epsilon=epsilon,
             policy=algorithms.LinearFnApproxPolicy(
-                ft_op=ft_op, action_space=env.action_space
+                ft_op=ft_op, action_space=env.action_space, seed=seed
             ),
             base_seed=base_seed,
         )
@@ -626,7 +748,7 @@ def create_algorithm(
             gamma=gamma,
             epsilon=epsilon,
             policy=algorithms.RandomFnApproxPolicy(
-                ft_op=ft_op, action_space=env.action_space
+                ft_op=ft_op, action_space=env.action_space, seed=seed
             ),
             base_seed=base_seed,
         )
@@ -636,7 +758,7 @@ def create_algorithm(
             gamma=gamma,
             epsilon=epsilon,
             policy=algorithms.LinearFnApproxPolicy(
-                ft_op=ft_op, action_space=env.action_space
+                ft_op=ft_op, action_space=env.action_space, seed=seed
             ),
             base_seed=base_seed,
         )
@@ -651,6 +773,7 @@ def create_algorithm(
                 ft_op=ft_op,
                 action_space=env.action_space,
                 options_length_range=delay_reward.range(),
+                seed=seed,
             ),
             base_seed=base_seed,
         )
@@ -665,6 +788,7 @@ def create_algorithm(
                 ft_op=ft_op,
                 action_space=env.action_space,
                 options_length_range=delay_reward.range(),
+                seed=seed,
             ),
             base_seed=base_seed,
         )

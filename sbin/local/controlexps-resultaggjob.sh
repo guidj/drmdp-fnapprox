@@ -15,6 +15,6 @@ ray job submit \
     --working-dir $PARENT_DIR \
     --runtime-env-json='{"py_modules":["src/drmdp"], "excludes": [".git"]}' \
     -- \
-    python $PARENT_DIR/src/$BASE/workflows/control_results_agg_pipeline.py \
+    python $PARENT_DIR/src/$BASE/workflows/control/aggregate.py \
         --input-dir=$INPUT_DIR \
         --output-dir=$OUTPUT_DIR 

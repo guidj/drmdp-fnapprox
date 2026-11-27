@@ -8,9 +8,17 @@ import gymnasium as gym
 import numpy as np
 import pytest
 
-from drmdp import core, optsol, rewardeval, rewardfeat, task, transform
+from drmdp import (
+    constants,
+    core,
+    optsol,
+    rewardeval,
+    rewardfeat,
+    task,
+    transform,
+)
 from drmdp.envs import gympg, models
-from drmdp.workflows import controlexps
+from drmdp.workflows import encodings, grids
 from tests.drmdp.hookhelpers import FTOpHook
 
 CRAFTED_GRID = ["soooo", "ooooo", "oooxg"]
@@ -191,7 +199,7 @@ class TestDiscreteStateActionRewards:
     def _mines_setup(self):
         result = task.create_env(
             "GridWorld-MINES",
-            {"grid": controlexps.MINES_GW_GRID, "max_episode_steps": 200},
+            {"grid": grids.MINES_GW_GRID, "max_episode_steps": 200},
         )
         proxy = result.proxy
         ft_op = task.create_ft_ops(
@@ -282,7 +290,7 @@ class TestTrueRewardErrorFn:
             "GridWorld-CRAFTED", {"grid": CRAFTED_GRID, "max_episode_steps": 100}
         )
         proxy = result.proxy
-        dead_ohe = controlexps.grid_dead_ohe_indices(CRAFTED_GRID)
+        dead_ohe = grids.grid_dead_ohe_indices(CRAFTED_GRID)
         ft_op = task.create_ft_ops(
             proxy,
             feats_spec=[
@@ -307,27 +315,108 @@ class TestEvaluationDomain:
             proxy.close()
 
     def test_shaped_gridworld_scores_proxy_rewards_by_sampling(self):
-        costs = np.array([0.0, 0.5, 1.0, 1.5])
         proxy = task.create_env(
             "GridWorld-test",
             {
                 "grid": ["soo", "ooo", "oog"],
                 "max_episode_steps": 100,
                 "reward_shaping": {
-                    "name": "action-cost",
-                    "args": {"action_costs": costs},
+                    "name": "gridworld-distance-pbrs",
+                    "args": {"scale": 1.0, "exponent": 2.0},
                 },
+                "reward_obs": {"name": "gridworld-distance-pbrs-potential", "args": {}},
             },
+            gamma=1.0,
         ).proxy
         try:
             assert not rewardeval.supports_discrete_enumeration(proxy)
-            hook = rewardfeat.ActionTerminationFeatures(4)
-            weights = np.concatenate([costs - 1.0, -np.ones(4)])
+            hook = rewardfeat.transition_feature_fn(
+                proxy, encodings.gw_potential_curr_succ()
+            )
             report = rewardeval.true_reward_error_fn(
                 proxy, hook, num_samples=128, seed=42
-            )(weights)
+            )(_gw_potential_curr_succ_weights())
             np.testing.assert_allclose(report["rmse"], 0.0, atol=1e-6)
             assert report["num_samples"] == 128
+        finally:
+            proxy.close()
+
+    @pytest.mark.parametrize("gamma", [1.0, 0.99])
+    def test_mountaincar_identity_over_sampled_transitions(self, gamma):
+        proxy = task.create_env(
+            "MountainCar-v0",
+            {
+                "max_episode_steps": 2500,
+                "reward_shaping": {
+                    "name": "mountain-car-height-pbrs",
+                    "args": {"scale": 1.0},
+                },
+                "reward_obs": {
+                    "name": "mountain-car-height-pbrs-potential",
+                    "args": {},
+                },
+            },
+            gamma=gamma,
+        ).proxy
+        try:
+            hook = rewardfeat.transition_feature_fn(
+                proxy, encodings.mc_potential_curr_succ()
+            )
+            report = rewardeval.true_reward_error_fn(
+                proxy, hook, num_samples=256, seed=42
+            )(_mc_potential_curr_succ_weights(gamma))
+            np.testing.assert_allclose(report["rmse"], 0.0, atol=1e-6)
+        finally:
+            proxy.close()
+
+    @pytest.mark.parametrize("gamma", [1.0, 0.99])
+    def test_acrobot_identity_over_sampled_transitions(self, gamma):
+        proxy = task.create_env(
+            "Acrobot-v1",
+            {
+                "max_episode_steps": 500,
+                "reward_shaping": {
+                    "name": "acrobot-tip-height-pbrs",
+                    "args": {"scale": 1.0},
+                },
+                "reward_obs": {"name": "acrobot-tip-height-pbrs-potential", "args": {}},
+            },
+            gamma=gamma,
+        ).proxy
+        try:
+            hook = rewardfeat.transition_feature_fn(
+                proxy, encodings.acrobot_potential_curr_succ()
+            )
+            report = rewardeval.true_reward_error_fn(
+                proxy, hook, num_samples=256, seed=42
+            )(_acrobot_potential_curr_succ_weights(gamma))
+            np.testing.assert_allclose(report["rmse"], 0.0, atol=1e-6)
+        finally:
+            proxy.close()
+
+    @pytest.mark.parametrize("gamma", [1.0, 0.99])
+    def test_gridworld_identity_over_sampled_transitions(self, gamma):
+        proxy = task.create_env(
+            "GridWorld-test",
+            {
+                "grid": ["soo", "ooo", "oog"],
+                "max_episode_steps": 100,
+                "reward_shaping": {
+                    "name": "gridworld-distance-pbrs",
+                    "args": {"scale": 1.0, "exponent": 2.0},
+                },
+                "reward_obs": {"name": "gridworld-distance-pbrs-potential", "args": {}},
+            },
+            gamma=gamma,
+        ).proxy
+        try:
+            hook = rewardfeat.transition_feature_fn(
+                proxy, encodings.gw_potential_curr_succ()
+            )
+            report = rewardeval.true_reward_error_fn(
+                proxy, hook, num_samples=256, seed=42
+            )(_gw_potential_curr_succ_weights(gamma))
+            np.testing.assert_allclose(report["rmse"], 0.0, atol=1e-6)
         finally:
             proxy.close()
 
@@ -459,7 +548,7 @@ class TestPolicyControlRewardErrorLogging:
 
     def _run_control(self, mapper_name, tmp_path, episodes):
         run_dir = os.path.join(str(tmp_path), mapper_name)
-        dead_ohe = controlexps.grid_dead_ohe_indices(CRAFTED_GRID)
+        dead_ohe = grids.grid_dead_ohe_indices(CRAFTED_GRID)
         attempt_arg = (
             {"attempt_estimation_episode": 10}
             if mapper_name == "least-lfa"
@@ -501,7 +590,7 @@ class TestPolicyControlRewardErrorLogging:
                                 },
                             },
                             "impute_value": 0,
-                            "estimation_buffer_mult": 25,
+                            "estimation_buffer_mult": constants.DEFAULT_ESTIMATION_BUFFER_MULT,
                         },
                     },
                     delay_config={
@@ -703,3 +792,34 @@ def weights_dim(ft_op: transform.FTOp) -> int:
     """Dimension of the estimator weights for a Box feature space."""
     box_space: gym.spaces.Box = ft_op.output_space.observation_space  # type: ignore[assignment]
     return math.prod(box_space.shape)
+
+
+def _mc_potential_curr_succ_weights(gamma: float) -> np.ndarray:
+    r"""Weight vector of the shaped MountainCar reward over the new encoding.
+
+    The row is $[\Phi(s), 1, \Phi(s')\mathbf{1}[\neg t]]$ and the reward is
+    $r'(s, a) = -1 + \gamma\Phi(s')\mathbf{1}[\neg t] - \Phi(s)$: the base
+    reward is $-1$ on every step including the terminal one.
+    """
+    return np.array([-1.0, -1.0, gamma])
+
+
+def _acrobot_potential_curr_succ_weights(gamma: float) -> np.ndarray:
+    r"""Weight vector of the shaped Acrobot reward over the new encoding.
+
+    The row is $[\Phi(s), \Phi(s')\mathbf{1}[\neg t], n]$ with $n$ the
+    nonterminal unit, and the reward is
+    $r'(s, a) = -n + \gamma\Phi(s')\mathbf{1}[\neg t] - \Phi(s)$: the base
+    reward is $-1$ on nonterminal steps and $0$ on the terminal one.
+    """
+    return np.array([-1.0, gamma, -1.0])
+
+
+def _gw_potential_curr_succ_weights(gamma: float = 1.0) -> np.ndarray:
+    r"""Weight vector of the shaped GridWorld reward over the new encoding.
+
+    The row is $[\Phi(s), \Phi(s')\mathbf{1}[\neg t], 1, \text{anomaly}]$ and
+    the reward is
+    $r'(s, a) = -1 - 99\,\text{anomaly} + \gamma\Phi(s')\mathbf{1}[\neg t] - \Phi(s)$.
+    """
+    return np.array([-1.0, gamma, -1.0, -99.0])

@@ -320,50 +320,67 @@ class TestGridWorldDistanceShaping:
         env.close()
 
 
-class TestAdditiveShapingWrapper:
-    def test_mountain_car_height_bonus(self):
-        env = gym.make("MountainCar-v0", max_episode_steps=200)
-        shaped = wrappers.MountainCarHeightBonus(env, scale=2.0)
-        shaped.reset(seed=0)
-        obs_next, rew, _, _, _ = shaped.step(0)
-        expected = -1.0 + 2.0 * np.sin(3.0 * obs_next[0])
-        assert rew == pytest.approx(expected, abs=1e-6)
-        shaped.close()
+class TestPotentialObsWrapper:
+    """The single appended entry of the thin potential observation."""
 
-    def test_scale_zero_gives_original(self):
-        env = gym.make("MountainCar-v0", max_episode_steps=200)
-        shaped = wrappers.MountainCarHeightBonus(env, scale=0.0)
-        shaped.reset(seed=0)
-        _, rew, _, _, _ = shaped.step(0)
-        assert rew == pytest.approx(-1.0)
-        shaped.close()
+    def _make_env(self, gamma: float) -> wrappers.PotentialObsWrapper:
+        shaped = wrappers.MountainCarHeightShaping(
+            gym.make("MountainCar-v0", max_episode_steps=200), gamma=gamma
+        )
+        return wrappers.PotentialObsWrapper(shaped)
 
-    def test_acrobot_tip_height_bonus(self):
-        env = gym.make("Acrobot-v1", max_episode_steps=500)
-        shaped = wrappers.AcrobotTipHeightBonus(env, scale=1.0)
-        shaped.reset(seed=0)
-        obs_next, rew, _, _, _ = shaped.step(0)
-        ct1, st1, ct2, st2 = obs_next[0], obs_next[1], obs_next[2], obs_next[3]
-        cos_sum = ct1 * ct2 - st1 * st2
-        expected = -1.0 + (-(ct1 + cos_sum))
-        assert rew == pytest.approx(expected, abs=1e-6)
-        shaped.close()
+    def test_appends_one_entry_equal_to_the_shaped_potential(self):
+        env = self._make_env(gamma=1.0)
+        observation, _ = env.reset(seed=0)
+        assert observation.shape == (3,)
+        assert env.observation_space.shape == (3,)
+        assert env.raw_dim == 2
+        np.testing.assert_allclose(observation[:2], env.unwrapped.state, atol=1e-6)
+        assert observation[2] == pytest.approx(
+            env.shaping.shaped_potential(np.asarray(observation[:2])), abs=1e-9
+        )
+        env.close()
 
+    def test_entry_tracks_the_potential_along_a_rollout(self):
+        env = self._make_env(gamma=0.99)
+        observation, _ = env.reset(seed=0)
+        rng = np.random.default_rng(0)
+        for _ in range(50):
+            action = int(rng.integers(0, 3))
+            observation, _, term, trunc, _ = env.step(action)
+            raw = np.asarray(observation[: env.raw_dim])
+            assert observation[env.raw_dim] == pytest.approx(
+                env.shaping.shaped_potential(raw), abs=1e-9
+            )
+            if term or trunc:
+                observation, _ = env.reset()
+        env.close()
 
-class TestActionCostShapingWrapper:
-    def test_per_action_cost(self):
-        env = gym.make("Acrobot-v1", max_episode_steps=500)
-        shaped = wrappers.ActionCostShapingWrapper(env, action_costs=[0.0, 0.5, 1.0])
-        shaped.reset(seed=0)
-        _, r0, _, _, _ = shaped.step(0)
-        shaped.reset(seed=0)
-        _, r1, _, _, _ = shaped.step(1)
-        shaped.reset(seed=0)
-        _, r2, _, _, _ = shaped.step(2)
-        assert r0 == pytest.approx(-1.0)
-        assert r1 == pytest.approx(-0.5)
-        assert r2 == pytest.approx(0.0)
-        shaped.close()
+    def test_gridworld_appends_one_entry(self):
+        shaped = wrappers.GridWorldDistanceShaping(_distance_env(), gamma=1.0)
+        env = wrappers.PotentialObsWrapper(shaped)
+        observation, _ = env.reset(seed=0)
+        assert observation.shape == (3,)
+        assert observation[2] == pytest.approx(
+            shaped.shaped_potential(np.asarray(observation[:2])), abs=1e-9
+        )
+        env.close()
+
+    def test_requires_a_shaping_wrapper_below(self):
+        base = gym.make("MountainCar-v0", max_episode_steps=10)
+        with pytest.raises(TypeError):
+            wrappers.PotentialObsWrapper(base)
+        base.close()
+
+    def test_observation_space_bounds_match_the_raw_space_plus_one_entry(self):
+        env = self._make_env(gamma=1.0)
+        assert env.observation_space.low.shape == (3,)
+        assert np.isinf(env.observation_space.low[2])
+        assert np.isinf(env.observation_space.high[2])
+        np.testing.assert_allclose(
+            env.observation_space.low[:2], env.shaping.observation_space.low
+        )
+        env.close()
 
 
 class TestWrapFunction:

@@ -15,8 +15,10 @@ MAPPERS_NAMES = {
     "zero-impute": "IMR",
     "least-lfa": "LEAST",
     "bayes-least-lfa": "BLADE-TD",
+    "blade-td-nig": "BLADE-TD[NIG]",
     # backwards compatibility
     "least-bayes-lfa": "BLADE-TD",
+    "nig-least-lfa": "BLADE-TD[NIG]",
     "cvlps": "L-TDD[CV]",
     "recurring-cvlps": "L-TDD[CV-R]",
     "discrete-least-lfa": "LEAST-D",
@@ -31,6 +33,7 @@ POLICY_TYPES = {
 
 ORDERED_METHODS = [
     "BLADE-TD",
+    "BLADE-TD[NIG]",
     "BLADE-TD[N-B]",
     "LEAST",
     "IMR",

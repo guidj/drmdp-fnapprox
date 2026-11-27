@@ -1,11 +1,13 @@
 """Tests for task.py — env creation, reward mapping, experiment generation."""
 
+from typing import Any
+
 import numpy as np
 import pytest
 
-from drmdp import core, envs, rewdelay, task, transform
+from drmdp import constants, core, envs, rewdelay, task, transform
 from drmdp.envs import wrappers
-from drmdp.workflows import controlexps
+from drmdp.workflows import grids
 from tests.drmdp.testhelpers import assert_training_snapshots
 
 
@@ -24,7 +26,7 @@ class TestCreateEnv:
     def test_creates_gridworld_with_correct_obs(self):
         result = task.create_env(
             "GridWorld-MINES",
-            {"grid": controlexps.MINES_GW_GRID, "max_episode_steps": 200},
+            {"grid": grids.MINES_GW_GRID, "max_episode_steps": 200},
         )
         obs, _ = result.env.reset()
         assert obs.shape == (2,)
@@ -32,46 +34,65 @@ class TestCreateEnv:
         result.env.close()
         result.proxy.close()
 
+    def test_noise_seed_reproduces_noise_draws(self):
+        args = {
+            "max_episode_steps": 100,
+            "reward_noise": {
+                "name": "relative-gaussian",
+                "args": {"std_multiplier": 1.0, "reference_std": 1.0},
+            },
+        }
+        first = _noisy_step_rewards(args, call_seed=17)
+        second = _noisy_step_rewards(args, call_seed=17)
+        assert first == second
+        assert any(reward != -1.0 for reward in first)
+
+    def test_specified_noise_seed_wins_over_the_call_seed(self):
+        args = {
+            "max_episode_steps": 100,
+            "reward_noise": {
+                "name": "relative-gaussian",
+                "args": {"std_multiplier": 1.0, "reference_std": 1.0, "seed": 5},
+            },
+        }
+        assert _noisy_step_rewards(args, call_seed=9) == _noisy_step_rewards(
+            args, call_seed=None
+        )
+
+    def test_noise_applies_to_the_env_only(self):
+        args = {
+            "max_episode_steps": 100,
+            "reward_noise": {
+                "name": "relative-gaussian",
+                "args": {"std_multiplier": 1.0, "reference_std": 1.0},
+            },
+        }
+        result = task.create_env("MountainCar-v0", args=args, seed=17)
+        _, _ = result.env.reset(seed=1)
+        noisy = []
+        for _ in range(30):
+            _, reward, term, trunc, _ = result.env.step(2)
+            noisy.append(float(reward))
+            if term or trunc:
+                break
+        _, _ = result.proxy.reset(seed=1)
+        clean = []
+        for _ in range(30):
+            _, reward, term, trunc, _ = result.proxy.step(2)
+            clean.append(float(reward))
+            if term or trunc:
+                break
+        result.env.close()
+        result.proxy.close()
+        assert any(reward != -1.0 for reward in noisy)
+        assert all(reward == -1.0 for reward in clean)
+
     def test_none_args_creates_functional_env(self):
         result = task.create_env("MountainCar-v0", None)
         obs, _ = result.env.reset(seed=0)
         assert obs.shape == (2,)
         _, rew, _, _, _ = result.env.step(0)
         assert rew == -1.0
-        result.env.close()
-        result.proxy.close()
-
-    def test_reward_shaping_mountain_car(self):
-        result = task.create_env(
-            "MountainCar-v0",
-            {
-                "max_episode_steps": 200,
-                "reward_shaping": {
-                    "name": "mountain-car-height",
-                    "args": {"scale": 1.0},
-                },
-            },
-        )
-        _obs, _ = result.env.reset(seed=0)
-        _, rew, _, _, _ = result.env.step(0)
-        assert rew != -1.0
-        result.env.close()
-        result.proxy.close()
-
-    def test_reward_shaping_action_cost(self):
-        result = task.create_env(
-            "Acrobot-v1",
-            {
-                "max_episode_steps": 500,
-                "reward_shaping": {
-                    "name": "action-cost",
-                    "args": {"action_costs": [0.0, 0.5, 1.0]},
-                },
-            },
-        )
-        _obs, _ = result.env.reset(seed=0)
-        _, rew1, _, _, _ = result.env.step(1)
-        assert rew1 == pytest.approx(-0.5)
         result.env.close()
         result.proxy.close()
 
@@ -108,7 +129,7 @@ class TestCreateEnv:
         result = task.create_env(
             "GridWorld-MINES",
             {
-                "grid": controlexps.MINES_GW_GRID,
+                "grid": grids.MINES_GW_GRID,
                 "max_episode_steps": 200,
                 "reward_shaping": {
                     "name": "gridworld-distance-pbrs",
@@ -126,15 +147,42 @@ class TestCreateEnv:
         result.env.close()
         result.proxy.close()
 
-    def test_additive_shaping_ignores_learner_discount(self):
+    def test_create_env_applies_reward_obs_wrapper(self):
         args = {
             "max_episode_steps": 200,
-            "reward_shaping": {"name": "mountain-car-height", "args": {"scale": 1.0}},
+            "reward_shaping": {"name": "mountain-car-height-pbrs", "args": {}},
+            "reward_obs": {"name": "mountain-car-height-pbrs-potential", "args": {}},
         }
         result = task.create_env("MountainCar-v0", args, gamma=0.99)
-        assert isinstance(result.env, wrappers.MountainCarHeightBonus)
+        for env in (result.env, result.proxy):
+            assert isinstance(env, wrappers.PotentialObsWrapper)
+            assert isinstance(env.env, wrappers.MountainCarHeightShaping)
+            assert env.shaping.gamma == pytest.approx(0.99)
+            observation, _ = env.reset(seed=0)
+            assert observation.shape == (3,)
         result.env.close()
         result.proxy.close()
+
+    def test_reward_obs_runs_before_reward_noise(self):
+        args = {
+            "max_episode_steps": 200,
+            "reward_shaping": {"name": "mountain-car-height-pbrs", "args": {}},
+            "reward_obs": {"name": "mountain-car-height-pbrs-potential", "args": {}},
+            "reward_noise": {
+                "name": "relative-gaussian",
+                "args": {"std_multiplier": 0.0, "reference_std": 1.0},
+            },
+        }
+        result = task.create_env("MountainCar-v0", args, gamma=1.0)
+        assert isinstance(result.env, wrappers.RewardRangeGaussianNoiseReward)
+        assert isinstance(result.env.env, wrappers.PotentialObsWrapper)
+        result.env.close()
+        result.proxy.close()
+
+    def test_unknown_reward_obs_is_rejected(self):
+        args = {"reward_obs": {"name": "no-such-coords", "args": {}}}
+        with pytest.raises(ValueError):
+            task.create_env("MountainCar-v0", args)
 
     def test_reward_noise_relative_gaussian(self):
         result = task.create_env(
@@ -244,6 +292,38 @@ class TestRewardMapper:
         result.close()
         proxy.close()
 
+    def test_rng_seed_reaches_the_estimator(self):
+        draws = []
+        for _ in range(2):
+            env, proxy = self._make_env()
+            result = task.reward_mapper(
+                env,
+                proxy_env=proxy,
+                mapping_spec={
+                    "name": "least-lfa",
+                    "args": {
+                        "attempt_estimation_episode": 10,
+                        "estimation_check": "none",
+                        "transition_feats_spec": {
+                            "name": "current-features",
+                            "args": {
+                                "current_spec": [
+                                    {
+                                        "name": "tile-observation-action-ft",
+                                        "args": {"tiling_dim": 2},
+                                    }
+                                ]
+                            },
+                        },
+                    },
+                },
+                rng_seed=7,
+            )
+            draws.append([result.rng.random() for _ in range(5)])
+            result.close()
+            proxy.close()
+        assert draws[0] == draws[1]
+
     def test_least_lfa_returns_imputed_before_estimation(self):
         env, proxy = self._make_env()
         env, _ = task.monitor_wrapper(env)
@@ -257,8 +337,8 @@ class TestRewardMapper:
                 "args": {
                     "attempt_estimation_episode": 10,
                     "impute_value": 0,
-                    "estimation_buffer_mult": 25,
-                    "check_factors": False,
+                    "estimation_buffer_mult": constants.DEFAULT_ESTIMATION_BUFFER_MULT,
+                    "estimation_check": "none",
                     "transition_feats_spec": {
                         "name": "current-features",
                         "args": {
@@ -293,7 +373,7 @@ class TestRewardMapper:
                 "args": {
                     "init_attempt_estimation_episode": 10,
                     "impute_value": 0,
-                    "estimation_buffer_mult": 25,
+                    "estimation_buffer_mult": constants.DEFAULT_ESTIMATION_BUFFER_MULT,
                     "transition_feats_spec": {
                         "name": "current-features",
                         "args": {
@@ -313,6 +393,74 @@ class TestRewardMapper:
         assert rew == 0.0
         assert result.get_wrapper_attr("mv_normal_rewards") is None
         result.close()
+        proxy.close()
+
+    @pytest.mark.parametrize("mapper_name", sorted(task.NIG_REWARD_MAPPERS))
+    def test_blade_td_nig_selects_the_nig_error_variance(self, mapper_name):
+        env, proxy = self._make_env()
+        env, _ = task.monitor_wrapper(env)
+        env = task.delay_wrapper(env, rewdelay.FixedDelay(delay=3))
+        result = task.reward_mapper(
+            env,
+            proxy_env=proxy,
+            mapping_spec={
+                "name": mapper_name,
+                "args": {
+                    "init_attempt_estimation_episode": 10,
+                    "estimation_buffer_mult": constants.DEFAULT_ESTIMATION_BUFFER_MULT,
+                    "transition_feats_spec": {
+                        "name": "current-features",
+                        "args": {
+                            "current_spec": [
+                                {
+                                    "name": "tile-observation-action-ft",
+                                    "args": {"tiling_dim": 2},
+                                }
+                            ]
+                        },
+                    },
+                },
+            },
+        )
+        assert isinstance(result, rewdelay.BayesLeastLfaGenerativeRewardWrapper)
+        assert result.get_wrapper_attr("error_variance") == (
+            rewdelay.ERROR_VARIANCE_NIG
+        )
+        result.close()
+        proxy.close()
+
+    def test_blade_td_nig_rejects_the_unit_error_variance(self):
+        # the name is the label aggregation separates the modes by, so it
+        # cannot be paired with the unit variance
+        env, proxy = self._make_env()
+        env = task.delay_wrapper(env, rewdelay.FixedDelay(delay=3))
+        with pytest.raises(ValueError, match="NIG error variance"):
+            task.reward_mapper(
+                env,
+                proxy_env=proxy,
+                mapping_spec={
+                    "name": "blade-td-nig",
+                    "args": {
+                        "init_attempt_estimation_episode": 10,
+                        "estimation_buffer_mult": (
+                            constants.DEFAULT_ESTIMATION_BUFFER_MULT
+                        ),
+                        "error_variance": rewdelay.ERROR_VARIANCE_UNIT,
+                        "transition_feats_spec": {
+                            "name": "current-features",
+                            "args": {
+                                "current_spec": [
+                                    {
+                                        "name": "tile-observation-action-ft",
+                                        "args": {"tiling_dim": 2},
+                                    }
+                                ]
+                            },
+                        },
+                    },
+                },
+            )
+        env.close()
         proxy.close()
 
     def test_unknown_mapper_raises(self):
@@ -340,6 +488,29 @@ class TestRewardDelayDistribution:
         assert isinstance(result, rewdelay.UniformDelay)
         for _ in range(20):
             assert 2 <= result.sample() <= 5
+
+    def test_seed_forwards_to_the_sampler(self):
+        first = task.reward_delay_distribution(
+            {"name": "uniform", "args": {"min_delay": 2, "max_delay": 5}}, seed=11
+        )
+        second = task.reward_delay_distribution(
+            {"name": "uniform", "args": {"min_delay": 2, "max_delay": 5}}, seed=11
+        )
+        assert [first.sample() for _ in range(20)] == [
+            second.sample() for _ in range(20)
+        ]
+
+    def test_specified_sampler_seed_wins_over_the_call_seed(self):
+        spec_seeded = task.reward_delay_distribution(
+            {"name": "uniform", "args": {"min_delay": 2, "max_delay": 5, "seed": 3}},
+            seed=11,
+        )
+        reference = task.reward_delay_distribution(
+            {"name": "uniform", "args": {"min_delay": 2, "max_delay": 5, "seed": 3}}
+        )
+        assert [spec_seeded.sample() for _ in range(20)] == [
+            reference.sample() for _ in range(20)
+        ]
 
     def test_clipped_poisson(self):
         result = task.reward_delay_distribution(
@@ -435,7 +606,7 @@ class TestGenerateExperimentInstances:
 
 
 class TestCreateAlgorithm:
-    def _make_algo(self, policy_type, delay_reward=None):
+    def _make_algo(self, policy_type, delay_reward=None, seed=None):
         env = envs.make("MountainCar-v0", max_episode_steps=200)
         mon_env, mon = task.monitor_wrapper(env)
         if delay_reward:
@@ -453,8 +624,17 @@ class TestCreateAlgorithm:
             epsilon=0.2,
             policy_type=policy_type,
             base_seed=0,
+            seed=seed,
         )
         return algo, mon_env, mon
+
+    def test_seed_reaches_the_policy(self):
+        first, env, _ = self._make_algo("markovian", seed=7)
+        second, _, _ = self._make_algo("markovian", seed=7)
+        assert [first.policy.rng.random() for _ in range(5)] == [
+            second.policy.rng.random() for _ in range(5)
+        ]
+        env.close()
 
     def test_markovian_trains_and_updates_weights(self):
         algo, env, mon = self._make_algo("markovian")
@@ -495,3 +675,18 @@ class TestCreateAlgorithm:
                 policy_type="nonexistent",
             )
         env.close()
+
+
+def _noisy_step_rewards(args: dict[str, Any], call_seed: int | None) -> list[float]:
+    """Rewards of one noisy MountainCar episode under a fixed action prefix."""
+    result = task.create_env("MountainCar-v0", args=args, seed=call_seed)
+    _, _ = result.env.reset(seed=1)
+    rewards = []
+    for _ in range(30):
+        _, reward, term, trunc, _ = result.env.step(2)
+        rewards.append(float(reward))
+        if term or trunc:
+            break
+    result.env.close()
+    result.proxy.close()
+    return rewards

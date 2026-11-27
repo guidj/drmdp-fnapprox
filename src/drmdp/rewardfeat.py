@@ -1,14 +1,20 @@
 """
-Reward features computed from a transition.
+Reward features for one transition.
 
-A `TransitionFeatureFn` maps one transition to the reward-feature vector
-the estimators fit. It replaces the estimator-side `FTOp` pipeline: the
-estimators see features, not transformed examples, so a feature may depend
-on the successor observation and on the termination flag.
+A `TransitionFeatureFn` maps a transition
+$(s, a, s', \\text{terminated}, \\text{truncated}, \\text{info})$ to the
+row the reward estimator regresses aggregate window sums against. Because
+the input is a transition, a row may depend on the successor observation
+and on the termination flag, which per-state feature maps cannot express.
 
-The vector is a concatenation of named blocks. A block either delegates its
-map to an `FTOp` specification declared in the hook args, or computes its
-entries from transition fields directly.
+Build a function from a specification with `transition_feature_fn(env,
+spec)`; estimator mappers receive it through the `transition_feats_spec`
+mapper argument, which `task.estimator_feats_fn` resolves. A row is a
+concatenation of named blocks: each block either delegates to an `FTOp`
+specification over the current or successor observation, or computes its
+entries from transition fields directly. The spec constructors
+(`current_features_spec`, `current_and_successor_features_spec`,
+`concatenated_features_spec`) build the block layouts.
 """
 
 import dataclasses
@@ -19,6 +25,7 @@ import gymnasium as gym
 import numpy as np
 
 from drmdp import transform
+from drmdp.envs import lunar_lander
 
 # rlplg's grid environments order actions LEFT, RIGHT, UP, DOWN
 # (`rlplg/environments/gridworld.py:31-34`) and move one cell in that
@@ -100,20 +107,35 @@ class FTOpFeatures:
 
 
 class CurrentAndSuccessorFeatures:
-    """
+    r"""
     A current block followed by a successor block.
+
+    With ``terminal_gate`` the successor block is multiplied by
+    $\mathbf{1}[\neg\text{terminated}]$: a potential-based reward pays no
+    successor term on the terminal step (`PotentialShapingWrapper.step` sets
+    the successor potential to zero when the episode ends), and a terminal
+    successor's potential need not vanish.
     """
 
-    def __init__(self, current: TransitionFeatureFn, successor: TransitionFeatureFn):
+    def __init__(
+        self,
+        current: TransitionFeatureFn,
+        successor: TransitionFeatureFn,
+        terminal_gate: bool = False,
+    ):
         self.current = current
         self.successor = successor
+        self.terminal_gate = terminal_gate
 
     @property
     def feature_dim(self) -> int:
         return self.current.feature_dim + self.successor.feature_dim
 
     def __call__(self, transition: Transition) -> np.ndarray:
-        return np.concatenate([self.current(transition), self.successor(transition)])
+        successor = self.successor(transition)
+        if self.terminal_gate and transition.terminated:
+            successor = np.zeros_like(successor)
+        return np.concatenate([self.current(transition), successor])
 
 
 class ActionTerminationFeatures:
@@ -154,6 +176,95 @@ class NonterminalActionFeatures:
         if not transition.terminated:
             features[transition.action] = 1.0
         return features
+
+
+class NonterminalConstantFeatures:
+    """
+    A unit on nonterminal steps, zero on the terminal one.
+
+    Represents a per-step base reward that stops at termination: with weight
+    $c$, the prediction pays $c$ on every nonterminal step and $0$ on the
+    terminal one. One column, shared by every action.
+    """
+
+    @property
+    def feature_dim(self) -> int:
+        return 1
+
+    def __call__(self, transition: Transition) -> np.ndarray:
+        return np.array([0.0 if transition.terminated else 1.0], dtype=np.float64)
+
+
+class LunarLanderRewardFeatures:
+    r"""Transition features linear in the LunarLander-v3 per-step reward.
+
+    The environment's reward is a difference of the potential $\Phi$ carried by
+    the reward basis, plus a per-action fuel cost, replaced outright on the
+    terminal step. The row is
+
+    $$x_t = \big((1-\tau_t)\psi(s_{t+1}),\ -(1-\tau_t)\psi(s_t),\
+    (1-\tau_t)\mathrm{OHE}(a_t),\ \ell_t,\ c_t\big),$$
+
+    with the potential blocks and the fuel columns gated by the nonterminal flag
+    because a terminal step discards both. The two terminal columns are
+    exclusive: ``crash`` is the terminal flag minus ``landing``, so the terminal
+    reward is a signed weight rather than a shared one.
+
+    ``landing`` is read from the ``awake`` bit that
+    `lunar_lander.LunarLanderAwakeInfoWrapper` publishes in the step info, so the
+    map is exactly linear on terminal transitions as well as nonterminal ones.
+    The bit is not a coordinate of the observation, so a transition from an
+    environment without the wrapper raises rather than guessing the branch.
+    """
+
+    def __init__(self, num_actions: int = lunar_lander.ACTION_COUNT) -> None:
+        if num_actions < 1:
+            raise ValueError(f"num_actions must be positive. Got: {num_actions}")
+        self.num_actions = num_actions
+
+    @property
+    def feature_dim(self) -> int:
+        return 2 * lunar_lander.REWARD_BLOCK_SIZE + self.num_actions + 2
+
+    def __call__(self, transition: Transition) -> np.ndarray:
+        gate = 0.0 if transition.terminated else 1.0
+        successor_basis = lunar_lander.reward_basis(
+            _raw_observation(transition.next_observation)
+        )
+        current_basis = lunar_lander.reward_basis(
+            _raw_observation(transition.observation)
+        )
+        features = np.zeros(self.feature_dim, dtype=np.float64)
+        basis_size = lunar_lander.REWARD_BLOCK_SIZE
+        features[0:basis_size] = gate * successor_basis
+        features[basis_size : 2 * basis_size] = -gate * current_basis
+        if not transition.terminated:
+            if not 0 <= transition.action < self.num_actions:
+                raise ValueError(
+                    f"action {transition.action} is outside the {self.num_actions} "
+                    "action encoding"
+                )
+            features[2 * basis_size + transition.action] = 1.0
+        landing = transition.terminated and _is_landing(transition)
+        features[-2] = 1.0 if landing else 0.0
+        features[-1] = 1.0 if (transition.terminated and not landing) else 0.0
+        return features
+
+
+class ConcatenatedFeatures:
+    """
+    The concatenation of transition-feature blocks.
+    """
+
+    def __init__(self, blocks: tuple[TransitionFeatureFn, ...]):
+        self.blocks = blocks
+
+    @property
+    def feature_dim(self) -> int:
+        return sum(block.feature_dim for block in self.blocks)
+
+    def __call__(self, transition: Transition) -> np.ndarray:
+        return np.concatenate([block(transition) for block in self.blocks])
 
 
 class ConstantAndSuccessorBasisFeatures:
@@ -200,6 +311,37 @@ class ConstantAndEventFeatures:
         features[0] = 1.0
         features[1] = 1.0 if transition.info[self.event_key] else 0.0
         return features
+
+
+class RawObservationFeatures:
+    """Delegates to a feature function over the raw observation prefix.
+
+    An observation wrapper may append coordinates to the raw observation.
+    Feature functions that describe the raw environment read only the first
+    ``raw_dim`` entries of the observation and of its successor; the appended
+    block follows the raw dimensions.
+    """
+
+    def __init__(self, feats_fn: TransitionFeatureFn, raw_dim: int):
+        if raw_dim < 1:
+            raise ValueError(f"raw_dim must be positive. Got: {raw_dim}")
+        self.feats_fn = feats_fn
+        self.raw_dim = int(raw_dim)
+
+    @property
+    def feature_dim(self) -> int:
+        return self.feats_fn.feature_dim
+
+    def __call__(self, transition: Transition) -> np.ndarray:
+        return self.feats_fn(
+            dataclasses.replace(
+                transition,
+                observation=np.asarray(transition.observation)[: self.raw_dim],
+                next_observation=np.asarray(transition.next_observation)[
+                    : self.raw_dim
+                ],
+            )
+        )
 
 
 class StateBinsActionFeatures:
@@ -372,17 +514,32 @@ def current_features_spec(
 def current_and_successor_features_spec(
     current_spec: Sequence[Mapping[str, Any]],
     successor_spec: Sequence[Mapping[str, Any]],
+    terminal_gate: bool = False,
 ) -> Mapping[str, Any]:
     """
     Specification for a current block followed by a successor block.
+
+    With ``terminal_gate`` the successor block is zeroed on terminated
+    transitions, the gate a potential-based reward applies to its successor
+    term.
     """
     return {
         "name": "current-and-successor-features",
         "args": {
             "current_spec": list(current_spec),
             "successor_spec": list(successor_spec),
+            "terminal_gate": terminal_gate,
         },
     }
+
+
+def concatenated_features_spec(
+    blocks: Sequence[Mapping[str, Any]],
+) -> Mapping[str, Any]:
+    """
+    Specification for the concatenation of named transition-feature blocks.
+    """
+    return {"name": "concatenated-features", "args": {"blocks": list(blocks)}}
 
 
 def _current_features(
@@ -395,6 +552,7 @@ def _current_and_successor_features(
     env: gym.Env,
     current_spec: Sequence[Mapping[str, Any]],
     successor_spec: Sequence[Mapping[str, Any]],
+    terminal_gate: bool = False,
 ) -> TransitionFeatureFn:
     for spec in successor_spec:
         if (spec.get("args") or {}).get("hash_dim"):
@@ -412,7 +570,25 @@ def _current_and_successor_features(
     return CurrentAndSuccessorFeatures(
         current=_current_features(env, current_spec),
         successor=FTOpFeatures(pipe, successor=True),
+        terminal_gate=terminal_gate,
     )
+
+
+def _concatenated_features(
+    env: gym.Env,
+    blocks: Sequence[Mapping[str, Any]],
+) -> TransitionFeatureFn:
+    """Concatenation of named transition-feature blocks."""
+    if not blocks:
+        raise ValueError("concatenated-features requires at least one block")
+    return ConcatenatedFeatures(
+        tuple(transition_feature_fn(env, block) for block in blocks)
+    )
+
+
+def _nonterminal_constant_features(env: gym.Env) -> TransitionFeatureFn:
+    del env
+    return NonterminalConstantFeatures()
 
 
 def _action_and_termination_features(
@@ -435,6 +611,18 @@ def _num_actions(env: gym.Env) -> int:
     return int(env.action_space.n)
 
 
+def _lunar_lander_reward_features(env: gym.Env) -> TransitionFeatureFn:
+    """Validates the observation layout the encoding reads."""
+    space = _box_observation_space(env)
+    if space.shape != (lunar_lander.OBSERVATION_SIZE,):
+        raise ValueError(
+            f"LunarLander reward features require a "
+            f"{(lunar_lander.OBSERVATION_SIZE,)} observation space, got {space.shape}; "
+            "apply the reward-observation wrapper"
+        )
+    return LunarLanderRewardFeatures(_num_actions(env))
+
+
 def _constant_and_successor_basis_features(
     env: gym.Env, basis_spec: Mapping[str, Any]
 ) -> TransitionFeatureFn:
@@ -450,44 +638,56 @@ def _constant_and_event_features(env: gym.Env, event_key: str) -> TransitionFeat
 
 
 def _state_bins_action_features(
-    env: gym.Env, bins: Sequence[int]
+    env: gym.Env, bins: Sequence[int], raw_dim: int | None = None
 ) -> TransitionFeatureFn:
     """Joint-cell partition of the observation box, one action block each."""
     space = _box_observation_space(env)
-    return StateBinsActionFeatures(
+    low = space.low if raw_dim is None else space.low[:raw_dim]
+    high = space.high if raw_dim is None else space.high[:raw_dim]
+    features = StateBinsActionFeatures(
         bins=bins,
-        low=space.low,
-        high=space.high,
+        low=low,
+        high=high,
         num_actions=_num_actions(env),
     )
+    return features if raw_dim is None else RawObservationFeatures(features, raw_dim)
 
 
 def _gridworld_nominal_transition_anomaly_features(
     env: gym.Env,
     low: Sequence[int] | None = None,
     high: Sequence[int] | None = None,
+    raw_dim: int | None = None,
 ) -> TransitionFeatureFn:
     """Uses reachable GridWorld bounds unless coordinates are overridden."""
-    low_bound, high_bound = _gridworld_bounds(env, low, high)
-    return GridWorldNominalTransitionAnomalyFeatures(low_bound, high_bound)
+    low_bound, high_bound = _gridworld_bounds(env, low, high, raw_dim=raw_dim)
+    features = GridWorldNominalTransitionAnomalyFeatures(low_bound, high_bound)
+    return features if raw_dim is None else RawObservationFeatures(features, raw_dim)
 
 
 def _gridworld_nominal_next_cell_features(
     env: gym.Env,
     low: Sequence[int] | None = None,
     high: Sequence[int] | None = None,
+    raw_dim: int | None = None,
 ) -> TransitionFeatureFn:
     """Uses reachable GridWorld bounds unless coordinates are overridden."""
-    low_bound, high_bound = _gridworld_bounds(env, low, high)
-    return GridWorldNominalNextCellFeatures(low_bound, high_bound)
+    low_bound, high_bound = _gridworld_bounds(env, low, high, raw_dim=raw_dim)
+    features = GridWorldNominalNextCellFeatures(low_bound, high_bound)
+    return features if raw_dim is None else RawObservationFeatures(features, raw_dim)
 
 
 def _gridworld_bounds(
     env: gym.Env,
     low: Sequence[int] | None,
     high: Sequence[int] | None,
+    raw_dim: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     space = _integer_box_observation_space(env)
+    if raw_dim is not None:
+        space = gym.spaces.Box(
+            low=space.low[:raw_dim], high=space.high[:raw_dim], dtype=np.int64
+        )
     if space.shape != (2,):
         raise ValueError(f"GridWorld moves are 2-dimensional: shape={space.shape}")
     if _num_actions(env) != len(GRIDWORLD_MOVES):
@@ -584,9 +784,45 @@ def _basis(
     )
 
 
+def _raw_observation(observation: Any) -> np.ndarray:
+    """The raw state the reward basis is computed from.
+
+    A reward-observation wrapper prefixes the basis block to the raw
+    observation; without one the observation is already raw.
+    """
+    state = np.asarray(observation, dtype=np.float64)
+    if state.shape == (lunar_lander.OBSERVATION_SIZE,):
+        return state[lunar_lander.RAW_OBSERVATION_OFFSET :]
+    if state.shape == (lunar_lander.RAW_OBSERVATION_SIZE,):
+        return state
+    raise ValueError(
+        "expected a LunarLander observation of shape "
+        f"{(lunar_lander.OBSERVATION_SIZE,)} or "
+        f"{(lunar_lander.RAW_OBSERVATION_SIZE,)}, got {state.shape}"
+    )
+
+
+def _is_landing(transition: Transition) -> bool:
+    r"""Whether a terminal transition ended on the environment's sleep branch.
+
+    The environment pays $+100$ exactly when the lander is asleep and $-100$
+    otherwise, and that bit is not a coordinate of the observation, so the label
+    is read from the step info.
+    """
+    key = lunar_lander.AWAKE_INFO_KEY
+    if key not in transition.info:
+        raise KeyError(
+            f"info has no {key!r} entry; the terminal label requires "
+            "lunar_lander.LunarLanderAwakeInfoWrapper"
+        )
+    return not bool(transition.info[key])
+
+
 _BUILDERS: dict[str, Callable[..., TransitionFeatureFn]] = {
     "current-features": _current_features,
     "current-and-successor-features": _current_and_successor_features,
+    "concatenated-features": _concatenated_features,
+    "nonterminal-constant-features": _nonterminal_constant_features,
     "action-and-termination-features": _action_and_termination_features,
     "nonterminal-action-features": _nonterminal_action_features,
     "constant-and-successor-basis-features": _constant_and_successor_basis_features,
@@ -596,4 +832,5 @@ _BUILDERS: dict[str, Callable[..., TransitionFeatureFn]] = {
         _gridworld_nominal_transition_anomaly_features
     ),
     "gridworld-nominal-next-cell-features": _gridworld_nominal_next_cell_features,
+    "lunar-lander-reward-features": _lunar_lander_reward_features,
 }

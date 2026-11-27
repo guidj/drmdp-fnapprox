@@ -27,6 +27,39 @@ class OptState(str, Enum):
     SOLVED = "solved"
 
 
+ESTIMATION_CHECK_NONE = "none"
+ESTIMATION_CHECK_FACTORS = "factors"
+ESTIMATION_CHECK_FULL_RANK = "full-rank"
+_VALID_ESTIMATION_CHECKS = frozenset(
+    {ESTIMATION_CHECK_NONE, ESTIMATION_CHECK_FACTORS, ESTIMATION_CHECK_FULL_RANK}
+)
+
+
+def resolve_estimation_check(estimation_check: str = ESTIMATION_CHECK_NONE) -> str:
+    """Validate and return an estimation check mode."""
+    if estimation_check not in _VALID_ESTIMATION_CHECKS:
+        raise ValueError(
+            f"unknown estimation_check {estimation_check!r}; "
+            f"expected one of {sorted(_VALID_ESTIMATION_CHECKS)}"
+        )
+    return estimation_check
+
+
+ERROR_VARIANCE_UNIT = "unit"
+ERROR_VARIANCE_NIG = "nig"
+_VALID_ERROR_VARIANCES = frozenset({ERROR_VARIANCE_UNIT, ERROR_VARIANCE_NIG})
+
+
+def resolve_error_variance(error_variance: str = ERROR_VARIANCE_UNIT) -> str:
+    """Validate and return an error-variance model."""
+    if error_variance not in _VALID_ERROR_VARIANCES:
+        raise ValueError(
+            f"unknown error_variance {error_variance!r}; "
+            f"expected one of {sorted(_VALID_ERROR_VARIANCES)}"
+        )
+    return error_variance
+
+
 class RewardDelay(abc.ABC):
     """
     Abstract class for delayed reward config.
@@ -48,7 +81,10 @@ class FixedDelay(RewardDelay):
     Fixed window delays.
     """
 
-    def __init__(self, delay: int):
+    def __init__(self, delay: int, seed: int | None = None):
+        # A fixed delay consumes no random draws; the seed is accepted so
+        # every sampler honours the same construction contract.
+        del seed
         super().__init__()
         self.delay = delay
 
@@ -69,13 +105,16 @@ class UniformDelay(RewardDelay):
     from a range of values.
     """
 
-    def __init__(self, min_delay: int, max_delay: int):
+    def __init__(self, min_delay: int, max_delay: int, seed: int | None = None):
         super().__init__()
         self.min_delay = min_delay
         self.max_delay = max_delay
+        # Instance-local generator: seeded runs reproduce their delay
+        # sequence, and no other component's draws can shift it.
+        self._rng = random.Random(seed)
 
     def sample(self):
-        return random.randint(self.min_delay, self.max_delay)
+        return self._rng.randint(self.min_delay, self.max_delay)
 
     def range(self) -> tuple[int, int]:
         return self.min_delay, self.max_delay
@@ -91,7 +130,11 @@ class ClippedPoissonDelay(RewardDelay):
     """
 
     def __init__(
-        self, lam: int, min_delay: int | None = None, max_delay: int | None = None
+        self,
+        lam: int,
+        min_delay: int | None = None,
+        max_delay: int | None = None,
+        seed: int | None = None,
     ):
         """
         Calculate upper and lower bounds if not provided.
@@ -101,7 +144,7 @@ class ClippedPoissonDelay(RewardDelay):
         self.lam = lam
         self.min_delay = min_delay or lower
         self.max_delay = max_delay or upper
-        self.rng = np.random.default_rng()
+        self.rng = np.random.default_rng(seed)
 
     def sample(self):
         return np.clip(self.rng.poisson(self.lam), self.min_delay, self.max_delay)
@@ -131,11 +174,16 @@ class DataBuffer:
         max_capacity: int | None = None,
         max_size_bytes: int | None = None,
         acc_mode: str = ACC_LATEST,
+        feature_dim: int | None = None,
     ):
         self.max_capacity = max_capacity
         self.max_size_bytes = max_size_bytes
         self.acc_mode = acc_mode
         self.buffer: list[Any] = []
+        self.feature_dim = feature_dim
+        self._col_nnz: np.ndarray | None = (
+            np.zeros(feature_dim, dtype=np.int32) if feature_dim else None
+        )
 
     def add(self, element: Any):
         if self.max_capacity and self.max_size_bytes:
@@ -144,13 +192,13 @@ class DataBuffer:
             if list_size(self.buffer + [element]) >= self.max_size_bytes:
                 if self.acc_mode == self.ACC_LATEST:
                     while list_size(self.buffer + [element]) >= self.max_size_bytes:
-                        self._pop_earliest()
+                        self._evict_one()
                 else:
                     safe_byte_limit = False
 
             if self.size() >= self.max_capacity:
                 if self.acc_mode == self.ACC_LATEST:
-                    self._pop_earliest()
+                    self._evict_one()
                 else:
                     safe_size_limit = False
 
@@ -161,7 +209,7 @@ class DataBuffer:
             if list_size(self.buffer + [element]) >= self.max_size_bytes:
                 if self.acc_mode == self.ACC_LATEST:
                     while list_size(self.buffer + [element]) >= self.max_size_bytes:
-                        self._pop_earliest()
+                        self._evict_one()
                     self._append(element)
                 # else acc_mode == ACC_FIRST - do not add
             else:
@@ -170,7 +218,7 @@ class DataBuffer:
         elif self.max_capacity:
             if self.size() >= self.max_capacity:
                 if self.acc_mode == self.ACC_LATEST:
-                    self._pop_earliest()
+                    self._evict_one()
                     self._append(element)
                 # else mode == ACC_FIRST - do not add
             else:
@@ -182,6 +230,8 @@ class DataBuffer:
 
     def clear(self):
         self.buffer = []
+        if self._col_nnz is not None:
+            self._col_nnz[:] = 0
 
     def size(self):
         return len(self.buffer)
@@ -189,11 +239,45 @@ class DataBuffer:
     def size_bytes(self):
         return list_size(self.buffer)
 
+    def _is_evictable(self, idx: int) -> bool:
+        if self._col_nnz is None:
+            return True
+        features = np.asarray(self.buffer[idx][0])
+        nonzero_cols = np.nonzero(features)[0]
+        return bool(np.all(self._col_nnz[nonzero_cols] > 1))
+
+    def _evict_one(self):
+        if self._col_nnz is None:
+            self._pop_at(0)
+            return
+        for idx in range(len(self.buffer)):
+            if self._is_evictable(idx):
+                self._pop_at(idx)
+                return
+        self._pop_at(0)
+
+    def _pop_at(self, idx: int):
+        element = self.buffer.pop(idx)
+        if self._col_nnz is not None:
+            features = np.asarray(element[0])
+            self._col_nnz[np.nonzero(features)[0]] -= 1
+
+    def _rebuild_col_nnz(self):
+        if self._col_nnz is None:
+            return
+        self._col_nnz[:] = 0
+        for element in self.buffer:
+            features = np.asarray(element[0])
+            self._col_nnz[np.nonzero(features)[0]] += 1
+
     def _pop_earliest(self):
-        self.buffer.pop(0)
+        self._pop_at(0)
 
     def _append(self, element: Any):
         self.buffer.append(element)
+        if self._col_nnz is not None:
+            features = np.asarray(element[0])
+            self._col_nnz[np.nonzero(features)[0]] += 1
 
 
 class WindowedTaskSchedule:
@@ -417,6 +501,7 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
         impute_value: float = 0.0,
         estimation_buffer_mult: int | None = None,
         reward_error_fn: Callable[[np.ndarray], Mapping[str, Any]] | None = None,
+        rng_seed: int | None = None,
     ):
         super().__init__(env)
         self._validate_action_space()
@@ -438,11 +523,12 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
         self.estimation_meta: dict[str, Any] = {}
         self._latest_obs = None
         self._segment_features = None
-        self.rng = np.random.default_rng()
+        self.rng = np.random.default_rng(rng_seed)
         self.est_buffer = DataBuffer(
             max_capacity=self.mdim * estimation_buffer_mult
             if estimation_buffer_mult
-            else None
+            else None,
+            feature_dim=self.mdim,
         )
 
     def _validate_action_space(self):
@@ -551,22 +637,51 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
             }
         )
 
-    def _record_deferred_attempt(self, matrix: np.ndarray) -> None:
-        """
-        Records a scheduled attempt the gate deferred.
+    def _check_estimation_gate(
+        self, matrix: np.ndarray, estimation_check: str
+    ) -> tuple[bool, dict[str, Any]]:
+        """Apply the estimation gate to the design matrix.
 
-        The record exposes why the attempt did not solve: the buffer
-        size and the nonzero-column count against the design width.
+        Returns (passed, diagnostics).  The diagnostics dict always
+        contains ``buffer_rows``, ``matrix_columns``, ``nonzero_columns``,
+        and ``estimation_check``.  ``numerical_rank`` is present only
+        when ``estimation_check`` is ``"full-rank"``.
         """
-        self.estimation_meta.setdefault("deferred_attempts", []).append(
-            {
-                "episode": self.episodes,
-                "steps": self.steps,
-                "buffer_rows": int(matrix.shape[0]),
-                "nonzero_columns": optsol.matrix_factors_rank(matrix),
-                "matrix_columns": int(matrix.shape[1]),
-            }
-        )
+        ncols = int(matrix.shape[1])
+        nonzero = optsol.matrix_factors_rank(matrix)
+        diagnostics: dict[str, Any] = {
+            "estimation_check": estimation_check,
+            "buffer_rows": int(matrix.shape[0]),
+            "matrix_columns": ncols,
+            "nonzero_columns": nonzero,
+        }
+        if estimation_check == ESTIMATION_CHECK_FACTORS:
+            return nonzero >= ncols, diagnostics
+        if estimation_check == ESTIMATION_CHECK_FULL_RANK:
+            numerical_rank = optsol.matrix_numerical_rank(matrix)
+            diagnostics["numerical_rank"] = numerical_rank
+            return numerical_rank >= ncols, diagnostics
+        return True, diagnostics
+
+    def _record_deferred_attempt(
+        self, matrix: np.ndarray, diagnostics: dict[str, Any] | None = None
+    ) -> None:
+        """Records a scheduled attempt the gate deferred."""
+        record: dict[str, Any] = {
+            "episode": self.episodes,
+            "steps": self.steps,
+        }
+        if diagnostics is not None:
+            record.update(diagnostics)
+        else:
+            record.update(
+                {
+                    "buffer_rows": int(matrix.shape[0]),
+                    "nonzero_columns": optsol.matrix_factors_rank(matrix),
+                    "matrix_columns": int(matrix.shape[1]),
+                }
+            )
+        self.estimation_meta.setdefault("deferred_attempts", []).append(record)
 
     def _on_terminal_state(self, transition: rewardfeat.Transition):
         """
@@ -605,13 +720,16 @@ class BaseGenerativeRewardWrapper(gym.Wrapper, SupportsName, abc.ABC):
             self.get_env_name(),
             err,
         )
-        # Drop latest 5% of samples
         nexamples_dropped, (matrix, rewards) = drop_samples(
-            frac=0.05, arrays=[matrix, rewards], rng=self.rng
+            frac=0.05,
+            arrays=[matrix, rewards],
+            rng=self.rng,
+            col_nnz=self.est_buffer._col_nnz,
         )
         obs_buffer = matrix.tolist()
         rew_buffer = rewards.tolist()
         self.est_buffer.buffer = list(zip(obs_buffer, rew_buffer))
+        self.est_buffer._rebuild_col_nnz()
         logger.debug(
             "%s - Dropped %d samples",
             self.get_name(),
@@ -764,9 +882,10 @@ class LeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         attempt_estimation_episode: int,
         estimation_buffer_mult: int | None = None,
         impute_value: float = 0.0,
-        check_factors: bool = False,
+        estimation_check: str = ESTIMATION_CHECK_NONE,
         reward_error_fn: Callable[[np.ndarray], Mapping[str, Any]] | None = None,
         intercept: bool = False,
+        rng_seed: int | None = None,
     ):
         super().__init__(
             env=env,
@@ -775,13 +894,14 @@ class LeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
             impute_value=impute_value,
             estimation_buffer_mult=estimation_buffer_mult,
             reward_error_fn=reward_error_fn,
+            rng_seed=rng_seed,
         )
         self.attempt_estimation_episode = attempt_estimation_episode
-        self.check_factors = check_factors
+        self.estimation_check = resolve_estimation_check(estimation_check)
         self.weights = None
-        self.estimation_meta = {
+        self.estimation_meta: dict[str, Any] = {
             "intercept": intercept,
-            "check_factors": check_factors,
+            "estimation_check": self.estimation_check,
             "snapshots": [],
             "reward_errors": [],
             "deferred_attempts": [],
@@ -805,20 +925,16 @@ class LeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         )
 
     def estimate_rewards(self):
-        """
-        Estimate rewards with Least Squares.
-        """
         matrix, rewards, nexamples = self._extract_buffer_data()
-
-        # Check matrix rank if requested
-        if self.check_factors:
-            rank = optsol.matrix_factors_rank(matrix)
-            if rank < matrix.shape[1]:
-                self._record_deferred_attempt(matrix)
-                return
-
-        # Add the intercept column if needed
         matrix = self._add_intercept_to_matrix(matrix, nexamples)
+
+        if self.estimation_check != ESTIMATION_CHECK_NONE:
+            passed, diagnostics = self._check_estimation_gate(
+                matrix, self.estimation_check
+            )
+            if not passed:
+                self._record_deferred_attempt(matrix, diagnostics)
+                return
 
         try:
             weights = optsol.solve_least_squares(matrix=matrix, rhs=rewards)
@@ -868,10 +984,12 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         schedule_rho: float = WindowedTaskSchedule.DEFAULT_RHO,
         estimation_buffer_mult: int | None = None,
         impute_value: float = 0.0,
-        check_factors: bool = False,
+        estimation_check: str = ESTIMATION_CHECK_NONE,
         sample_weights: bool = False,
         reward_error_fn: Callable[[np.ndarray], Mapping[str, Any]] | None = None,
         intercept: bool = False,
+        rng_seed: int | None = None,
+        error_variance: str = ERROR_VARIANCE_UNIT,
     ):
         super().__init__(
             env=env,
@@ -880,10 +998,12 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
             impute_value=impute_value,
             estimation_buffer_mult=estimation_buffer_mult,
             reward_error_fn=reward_error_fn,
+            rng_seed=rng_seed,
         )
         self.mode = mode
         self.init_attempt_estimation_episode = init_attempt_estimation_episode
-        self.check_factors = check_factors
+        self.estimation_check = resolve_estimation_check(estimation_check)
+        self.error_variance = resolve_error_variance(error_variance)
         self.sample_weights = sample_weights
         self.windowed_task_schedule = WindowedTaskSchedule(
             mode=mode,
@@ -892,12 +1012,13 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         )
         self.update_episode = init_attempt_estimation_episode
         self.posterior_updates = 0
-        self.mv_normal_rewards: optsol.MultivariateNormal | None = None
+        self.mv_normal_rewards: optsol.WeightPosterior | None = None
         self._sampled_weights: np.ndarray | None = None
-        self._sampled_posterior: optsol.MultivariateNormal | None = None
+        self._sampled_posterior: optsol.WeightPosterior | None = None
         self.estimation_meta: dict[str, Any] = {
             "intercept": intercept,
-            "check_factors": check_factors,
+            "estimation_check": self.estimation_check,
+            "error_variance": self.error_variance,
             "snapshots": [],
             "reward_errors": [],
             "deferred_attempts": [],
@@ -949,50 +1070,64 @@ class BayesLeastLfaGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         self.windowed_task_schedule.set_state(succ=success)
 
     def _get_estimator_info(self) -> dict[str, Any]:
-        return {
+        info: dict[str, Any] = {
             "posterior_updates": self.posterior_updates,
             "sample_weights": self.sample_weights,
+            "error_variance": self.error_variance,
         }
+        info.update(self._posterior_scale_fields())
+        return info
+
+    def _solve_initial_posterior(
+        self, matrix: np.ndarray, rewards: np.ndarray
+    ) -> optsol.WeightPosterior | None:
+        """Fits the first posterior under the configured error-variance model."""
+        if self.error_variance == ERROR_VARIANCE_NIG:
+            return optsol.NormalInverseGamma.least_squares(matrix=matrix, rhs=rewards)
+        return optsol.MultivariateNormal.least_squares(matrix=matrix, rhs=rewards)
+
+    def _posterior_scale_fields(self) -> dict[str, Any]:
+        """Snapshot fields for an estimated error variance, empty when fixed."""
+        posterior = self.mv_normal_rewards
+        if isinstance(posterior, optsol.NormalInverseGamma):
+            return {"sigma2_hat": posterior.ig.variance}
+        return {}
 
     def estimate_rewards(self) -> bool:
-        """
-        Estimate rewards or update posterior estimate
-        of Least Squares.
-        """
         matrix, rewards, nexamples = self._extract_buffer_data()
-
-        # Check matrix rank if requested
-        if self.check_factors:
-            rank = optsol.matrix_factors_rank(matrix)
-            if rank < matrix.shape[1]:
-                self._record_deferred_attempt(matrix)
-                return False
-
-        # Add the intercept column if needed
         matrix = self._add_intercept_to_matrix(matrix, nexamples)
+
+        if self.estimation_check != ESTIMATION_CHECK_NONE:
+            passed, diagnostics = self._check_estimation_gate(
+                matrix, self.estimation_check
+            )
+            if not passed:
+                self._record_deferred_attempt(matrix, diagnostics)
+                return False
 
         try:
             if self.mv_normal_rewards is None:
-                # Frequentist prior
-                mv_normal = optsol.MultivariateNormal.least_squares(
-                    matrix=matrix, rhs=rewards
-                )
+                posterior = self._solve_initial_posterior(matrix, rewards)
             else:
-                mv_normal = optsol.MultivariateNormal.bayes_linear_regression(
-                    matrix=matrix, rhs=rewards, prior=self.mv_normal_rewards
-                )
-                self.posterior_updates += 1 if mv_normal is not None else 0
+                posterior = self.mv_normal_rewards.update(matrix, rewards)
+                self.posterior_updates += 1 if posterior is not None else 0
         except ValueError as err:
             self._handle_estimation_failure(err, matrix, rewards)
             return False
         else:
-            if mv_normal is not None:
-                weights = mv_normal.mean
+            if posterior is not None:
+                weights = posterior.mean
                 error = self._calculate_rmse(matrix, weights, rewards)
-                self.mv_normal_rewards = mv_normal
-                snapshot = self._create_snapshot(nexamples, matrix, weights, error)
+                self.mv_normal_rewards = posterior
+                snapshot = self._create_snapshot(
+                    nexamples,
+                    matrix,
+                    weights,
+                    error,
+                    **self._posterior_scale_fields(),
+                )
                 self.estimation_meta["snapshots"].append(snapshot)
-                self._record_reward_error(mv_normal.mean)
+                self._record_reward_error(posterior.mean)
 
                 logger.info(
                     "%s - %s rewards for %s. RMSE: %f; No. Samples: %d",
@@ -1035,6 +1170,7 @@ class ConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         constraints_buffer_limit: int | None = None,
         terminal_constraint_fn: rewardfeat.TransitionFeatureFn | None = None,
         intercept: bool = False,
+        rng_seed: int | None = None,
     ):
         super().__init__(
             env=env,
@@ -1042,6 +1178,7 @@ class ConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
             intercept=intercept,
             impute_value=impute_value,
             estimation_buffer_mult=estimation_buffer_mult,
+            rng_seed=rng_seed,
         )
         self.attempt_estimation_episode = attempt_estimation_episode
         self.constraints_buffer_limit = constraints_buffer_limit
@@ -1158,6 +1295,7 @@ class RecurringConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
         constraints_buffer_limit: int | None = None,
         terminal_constraint_fn: rewardfeat.TransitionFeatureFn | None = None,
         intercept: bool = False,
+        rng_seed: int | None = None,
     ):
         super().__init__(
             env=env,
@@ -1165,6 +1303,7 @@ class RecurringConvexSolverGenerativeRewardWrapper(BaseGenerativeRewardWrapper):
             intercept=intercept,
             impute_value=impute_value,
             estimation_buffer_mult=estimation_buffer_mult,
+            rng_seed=rng_seed,
         )
         self.mode = mode
         self.init_attempt_estimation_episode = init_attempt_estimation_episode
@@ -1295,19 +1434,43 @@ def list_size(xs: list[Any]) -> int:
 
 
 def drop_samples(
-    frac: float, arrays: Sequence[np.ndarray], rng: np.random.Generator
+    frac: float,
+    arrays: Sequence[np.ndarray],
+    rng: np.random.Generator,
+    col_nnz: np.ndarray | None = None,
 ) -> tuple[int, Sequence[np.ndarray]]:
     """
     Drops a fraction of examples of every arrays.
     Arrays are assumed to be of equal length in their
     most outer dimension.
+
+    When ``col_nnz`` is provided (per-column non-zero counts for
+    the first array treated as a feature matrix), only rows whose
+    columns all have count > 1 are eligible for dropping.
     """
     first = next(iter(arrays))
     nexamples = len(first)
     nexamples_to_drop = int(nexamples * frac)
+    if col_nnz is not None:
+        evictable = _evictable_indices(first, col_nnz)
+        nexamples_to_drop = min(nexamples_to_drop, len(evictable))
+        if nexamples_to_drop == 0:
+            return 0, tuple(arrays)
+        drop_indices = set(
+            rng.choice(evictable, nexamples_to_drop, replace=False).tolist()
+        )
+        keep = np.array([idx for idx in range(nexamples) if idx not in drop_indices])
+        return nexamples_to_drop, tuple(array[keep] for array in arrays)
     indices = rng.choice(
         np.arange(nexamples),
         nexamples - nexamples_to_drop,
         replace=False,
     )
     return nexamples_to_drop, tuple(array[indices] for array in arrays)
+
+
+def _evictable_indices(matrix: np.ndarray, col_nnz: np.ndarray) -> np.ndarray:
+    """Return row indices whose non-zero columns all have count > 1."""
+    sole_contributor = col_nnz <= 1
+    rows_touching_sole = matrix[:, sole_contributor].astype(bool).any(axis=1)
+    return np.where(~rows_touching_sole)[0]

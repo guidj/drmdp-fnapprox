@@ -8,8 +8,17 @@ from typing import Any
 
 import numpy as np
 
-from drmdp import algorithms, core, envs, logger, rewdelay, task, transform
-from drmdp.workflows import controlexps
+from drmdp import (
+    algorithms,
+    constants,
+    core,
+    envs,
+    logger,
+    rewdelay,
+    task,
+    transform,
+)
+from drmdp.workflows import grids
 from tests.drmdp.testhelpers import assert_training_snapshots
 
 
@@ -17,7 +26,7 @@ class TestOptionsSemigradientSARSA:
     def test_trains_on_gridworld(self):
         env = envs.make(
             "GridWorld-MINES",
-            grid=controlexps.MINES_GW_GRID,
+            grid=grids.MINES_GW_GRID,
             max_episode_steps=200,
         )
         env, mon = task.monitor_wrapper(env)
@@ -49,7 +58,7 @@ class TestOptionsSemigradientSARSA:
     def test_single_action_options_trains(self):
         env = envs.make(
             "GridWorld-MINES",
-            grid=controlexps.MINES_GW_GRID,
+            grid=grids.MINES_GW_GRID,
             max_episode_steps=200,
         )
         env, mon = task.monitor_wrapper(env)
@@ -186,8 +195,8 @@ class TestPolicyControlEndToEnd:
                     "args": {
                         "attempt_estimation_episode": 3,
                         "impute_value": 0,
-                        "estimation_buffer_mult": 25,
-                        "check_factors": True,
+                        "estimation_buffer_mult": constants.DEFAULT_ESTIMATION_BUFFER_MULT,
+                        "estimation_check": "factors",
                         "transition_feats_spec": {
                             "name": "current-features",
                             "args": {
@@ -234,7 +243,7 @@ class TestPolicyControlEndToEnd:
                 env_args={
                     "max_episode_steps": 200,
                     "reward_shaping": {
-                        "name": "mountain-car-height",
+                        "name": "mountain-car-height-pbrs",
                         "args": {"scale": 1.0},
                     },
                 },
@@ -246,6 +255,33 @@ class TestPolicyControlEndToEnd:
             shaped_returns = _read_log_entries(shaped_dir)[0]["returns"]
             assert unshaped_returns != shaped_returns
 
+    def test_seeded_runs_reproduce_their_record(self):
+        """Same instance seed, same record: delay, noise, policy, estimator."""
+        records = []
+        for name in ("first", "second"):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                output_dir = os.path.join(tmpdir, name)
+                instance = _make_experiment_instance(
+                    output_dir=output_dir,
+                    episodes_per_run=8,
+                    log_episode_frequency=4,
+                    policy_type="drop-missing",
+                    delay_config={
+                        "name": "uniform",
+                        "args": {"min_delay": 2, "max_delay": 4},
+                    },
+                    env_args={
+                        "max_episode_steps": 200,
+                        "reward_noise": {
+                            "name": "relative-gaussian",
+                            "args": {"std_multiplier": 1.0, "reference_std": 2.0},
+                        },
+                    },
+                )
+                task.policy_control(instance)
+                records.append(_without_wall_clock(_read_log_entries(output_dir)))
+        assert records[0] == records[1]
+
 
 def _make_experiment_instance(
     output_dir: str,
@@ -256,6 +292,7 @@ def _make_experiment_instance(
     env_args: Mapping[str, Any] | None = None,
     export_model: bool = False,
     exp_id: str = "test-mc",
+    policy_type: str = "markovian",
 ) -> core.ExperimentInstance:
     if reward_mapper is None:
         reward_mapper = {"name": "identity", "args": None}
@@ -276,7 +313,7 @@ def _make_experiment_instance(
                 ],
             ),
             problem_spec=core.ProblemSpec(
-                policy_type="markovian",
+                policy_type=policy_type,
                 reward_mapper=reward_mapper,
                 delay_config=delay_config,
                 epsilon=0.2,
@@ -311,3 +348,16 @@ def _read_params(output_dir: str) -> dict[str, Any]:
     with open(param_path) as readable:
         params: dict[str, Any] = json.load(readable)
     return params
+
+
+def _without_wall_clock(value):
+    """Recursively drop `elapsed_s`, which no seeded run reproduces."""
+    if isinstance(value, dict):
+        return {
+            key: _without_wall_clock(item)
+            for key, item in value.items()
+            if key != "elapsed_s"
+        }
+    if isinstance(value, list):
+        return [_without_wall_clock(item) for item in value]
+    return value

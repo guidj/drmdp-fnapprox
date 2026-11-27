@@ -63,6 +63,46 @@ def test_scaleobservationft():
     assert_batch(output, expected)
 
 
+def test_constantft():
+    input_space = space(
+        obs_space=spaces.Box(arr([-1.2, -0.07]), arr([0.6, 0.07])),
+        act_space=spaces.Discrete(3),
+    )
+    ftop = transform.ConstantFT(input_space=input_space)
+    assert ftop.input_space == input_space
+    assert ftop.output_space == space(
+        obs_space=spaces.Box(arr([-1.2, -0.07, 1.0]), arr([0.6, 0.07, 1.0])),
+        act_space=spaces.Discrete(3),
+    )
+
+    inputs = [
+        example(obs=arr([0.1, 0.03]), act=1),
+        example(obs=arr([0.0, -0.07]), act=2),
+    ]
+    expected = [
+        example(obs=arr([0.1, 0.03, 1.0]), act=1),
+        example(obs=arr([0.0, -0.07, 1.0]), act=2),
+    ]
+    assert_batch(ftop.batch(inputs), expected)
+
+    # the appended coordinate keeps the observation dtype
+    int_space = space(
+        obs_space=spaces.Box(arr([0, 0]), arr([10, 10])), act_space=spaces.Discrete(2)
+    )
+    int_output = transform.ConstantFT(input_space=int_space).apply(
+        example(obs=arr([3, 7]), act=0)
+    )
+    assert int_output.observation.dtype == arr([3, 7]).dtype
+    np.testing.assert_array_equal(int_output.observation, arr([3, 7, 1]))
+
+    # the operator is configurable, unlike FuncFT
+    pipeline = transform.Pipeline.from_specs(
+        input_space=input_space, specs=[{"name": "constant-ft", "args": {}}]
+    )
+    assert pipeline.output_space == ftop.output_space
+    assert_equal(pipeline.apply(example(obs=arr([0.1, 0.03]), act=1)), expected[0])
+
+
 def test_tileobservationactionft():
     input_space = space(
         obs_space=spaces.Box(arr([0, 0]), arr([1, 1])), act_space=spaces.Discrete(2)
@@ -549,6 +589,36 @@ def test_pipeline():
     ]
     output = pipe.batch(inputs)
     assert_batch(output, expected)
+
+
+def test_pipeline_records_the_ops_in_application_order():
+    input_space = space(
+        obs_space=spaces.Box(arr([0, 0]), arr([10, 100])), act_space=spaces.Discrete(2)
+    )
+    pipeline = transform.Pipeline.from_specs(
+        input_space=input_space,
+        specs=[
+            {"name": "scale-observation-ft", "args": None},
+            {"name": "tile-observation-action-ft", "args": {"tiling_dim": 2}},
+        ],
+    )
+    assert len(pipeline.ops) == 2
+    scale_op, tile_op = pipeline.ops
+    assert isinstance(scale_op, transform.ScaleObservationFT)
+    assert isinstance(tile_op, transform.TileObservationActionFT)
+    # the tile op's resolved tiling count is readable off the recorded instance
+    assert tile_op.num_tilings == 8
+    chained = pipeline.map(transform.ScaleObservationFT.builder())
+    assert len(chained.ops) == 3
+    assert chained.ops[:2] == pipeline.ops
+
+
+def test_pipeline_without_maps_records_no_ops():
+    input_space = space(
+        obs_space=spaces.Box(arr([0, 0]), arr([10, 100])), act_space=spaces.Discrete(2)
+    )
+    pipeline = transform.Pipeline(input_space)
+    assert pipeline.ops == ()
 
 
 class TestTileIndices:

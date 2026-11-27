@@ -1,7 +1,7 @@
 import abc
 import dataclasses
 from collections.abc import Callable, Sequence
-from typing import Optional
+from typing import Optional, Protocol
 
 import cvxpy as cp
 import cvxpy.error
@@ -10,6 +10,27 @@ import numpy as np
 from scipy import linalg
 
 from drmdp import dataproc
+
+
+class WeightPosterior(Protocol):
+    """
+    A posterior over linear-regression weights and its error scale.
+
+    Implemented by `MultivariateNormal`, which fixes the observation error
+    variance, and by `NormalInverseGamma`, which estimates it.
+    """
+
+    @property
+    def mean(self) -> np.ndarray: ...
+
+    @property
+    def cov(self) -> np.ndarray: ...
+
+    def sample(self, rng: np.random.Generator) -> np.ndarray: ...
+
+    def update(
+        self, matrix: np.ndarray, rhs: np.ndarray
+    ) -> "WeightPosterior | None": ...
 
 
 @dataclasses.dataclass
@@ -36,7 +57,7 @@ class MultivariateNormal:
         clipped, i.e. the nearest PSD covariance is sampled.
         """
         if self._factor is None:
-            self._factor = self._psd_factor(self.cov)
+            self._factor = psd_factor(self.cov)
         standard_normal = rng.standard_normal(self.mean.shape[0])
         return self.mean + self._factor @ standard_normal
 
@@ -133,14 +154,162 @@ class MultivariateNormal:
         except linalg.LinAlgError as err:
             raise ValueError("Failed Bayesian estimation") from err
 
-    @staticmethod
-    def _psd_factor(cov: np.ndarray, epsilon: float = 1e-12) -> np.ndarray:
-        # symmetrize to guard against round-off asymmetry, then project
-        # onto the PSD cone by clipping eigenvalues below epsilon
-        cov = 0.5 * (cov + cov.T)
-        eig_values, eig_vectors = np.linalg.eigh(cov)
-        eig_values = np.clip(eig_values, epsilon, None)
-        return eig_vectors @ np.diag(np.sqrt(eig_values))  # type: ignore[no-any-return]
+    def update(
+        self, matrix: np.ndarray, rhs: np.ndarray
+    ) -> "MultivariateNormal | None":
+        """
+        Posterior after folding in one more batch; `self` is the prior.
+        """
+        return MultivariateNormal.bayes_linear_regression(
+            matrix=matrix, rhs=rhs, prior=self
+        )
+
+
+@dataclasses.dataclass
+class InverseGamma:
+    """
+    The marginal posterior over the observation variance.
+
+    The density is `p(sigma^2) ∝ (sigma^2)^-(shape+1) exp(-scale/sigma^2)`.
+    """
+
+    shape: float
+    scale: float
+
+    @property
+    def variance(self) -> float:
+        """
+        The plug-in variance `scale/shape`.
+
+        It is the maximum-likelihood estimate from `2*shape` residuals and the
+        scale of the marginal Student-t over the weights, not the mean of the
+        Inverse-Gamma density.
+        """
+        if self.shape <= 0.0:
+            raise ValueError(f"Inverse-Gamma shape must be positive. Got {self.shape}")
+        return self.scale / self.shape
+
+    @property
+    def degrees_of_freedom(self) -> float:
+        return 2.0 * self.shape
+
+
+@dataclasses.dataclass
+class NormalInverseGamma:
+    """
+    Conjugate posterior over weights with an estimated error variance.
+
+    `mean` and `lam` parameterise the conditional Gaussian
+    `beta | sigma^2 ~ N(mean, sigma^2 lam^+)`, with `lam` the unscaled
+    information accumulator; `ig` is the Inverse-Gamma posterior of
+    `sigma^2`. Integrating out the variance gives a multivariate Student-t
+    with `2*ig.shape` degrees of freedom, location `mean` and scale
+    `ig.variance * lam^+`, which is what `cov` reports.
+    """
+
+    mean: np.ndarray
+    lam: np.ndarray
+    ig: InverseGamma
+    _factor: np.ndarray | None = dataclasses.field(
+        default=None, init=False, repr=False, compare=False
+    )
+    _cov_scale: np.ndarray | None = dataclasses.field(
+        default=None, init=False, repr=False, compare=False
+    )
+
+    @property
+    def cov(self) -> np.ndarray:
+        """The Student-t scale matrix `ig.variance * lam^+`."""
+        return self.ig.variance * self._information_inverse
+
+    def sample(self, rng: np.random.Generator) -> np.ndarray:
+        """
+        Draws from the marginal Student-t posterior over the weights.
+
+        The draw is the Gaussian scale mixture of the conjugate model: a
+        variance is drawn from the Inverse-Gamma posterior, then the weights
+        from the Gaussian conditional. As the degrees of freedom grow the
+        draw approaches `N(mean, cov)`. The factor of `lam^+` is cached per
+        posterior, so a draw costs O(d^2) after the first.
+        """
+        if self._factor is None:
+            self._factor = psd_factor(self._information_inverse)
+        standard_normal = rng.standard_normal(self.mean.shape[0])
+        scale = float(np.sqrt(self._sigma2_draw(rng)))
+        return self.mean + scale * (self._factor @ standard_normal)
+
+    @classmethod
+    def least_squares(cls, matrix: np.ndarray, rhs: np.ndarray) -> "NormalInverseGamma":
+        """
+        Posterior from a first batch under the improper prior.
+
+        The Inverse-Gamma prior is `shape = 0, scale = 0` and the information
+        prior is zero, so the shape is half the batch row count and the scale
+        is half the residual sum of squares of the least-squares fit.
+        """
+        mean = solve_least_squares(matrix, rhs)
+        lam = matrix.T @ matrix
+        residual_sum_squares = float(rhs @ rhs - mean @ (lam @ mean))
+        return cls(
+            mean=mean,
+            lam=lam,
+            ig=InverseGamma(
+                shape=matrix.shape[0] / 2.0,
+                scale=max(residual_sum_squares, 0.0) / 2.0,
+            ),
+        )
+
+    @classmethod
+    def bayes_linear_regression(
+        cls,
+        matrix: np.ndarray,
+        rhs: np.ndarray,
+        prior: "NormalInverseGamma",
+    ) -> "NormalInverseGamma":
+        """
+        Sequentially updates the posterior with one aggregate batch.
+        """
+        matrix = matrix.astype(prior.mean.dtype)
+        rhs = rhs.astype(prior.mean.dtype)
+        lam = prior.lam + np.matmul(matrix.T, matrix)
+        mean = np.matmul(
+            linalg.pinv(lam),
+            np.matmul(prior.lam, prior.mean) + np.matmul(matrix.T, rhs),
+        )
+        # The bracket telescopes over batches: twice the accumulated scale is
+        # the pooled residual sum of squares at the updated mean
+        incremental = float(
+            rhs @ rhs + prior.mean @ (prior.lam @ prior.mean) - mean @ (lam @ mean)
+        )
+        return cls(
+            mean=mean,
+            lam=lam,
+            ig=InverseGamma(
+                shape=prior.ig.shape + matrix.shape[0] / 2.0,
+                scale=prior.ig.scale + max(incremental, 0.0) / 2.0,
+            ),
+        )
+
+    def update(self, matrix: np.ndarray, rhs: np.ndarray) -> "NormalInverseGamma":
+        """
+        Posterior after folding in one more batch; `self` is the prior.
+        """
+        return NormalInverseGamma.bayes_linear_regression(
+            matrix=matrix, rhs=rhs, prior=self
+        )
+
+    @property
+    def _information_inverse(self) -> np.ndarray:
+        if self._cov_scale is None:
+            self._cov_scale = linalg.pinv(self.lam)
+        return self._cov_scale
+
+    def _sigma2_draw(self, rng: np.random.Generator) -> float:
+        """Draws one variance from the Inverse-Gamma posterior."""
+        # `b / G` with `G ~ Gamma(shape, rate=1)` has density InvGamma(shape, b)
+        if self.ig.scale <= 0.0:
+            return 0.0
+        return self.ig.scale / float(rng.gamma(self.ig.shape, 1.0))
 
 
 class LearningRateSchedule(abc.ABC):
@@ -188,6 +357,18 @@ class StreamingMean:
             delta = value - self.mean
             self.mean = self.mean + delta / self.count
         return self.mean
+
+
+def psd_factor(cov: np.ndarray, epsilon: float = 1e-12) -> np.ndarray:
+    """
+    Returns `factor` with `factor @ factor.T` the nearest PSD matrix to `cov`.
+    """
+    # symmetrize to guard against round-off asymmetry, then project
+    # onto the PSD cone by clipping eigenvalues below epsilon
+    cov = 0.5 * (cov + cov.T)
+    eig_values, eig_vectors = np.linalg.eigh(cov)
+    eig_values = np.clip(eig_values, epsilon, None)
+    return eig_vectors @ np.diag(np.sqrt(eig_values))  # type: ignore[no-any-return]
 
 
 def delay_reward_data(buffer, delay: int, sample_size: int):

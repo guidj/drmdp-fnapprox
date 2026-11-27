@@ -4,8 +4,10 @@ import gymnasium as gym
 import numpy as np
 import pytest
 from gymnasium import spaces
+from gymnasium.envs.box2d import lunar_lander as gym_lunar_lander
 
 from drmdp import rewardfeat, rewdelay, task, transform
+from drmdp.envs import lunar_lander
 
 
 class TestActionAndTerminationFeatures:
@@ -154,6 +156,26 @@ class TestCurrentAndSuccessorFeatures:
                 },
             )
 
+    def test_terminal_gate_zeroes_the_successor_block_on_termination(self):
+        env = _stub_env()
+        drop = {"name": "drop-observation-dims-ft", "args": {"axis_dims": {0: [0]}}}
+        spec = [drop, {"name": "constant-ft", "args": {}}]
+        hook = rewardfeat.transition_feature_fn(
+            env,
+            rewardfeat.current_and_successor_features_spec(
+                spec, spec, terminal_gate=True
+            ),
+        )
+        assert hook.feature_dim == 2
+        np.testing.assert_array_equal(
+            hook(_transition(terminated=True)),
+            [1.0, 0.0],
+        )
+        np.testing.assert_array_equal(
+            hook(_transition()),
+            [1.0, 1.0],
+        )
+
     def _hook(self, env: gym.Env):
         spec = [{"name": "tile-observation-action-ft", "args": {"tiling_dim": 3}}]
         return rewardfeat.transition_feature_fn(
@@ -163,6 +185,57 @@ class TestCurrentAndSuccessorFeatures:
                 "args": {"current_spec": spec, "successor_spec": spec},
             },
         )
+
+
+class TestNonterminalConstantFeatures:
+    """A unit on nonterminal steps, zero on the terminal one."""
+
+    def test_nonterminal_row_is_one_and_terminal_row_is_zero(self):
+        hook = rewardfeat.transition_feature_fn(
+            _stub_env(), {"name": "nonterminal-constant-features"}
+        )
+        assert hook.feature_dim == 1
+        np.testing.assert_array_equal(hook(_transition(terminated=False)), [1.0])
+        np.testing.assert_array_equal(hook(_transition(terminated=True)), [0.0])
+
+
+class TestConcatenatedFeatures:
+    """The concatenation of named transition-feature blocks."""
+
+    def test_blocks_are_concatenated_in_order(self):
+        drop = {"name": "drop-observation-dims-ft", "args": {"axis_dims": {0: [0]}}}
+        constant = {"name": "constant-ft", "args": {}}
+        hook = rewardfeat.transition_feature_fn(
+            _stub_env(),
+            rewardfeat.concatenated_features_spec(
+                [
+                    {"name": "nonterminal-constant-features", "args": {}},
+                    {
+                        "name": "current-and-successor-features",
+                        "args": {
+                            "current_spec": [drop, constant],
+                            "successor_spec": [drop, constant],
+                            "terminal_gate": True,
+                        },
+                    },
+                ]
+            ),
+        )
+        assert hook.feature_dim == 3
+        np.testing.assert_array_equal(
+            hook(_transition(terminated=True)),
+            [0.0, 1.0, 0.0],
+        )
+        np.testing.assert_array_equal(
+            hook(_transition()),
+            [1.0, 1.0, 1.0],
+        )
+
+    def test_empty_blocks_are_rejected(self):
+        with pytest.raises(ValueError, match="at least one block"):
+            rewardfeat.transition_feature_fn(
+                _stub_env(), rewardfeat.concatenated_features_spec([])
+            )
 
 
 class TestConstantAndSuccessorBasisFeatures:
@@ -636,6 +709,173 @@ class TestWrapperContract:
             )
 
 
+class TestLunarLanderRewardFeatures:
+    """The row that makes the LunarLander reward linear in the observation."""
+
+    def test_row_is_the_gated_basis_pairs_fuel_and_terminal_columns(self):
+        hook = self._hook()
+        current = _lunar_state(
+            x=3.0, y=4.0, vx=6.0, vy=8.0, angle=-0.5, angular=0.1, legs=(1.0, 0.0)
+        )
+        successor = _lunar_state(
+            x=0.0, y=0.0, vx=0.0, vy=0.0, angle=0.25, angular=0.2, legs=(1.0, 1.0)
+        )
+        row = hook(_lunar_transition(current, action=2, successor=successor))
+        np.testing.assert_allclose(
+            row,
+            np.array(
+                [
+                    0.0,
+                    0.0,
+                    0.25,
+                    1.0,
+                    1.0,
+                    -5.0,
+                    -10.0,
+                    -0.5,
+                    -1.0,
+                    -0.0,
+                    0.0,
+                    0.0,
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                ]
+            ),
+        )
+
+    def test_terminal_rows_zero_the_potential_and_fuel_blocks(self):
+        hook = self._hook()
+        current = _lunar_state(
+            x=1.0, y=1.0, vx=1.0, vy=1.0, angle=0.1, angular=0.1, legs=(0.0, 0.0)
+        )
+        row = hook(
+            _lunar_transition(
+                current, action=2, successor=current, terminated=True, awake=True
+            )
+        )
+        np.testing.assert_allclose(row[:14], np.zeros(14))
+
+    def test_landing_and_crash_columns_are_exclusive(self):
+        hook = self._hook()
+        landed = _lunar_state(
+            x=0.0, y=0.0, vx=0.0, vy=0.0, angle=0.01, angular=0.0, legs=(1.0, 1.0)
+        )
+        crashed = _lunar_state(
+            x=0.0, y=0.0, vx=2.0, vy=-1.0, angle=0.9, angular=0.4, legs=(0.0, 0.0)
+        )
+        landing_row = hook(
+            _lunar_transition(
+                landed, action=0, successor=landed, terminated=True, awake=False
+            )
+        )
+        crash_row = hook(
+            _lunar_transition(
+                crashed, action=0, successor=crashed, terminated=True, awake=True
+            )
+        )
+        np.testing.assert_allclose(landing_row[-2:], np.array([1.0, 0.0]))
+        np.testing.assert_allclose(crash_row[-2:], np.array([0.0, 1.0]))
+
+    def test_landing_label_reads_the_awake_bit_from_info(self):
+        hook = self._hook()
+        moving = _lunar_state(
+            x=0.0, y=0.0, vx=2.0, vy=-1.0, angle=0.9, angular=0.4, legs=(0.0, 0.0)
+        )
+        at_rest = _lunar_state(
+            x=0.0, y=0.0, vx=0.0, vy=0.0, angle=0.01, angular=0.0, legs=(1.0, 1.0)
+        )
+        # The bit decides the terminal columns in both directions: a moving
+        # successor cannot pass the rest rule, an at-rest successor does.
+        landing_row = hook(
+            _lunar_transition(
+                moving, action=0, successor=moving, terminated=True, awake=False
+            )
+        )
+        crash_row = hook(
+            _lunar_transition(
+                at_rest, action=0, successor=at_rest, terminated=True, awake=True
+            )
+        )
+        np.testing.assert_allclose(landing_row[-2:], np.array([1.0, 0.0]))
+        np.testing.assert_allclose(crash_row[-2:], np.array([0.0, 1.0]))
+
+    def test_awake_bit_is_ignored_on_a_nonterminal_transition(self):
+        hook = self._hook()
+        state = _lunar_state(
+            x=0.0, y=0.0, vx=0.0, vy=0.0, angle=0.01, angular=0.0, legs=(1.0, 1.0)
+        )
+        row = hook(_lunar_transition(state, action=0, successor=state, awake=False))
+        np.testing.assert_allclose(row[-2:], np.zeros(2))
+
+    def test_no_terminal_column_is_set_on_a_nonterminal_transition(self):
+        hook = self._hook()
+        state = _lunar_state(
+            x=0.0, y=0.0, vx=0.0, vy=0.0, angle=0.0, angular=0.0, legs=(0.0, 0.0)
+        )
+        row = hook(_lunar_transition(state, action=0, successor=state))
+        np.testing.assert_allclose(row[-2:], np.zeros(2))
+
+    def test_least_squares_recovers_every_nonterminal_reward(self):
+        env = gym.make("LunarLander-v3")
+        wrapped = lunar_lander.LunarLanderRewardObs(env)
+        try:
+            hook = rewardfeat.transition_feature_fn(
+                wrapped, {"name": "lunar-lander-reward-features", "args": {}}
+            )
+            matrix, rewards = _random_episode_rows(hook, wrapped, seed=0)
+            weights, *_ = np.linalg.lstsq(matrix, rewards, rcond=None)
+            residuals = matrix @ weights - rewards
+            assert residuals.shape == (len(rewards),)
+            assert np.max(np.abs(residuals)) < 1e-4
+        finally:
+            wrapped.close()
+
+    def test_terminal_columns_match_the_branch_on_real_terminals(self):
+        hook = self._hook()
+        landings = np.asarray(_terminal_rows(hook, heuristic=True, episodes=4))
+        crashes = np.asarray(_terminal_rows(hook, heuristic=False, episodes=60))
+        assert len(landings) >= 4
+        assert len(crashes) >= 40
+        np.testing.assert_allclose(landings[:, -2], np.ones(len(landings)))
+        np.testing.assert_allclose(landings[:, -1], np.zeros(len(landings)))
+        np.testing.assert_allclose(crashes[:, -2], np.zeros(len(crashes)))
+        np.testing.assert_allclose(crashes[:, -1], np.ones(len(crashes)))
+
+    def test_missing_awake_bit_raises_a_terminal_transition(self):
+        hook = self._hook()
+        state = _lunar_state(
+            x=0.0, y=0.0, vx=0.0, vy=0.0, angle=0.0, angular=0.0, legs=(0.0, 0.0)
+        )
+        transition = rewardfeat.Transition(
+            observation=state,
+            action=0,
+            next_observation=state,
+            terminated=True,
+            truncated=False,
+            info={},
+        )
+        with pytest.raises(KeyError, match=lunar_lander.AWAKE_INFO_KEY):
+            hook(transition)
+
+    def test_rejects_an_unwrapped_observation_width(self):
+        with pytest.raises(ValueError, match="observation space"):
+            rewardfeat.transition_feature_fn(
+                _stub_env(observation_dim=2), {"name": "lunar-lander-reward-features"}
+            )
+
+    def _hook(self) -> rewardfeat.TransitionFeatureFn:
+        env = gym.make("LunarLander-v3")
+        wrapped = lunar_lander.LunarLanderRewardObs(env)
+        try:
+            return rewardfeat.transition_feature_fn(
+                wrapped, {"name": "lunar-lander-reward-features", "args": {}}
+            )
+        finally:
+            wrapped.close()
+
+
 class _StubEnv(gym.Env):
     """Spaces only; used to build feature maps."""
 
@@ -746,3 +986,105 @@ def _transition(
         truncated=truncated,
         info={} if info is None else info,
     )
+
+
+def _lunar_state(
+    x: float,
+    y: float,
+    vx: float,
+    vy: float,
+    angle: float,
+    angular: float,
+    legs: tuple[float, float],
+) -> np.ndarray:
+    """A wrapped LunarLander observation around the given raw state."""
+    raw = np.array([x, y, vx, vy, angle, angular, legs[0], legs[1]], dtype=np.float32)
+    return np.concatenate([lunar_lander.reward_basis(raw), raw]).astype(np.float32)
+
+
+def _lunar_transition(
+    observation: np.ndarray,
+    action: int,
+    successor: np.ndarray,
+    terminated: bool = False,
+    awake: bool = True,
+) -> rewardfeat.Transition:
+    info = {lunar_lander.AWAKE_INFO_KEY: awake}
+    return rewardfeat.Transition(
+        observation=observation,
+        action=action,
+        next_observation=successor,
+        terminated=terminated,
+        truncated=False,
+        info=info,
+    )
+
+
+def _random_episode_rows(
+    hook: rewardfeat.TransitionFeatureFn,
+    env: gym.Env,
+    seed: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Feature rows and true rewards of one random-policy episode's interior steps."""
+    rng = np.random.default_rng(seed)
+    rows: list[np.ndarray] = []
+    rewards: list[float] = []
+    observation, _ = env.reset(seed=seed)
+    terminated = truncated = False
+    while not (terminated or truncated):
+        action = int(rng.integers(0, env.action_space.n))
+        successor, reward, terminated, truncated, _ = env.step(action)
+        if not terminated:
+            rows.append(hook(_lunar_transition(observation, action, successor)))
+            rewards.append(float(reward))
+        observation = successor
+    return np.asarray(rows), np.asarray(rewards)
+
+
+def _terminal_rows(
+    hook: rewardfeat.TransitionFeatureFn,
+    heuristic: bool,
+    episodes: int,
+) -> list[np.ndarray]:
+    """Feature rows of terminal transitions, landed or crashed."""
+    rows: list[np.ndarray] = []
+    rng = np.random.default_rng(11)
+    env = lunar_lander.LunarLanderAwakeInfoWrapper(gym.make("LunarLander-v3"))
+    try:
+        for episode in range(episodes):
+            raw, _ = env.reset(seed=episode)
+            observation = _reward_observation(raw)
+            terminated = truncated = False
+            while not (terminated or truncated):
+                if heuristic:
+                    action = _heuristic_action(env, raw)
+                else:
+                    action = int(rng.integers(0, env.action_space.n))
+                raw, _, terminated, truncated, info = env.step(action)
+                successor = _reward_observation(raw)
+                if terminated:
+                    rows.append(
+                        hook(
+                            _lunar_transition(
+                                observation,
+                                action,
+                                successor,
+                                terminated=True,
+                                awake=bool(info[lunar_lander.AWAKE_INFO_KEY]),
+                            )
+                        )
+                    )
+                observation = successor
+    finally:
+        env.close()
+    return rows
+
+
+def _reward_observation(raw: np.ndarray) -> np.ndarray:
+    """The wrapped observation the encoding reads, built from a raw state."""
+    return np.concatenate([lunar_lander.reward_basis(raw), raw]).astype(np.float32)
+
+
+def _heuristic_action(env: gym.Env, raw: np.ndarray) -> int:
+    """The action the environment's bundled landing heuristic selects."""
+    return int(gym_lunar_lander.heuristic(env.unwrapped, raw))
