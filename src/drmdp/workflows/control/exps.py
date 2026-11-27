@@ -87,9 +87,7 @@ def learning_rate_fixed(base_step_size: float, dimension: int) -> float:
     return float(LEARNING_RATE_SPEC["args"]["initial_lr"])
 
 
-# The options for the rule argument of derived_learning_rate_config; the
-# dim/actives rules' relative performance is measured in
-# agents/plans/2026-11-08-lunar-lander-illustration.md.
+# The options for the rule argument of derived_learning_rate_config.
 LEARNING_RATE_RULES = {
     "dim": learning_rate_from_dimension,
     "actives": learning_rate_from_active_features,
@@ -686,22 +684,20 @@ def gaussian_illustration_experiment_specs(
 
     Produces one spec per (env, standard-deviation multiplier) combination.
     The sweep value m sets the noise standard deviation directly:
-    ``sigma = std_multiplier * reference_std`` with ``reference_std`` 1.0 (the
-    modal per-step reward magnitude, 1 for all three environments), so the
-    sweep value, the config value, and the sampled standard deviation are the
-    same number m and no variance/square-root pair sits between them. The
-    sweep follows the bsuite convention of noise std as a magnitude ladder on
-    unit-scale rewards (Osband et al., 2019: std factors {0.1, 0.3, 1.0, 3.0,
-    10.0}); the full post-shaping range is rejected as the unit because
-    GridWorld's is dominated by the -100 cliff penalty (std 25-200 against
-    modal rewards of -1). BLADE-TD consumes the posterior mean: the sweep
-    compares reward estimators, so the posterior weight draw is switched off
-    and its reward estimate is fixed, as LEAST's.
+    ``sigma = std_multiplier * reference_std``, where each template's
+    ``reference_std`` is its modal per-step reward magnitude. The sweep
+    follows the bsuite convention of noise std as a magnitude ladder on
+    unit-scale rewards (Osband et al., 2019: std factors
+    {0.1, 0.3, 1.0, 3.0, 10.0}). The unit is the modal magnitude, not the
+    reward range, which a rare large reward such as GridWorld's -100 cliff
+    penalty would dominate. BLADE-TD consumes the posterior mean, so the
+    posterior weight draw is switched off and its reward estimate is fixed,
+    as LEAST's.
 
-    Every environment carries a PBRS shaping whose discount follows the
-    problem spec's gamma through `task.create_env`, an observation wrapper
-    that appends the shaped potential, and control features computed on the
-    raw dimensions only.
+    The MountainCar, Acrobot and GridWorld templates carry a PBRS shaping
+    whose discount follows the problem spec's gamma through `task.create_env`,
+    an observation wrapper that appends the shaped potential, and control
+    features computed on the raw dimensions only.
     """
     mc_base_args: Mapping[str, Any] = {
         "max_episode_steps": 2500,
@@ -829,8 +825,7 @@ def gaussian_illustration_experiment_specs(
             "name": "GridWorld-MINES",
             "base_args": gw_base_args,
             # unit = modal per-step reward magnitude: the base reward is -1 per
-            # move and -100 on a cliff entry, so the modal magnitude is 1 and
-            # the cliff carries a separate indicator coordinate
+            # move and -100 on a cliff entry, so the modal magnitude is 1
             "reference_std": 1.0,
             "feats_specs": gw_feats_specs,
             "problem_specs_fn": lambda: _illustration_problem_specs(
@@ -873,11 +868,6 @@ def _lunar_lander_template(rule: str = "dim") -> Mapping[str, Any]:
     observation carries the reward basis so the per-step reward is a linear
     function of the emitted features. The estimator fits the family's
     transition encoding, which reads that basis, under the ``factors`` gate.
-
-    The gate admits a fit only once every column is nonzero. The landing column
-    is nonzero only after a transition in which the policy came to rest, so the
-    first fit is deferred until a landing occurs; deferred attempts are recorded
-    in the run's estimation events.
     """
     base_args: Mapping[str, Any] = {
         "max_episode_steps": LUNAR_LANDER_MAX_EPISODE_STEPS,
@@ -906,8 +896,8 @@ def _lunar_lander_template(rule: str = "dim") -> Mapping[str, Any]:
         "name": "LunarLander-v3",
         "base_args": base_args,
         # unit = modal per-step reward magnitude: the potential difference and
-        # the fuel cost are of order 1 per step, and the +/-100 terminal reward
-        # is a separate branch the terminal columns carry
+        # the fuel cost are of order 1 per step; the +/-100 terminal reward
+        # occurs once per episode, so it does not set the modal magnitude
         "reference_std": 1.0,
         "feats_specs": feats_specs,
         "problem_specs_fn": lambda: _illustration_problem_specs(
